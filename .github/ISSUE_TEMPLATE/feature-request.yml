@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest an improvement that preserves the stable spatial map.
+title: "[Feature]: "
+labels:
+    - enhancement
+body:
+    - type: textarea
+      id: problem
+      attributes:
+          label: Problem
+          description: What workflow or limitation should be improved?
+      validations:
+          required: true
+    - type: textarea
+      id: proposal
+      attributes:
+          label: Proposed behavior
+          description: Describe the user-visible result.
+      validations:
+          required: true
+    - type: textarea
+      id: alternatives
+      attributes:
+          label: Alternatives considered
+    - type: checkboxes
+      id: constraints
+      attributes:
+          label: Design constraints
+          options:
+              - label: The proposal does not require telemetry or runtime network access.
+                required: true
+              - label: The proposal preserves fixed node positions outside Initialize, Refresh, and Renew.
+                required: true

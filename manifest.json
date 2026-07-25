@@ -1,11 +1,10 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "spherical-graph",
+	"name": "Spherical Graph",
 	"version": "1.0.0",
-	"minAppVersion": "1.0.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
-	"isDesktopOnly": false
+	"minAppVersion": "1.7.2",
+	"description": "Explore your vault as a seamless graph laid out intrinsically on a sphere.",
+	"author": "Pavel-mik",
+	"authorUrl": "https://github.com/Pavel-mik",
+	"isDesktopOnly": true
 }

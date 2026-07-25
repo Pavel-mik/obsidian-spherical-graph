@@ -1,92 +1,274 @@
-# Obsidian Sample Plugin
+# Spherical Graph
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+[![CI](https://github.com/Pavel-mik/obsidian-spherical-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/Pavel-mik/obsidian-spherical-graph/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/Pavel-mik/obsidian-spherical-graph?label=release)](https://github.com/Pavel-mik/obsidian-spherical-graph/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+Spherical Graph is a desktop-first Obsidian view that places Markdown notes on
+the surface of a sphere. It is designed as a stable spatial map: a finite
+layout operation computes positions, validates and saves one complete
+snapshot, and then stops. Normal reading, search, selection, rotation, zoom,
+theme changes, and resizing do not move notes.
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
+## Requirements
 
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and outputs a Notice on click.
-- Registers a global interval which logs 'setInterval' to the console.
+- Obsidian 1.7.2 or later.
+- Desktop app. The renderer, worker lifecycle, and resource profile are not
+  supported on mobile.
+- No account, API key, internet connection, or paid service is required.
 
-## First time developing plugins?
+## Why a sphere?
 
-Quick starting guide for new plugin devs:
+This is not a conventional 3D force graph with important notes near the center
+and other notes floating in a volume. Every node is represented internally by
+a unit vector \(u \in S^2\), and its rendered point is \(R u\). The solver uses
+geodesic angular distance, tangent-plane forces, and exponential-map updates
+directly on the sphere. Edges are sampled as shortest geodesic arcs on the
+surface rather than drawn as straight chords through the globe.
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `src/main.ts` to `main.js`.
-- Make changes to `src/main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+The result has no left/right map seam. Notes near longitudes \(+180^\circ\) and
+\(-180^\circ\) are genuinely close because longitude is not a layout
+coordinate.
 
-## Releasing new releases
+## Fixed-layout lifecycle
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+Spherical Graph has three finite layout operations:
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+- **Initialize** runs automatically only when no usable saved layout exists.
+- **Refresh layout** incorporates pending vault changes while preserving the
+  existing mental map. New nodes warm up while old nodes are fixed; then only a
+  local affected set may relax under geodesic anchors and a maximum angular
+  displacement.
+- **Renew layout** is an explicit, confirmed, whole-map regeneration. It uses a
+  new deterministic effective seed and does not use old positions as anchors.
 
-## Adding your plugin to the community plugin list
+While Refresh or Renew runs, the last committed map remains visible and
+interactive. Progress messages contain diagnostics only. The renderer receives
+new coordinates once, after the complete result passes operation-ID, graph
+signature, length, finiteness, unit-norm, and Refresh-displacement checks. A
+cancelled, stale, invalid, or failed operation leaves the previous snapshot
+untouched.
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+Vault changes never start a solver automatically. Instead the view reports a
+pending state such as:
 
-## How to use
-
-- Clone this repo.
-- Make sure your NodeJS is at least v18 (`node --version`).
-- `npm i` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
-
-## Manually installing the plugin
-
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
-
-## Improve code quality with eslint
-
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code.
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
-
-## Funding URL
-
-You can include funding URLs where people who use your plugin can financially support it.
-
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-	"fundingUrl": "https://buymeacoffee.com"
-}
+```text
+Changes detected · +7 / -2 notes · 11 link changes
 ```
 
-If you have multiple URLs, you can also do:
+New notes without committed positions remain pending; deleted notes disappear;
+and a reliable rename keeps the old position under the new path. Select
+**Refresh layout** when you want to incorporate the pending graph.
 
-```json
-{
-	"fundingUrl": {
-		"Buy Me a Coffee": "https://buymeacoffee.com",
-		"GitHub Sponsor": "https://github.com/sponsors",
-		"Patreon": "https://www.patreon.com/"
-	}
-}
+## Features
+
+- Dedicated `Spherical Graph` ItemView, ribbon action, and command-palette
+  commands.
+- Intrinsic, seam-free spherical layout with deterministic exact and sampled
+  repulsion modes.
+- Incremental Refresh with a new-node warm-up, graph-neighborhood affected set,
+  hard-fixed remote nodes, anchors, and a displacement cap.
+- Transactional committed snapshot, schema migrations, stable camera state,
+  and safe rename/prune handling.
+- Short-lived inline Web Worker with final-only position transfer plus a
+  yielding main-thread compatibility fallback.
+- Three.js rendering with instanced tangent node discs, batched geodesic edges,
+  a muted dashed globe graticule, zoom-gated bounded labels, raycast picking,
+  and invalidation-based frames.
+- Hover details, selection and neighbor emphasis, active-note emphasis,
+  search/focus, open-note actions, camera reset, keyboard controls, and a
+  translucent selection panel with clickable direct neighbors.
+- Offline route finding that highlights every shortest path between two notes
+  over the existing links, including all equally short alternatives, explicit
+  green `Start` and amber `Dest` markers, and clickable route details.
+- Render-only tag satellites on an adjustable, invisible concentric orbit.
+  Thin violet spherical spirals connect tags to the selected note, every note
+  in the active shortest-path union, or every note carrying a selected tag.
+  Satellites hidden behind the globe are culled geometrically.
+- Solid, transparent, and hidden sphere-surface modes.
+- Theme-aware colors, resize handling, pop-out owner-window awareness, and
+  explicit resource cleanup.
+- No telemetry, runtime network calls, external keys, or note-content writes.
+
+## Controls
+
+| Action | Control |
+| --- | --- |
+| Rotate | Drag empty canvas space |
+| Zoom | Wheel or supported pinch gesture |
+| Inspect | Hover a node |
+| Select | Click a node |
+| Select a tag and show its links | Click a violet tag satellite |
+| Clear selection | Click empty canvas space or press `Escape` |
+| Open note | Double-click a node or press `Enter` on a selected search result |
+| Open in new tab | `Ctrl`/`Cmd` + click |
+| Open from selection details | Click a selected, linked, endpoint, or route note; hold `Ctrl`/`Cmd` for a new tab |
+| Hide or show selection details | Select the **Selection details** header |
+| Find and focus | Type in **Find a note…** and choose a result |
+| Find all shortest routes | Select an origin, choose **Find route**, then select a destination |
+| Clear a route | Select the active route control again |
+| Hide or show all tags | **Tags** |
+| Include pending changes | **Refresh layout** |
+| Build a new map | **Renew layout**, then confirm |
+| Stop a calculation | **Cancel calculation** |
+| Restore view | **Reset camera** |
+
+Dragging never changes a node position.
+
+## Settings
+
+### Data
+
+- excluded folder prefixes
+- include or exclude orphan notes
+- graph-change debounce
+- pending-diff detail limit
+
+### Appearance
+
+- relative **Globe size** and degree scaling; a larger Globe value makes node
+  markers and the magenta selection frame smaller without moving the layout.
+  Initialize and Renew automatically choose this value from the vault's note
+  count; Refresh preserves the current value
+- tag-orbit height as a percentage of the globe radius (30% by default), plus
+  an optional camera-axis protection guard, disabled by default
+- edge opacity
+- labels, maximum pooled labels, and a zoom-in threshold (0–100%)
+- sphere surface mode and opacity
+- theme-following background
+- focus-animation duration
+
+### Layout
+
+- deterministic base seed
+- spring, repulsion, centroid, and isotropy strengths
+- damping, step, angular-speed cap, convergence, and iteration budget
+- exact-repulsion threshold and sampled negative count
+- progress-report interval
+
+### Refresh preservation
+
+- new-node warm-up budget
+- affected graph-neighborhood depth
+- anchor strength and directly affected multiplier
+- maximum old-node angular displacement
+- large-change warning ratio
+
+Visual settings apply without running a solver. Filter changes create pending
+data changes. Layout settings apply to the next relevant explicit operation;
+changing them alone does not move the current map.
+
+## Installation
+
+After publication, install **Spherical Graph** from **Settings → Community
+plugins → Browse**.
+
+For a manual or beta installation:
+
+1. Build the plugin or download a release.
+2. Place these files directly in
+   `<vault>/.obsidian/plugins/spherical-graph/`:
+
+   - `main.js`
+   - `manifest.json`
+   - `styles.css`
+
+3. Restart or reload Obsidian after the first install or an ID/manifest change.
+4. Open **Settings → Community plugins**, enable **Spherical Graph**, and run
+   **Spherical Graph: Open graph** from the command palette.
+
+Do not create an extra nested repository directory; `manifest.json` must be
+directly inside `.obsidian/plugins/spherical-graph/`.
+
+## Development
+
+Use a dedicated disposable development vault.
+
+```powershell
+npm ci
+npm run dev
 ```
 
-## API Documentation
+Quality and utility commands:
 
-See https://docs.obsidian.md
+```powershell
+npm run lint
+npm run typecheck
+npm run test
+npm run test:coverage
+npm run build
+npm run validate:release
+npm run check
+npm run benchmark:layout
+npm run generate:test-vault -- --output ./tmp/test-vault --nodes 500 --edges 1500 --seed 42 --pattern clustered
+```
+
+The production build writes the release artifacts to the repository root. The
+layout worker source is embedded into `main.js`; no separate worker file is
+required.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md), [ALGORITHM.md](ALGORITHM.md),
+[MANUAL_TEST_PLAN.md](MANUAL_TEST_PLAN.md), and [VALIDATION.md](VALIDATION.md).
+The complete implementation specification is preserved in
+[docs/CODEX_TASK.md](docs/CODEX_TASK.md).
+
+## Privacy and safety
+
+Spherical Graph is designed for private, offline vault use:
+
+- It reads Markdown file metadata, tags, and Obsidian's resolved-link index.
+- It never modifies note contents and never accesses files outside the vault.
+- It stores plugin settings, vault-relative note paths, normalized layout
+  positions, graph descriptors, and camera state through Obsidian's plugin-data
+  API. Tag satellites are derived at render time and are not persisted.
+- It performs no runtime network requests, telemetry, remote-code loading,
+  advertising, or automatic plugin updates.
+- It requires no account, payment, external key, or remote service.
+
+## Support and security
+
+- Report bugs and request features through
+  [GitHub Issues](https://github.com/Pavel-mik/obsidian-spherical-graph/issues).
+- Follow [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change.
+- Report security problems using the private process in
+  [SECURITY.md](SECURITY.md), not a public issue.
+
+## Known limitations
+
+- Desktop only; mobile interaction and resource behavior are not validated.
+- Arbitrary non-planar graphs can still have crossing edges on a sphere.
+- Labels are intentionally capped, so not every visible note is labelled.
+- Every tag has an instanced satellite marker, while visible tag text labels
+  are capped at 96. Tags behind the globe are hidden; optional camera-axis
+  fading can additionally protect the center of the view.
+- Route highlighting shows the union of all shortest paths. When alternatives
+  overlap, their shared sections are intentionally drawn once.
+- Very large graphs use deterministic sampled global repulsion; this is an
+  approximation rather than exact all-pairs force evaluation.
+- Version 1.0 stores one committed layout snapshot and has no layout undo history,
+  edge bundling, community detection, ghost nodes, or image export.
+- Actual GUI verification performed for a release is recorded in
+  [VALIDATION.md](VALIDATION.md); automated checks do not imply a manual GUI
+  pass.
+
+## Release
+
+1. Run `npm ci` and `npm run check` from a clean checkout.
+2. Update `manifest.json`, `package.json`, `versions.json`, and
+   [CHANGELOG.md](CHANGELOG.md).
+3. Push a tag exactly equal to the manifest version, without a leading `v`.
+   The release workflow repeats the full check, verifies the tag/version,
+   attests the build, and creates a draft release containing `main.js`,
+   `manifest.json`, and `styles.css`.
+4. Review and publish the draft GitHub release.
+5. For the first directory submission, make the repository public, link GitHub
+   at [community.obsidian.md](https://community.obsidian.md), choose
+   **Plugins → New plugin**, and submit the repository URL.
+
+The complete maintainer procedure is in
+[docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+
+## License
+
+[MIT](LICENSE). Third-party attributions are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -6,7 +6,7 @@ on:
             - '*'
 
 jobs:
-    build:
+    release:
         runs-on: ubuntu-latest
         permissions:
             contents: write
@@ -19,32 +19,30 @@ jobs:
               uses: actions/setup-node@v6
               with:
                   node-version: 24
-                  cache: 'npm'
+                  cache: npm
 
-            - name: Build plugin
+            - name: Check, build, and validate release
+              env:
+                  RELEASE_TAG: ${{ github.ref_name }}
               run: |
                   npm ci
-                  npm run build
-
-            - name: Check for optional styles
-              id: styles
-              run: |
-                  [ -f styles.css ] && echo "exists=true" >> "$GITHUB_OUTPUT" || echo "exists=false" >> "$GITHUB_OUTPUT"
+                  npm run check
 
             - name: Attest build provenance
               uses: actions/attest@v4
               with:
                   subject-path: |
                       main.js
-                      ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}
+                      manifest.json
+                      styles.css
 
-            - name: Create release
+            - name: Create draft release
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
-                  tag="${GITHUB_REF#refs/tags/}"
-
-                  gh release create "$tag" \
-                    --title="$tag" \
+                  gh release create "${GITHUB_REF_NAME}" \
+                    --verify-tag \
+                    --title="${GITHUB_REF_NAME}" \
+                    --generate-notes \
                     --draft \
-                    main.js manifest.json ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}
+                    main.js manifest.json styles.css

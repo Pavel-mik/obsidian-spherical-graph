@@ -1,5 +1,23 @@
 # Obsidian community plugin
 
+## Spherical Graph project rules
+
+- Read `docs/CODEX_TASK.md` before making architectural or product decisions.
+- The plugin ID is permanently `spherical-graph`; the view type is
+  `spherical-graph-view`.
+- Layout positions are intrinsic unit vectors on \(S^2\). Never substitute a
+  planar wrap, latitude/longitude physics, or a volume layout.
+- A solver may run only for Initialize, explicit Refresh, or confirmed Renew.
+  A committed layout is immutable during camera and UI interaction.
+- Keep committed snapshots separate from working buffers. Progress messages
+  never contain positions; only a validated completed result may be committed.
+- Refresh preserves the mental map through warm-up, hard-fixed unaffected
+  nodes, geodesic anchoring, and a displacement cap.
+- Worker code must be bundled inline into the single release `main.js`.
+- Do not modify note contents, make runtime network calls, add telemetry, or
+  use undocumented Obsidian APIs.
+- Required local gate: `npm run check`.
+
 ## Project overview
 
 - Target: Obsidian Community Plugin (TypeScript → bundled JavaScript).
