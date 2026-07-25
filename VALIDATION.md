@@ -15,7 +15,7 @@
 
 | Command | Result |
 | --- | --- |
-| `npm ci` | PASS; 377 packages installed from the lockfile |
+| `npm ci` | PASS with npm 10.9.4; 379 packages installed from the lockfile |
 | `npm audit --omit=dev --audit-level=moderate` | PASS; 0 vulnerabilities reported |
 | `npm run check` | PASS |
 | `npm run lint` | PASS, no warnings or errors |
@@ -31,6 +31,12 @@ The first clean-install attempt exposed an esbuild peer mismatch inherited from
 the sample/tooling combination. The project was updated from esbuild 0.25.5 to
 0.28.1, the lockfile was regenerated, and the final `npm ci` and complete
 quality chain passed.
+
+The full development-tree audit reports a high-severity denial-of-service
+advisory in `brace-expansion` through the ESLint/Obsidian lint toolchain. npm
+currently reports no nonbreaking fix for that transitive development-only
+path. It is not included in `main.js`; the production-only audit reports zero
+vulnerabilities.
 
 ## Publication-readiness audit
 
