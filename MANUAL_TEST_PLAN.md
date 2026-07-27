@@ -165,7 +165,8 @@ vault.
 18. **Split and pop-out**
 
     - Open/activate the view in a narrow split.
-    - Verify toolbar wrapping and full remaining canvas height.
+    - Verify toolbar wrapping, full remaining canvas height, horizontal globe
+      framing, and a reduced label density without horizontal page overflow.
     - Move the view to a pop-out window.
     - Verify interaction, resize, owner-window animation, and cleanup.
 
@@ -174,6 +175,15 @@ vault.
     - Test **Solid**, **Transparent**, and **Hidden**.
     - Confirm Solid depth-hides the back hemisphere, Transparent provides an
       x-ray cue, Hidden removes only the surface mesh, and no mode moves nodes.
+    - Toggle **Map → Continents**. Confirm land, coastlines, islands, and
+      cartographic labels disappear/reappear without changing the committed
+      position buffer.
+    - In a clustered synthetic vault, confirm large dense regions form
+      non-overlapping landmasses with visible sea between them. Confirm small
+      disconnected groups remain islands.
+    - Run Refresh after adding a note inside an existing cluster. Confirm the
+      matched continent keeps its name, color, and approximate geographic
+      center. Run Renew and confirm a new world arrangement is allowed.
 
 20. **Large synthetic vault**
 
@@ -183,28 +193,28 @@ vault.
       count rather than all pairs.
     - Confirm instanced nodes, batched edges, and bounded labels.
     - Change **Globe size** from 100 to 200 and confirm node discs and the
-      selected-node magenta frame become half as large while the globe,
+      selected-node coral frame become half as large while the globe,
       camera, and committed positions stay unchanged.
     - Set **Label zoom-in threshold** to 75. Confirm labels disappear when
       zoomed out and reappear only after zooming in past the threshold.
-    - Select a highly connected node and confirm its incident magenta links
-      remain clearly visible above crossing cyan links.
+    - Select a highly connected node and confirm its incident coral roads
+      remain clearly visible above crossing blue-gray roads.
     - Confirm meridians and parallels are muted and dashed while document
       links remain brighter and continuous in solid and transparent modes.
     - Select a note, choose **Find route**, and select a destination. Confirm
-      all shortest routes are highlighted acid green, including both branches
-      of a synthetic diamond graph. Confirm the origin has a green double ring
-      and `Start` label, the destination has an amber double ring and `Dest`
+      all shortest routes are highlighted amber, including both branches
+      of a synthetic diamond graph. Confirm the origin has an amber double ring
+      and `Start` label, the destination has a blue double ring and `Dest`
       label, and the panel lists both endpoints and all route-union nodes.
       Confirm disconnected notes show **No route**, and selecting the route
       control clears the result.
     - Add several inline and frontmatter tags to disposable test notes. Confirm
-      every unique tag has a violet satellite outside the globe, but no carrier
+      every unique tag has an amber satellite outside the globe, but no carrier
       sphere is visible.
     - With no selection, confirm no tag links are rendered. Select a tagged
       note and confirm only its tag spirals appear. Complete a route and confirm
       links are present for tags of every route-union note.
-    - Change **Tag orbit height** from 1.25 to 3. Confirm satellites and the
+    - Change **Tag orbit height** from 30% to 60%. Confirm satellites and the
       outer spiral endpoints move outward immediately while the committed
       document-position buffer stays bitwise unchanged.
     - Rotate the globe through multiple orientations. Confirm tag markers and

@@ -4,10 +4,11 @@
 [![Latest release](https://img.shields.io/github/v/release/Pavel-mik/obsidian-spherical-graph?label=release)](https://github.com/Pavel-mik/obsidian-spherical-graph/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
 
-Turn your Obsidian vault into an explorable globe. Notes become cities, links
-become roads across the surface, and tags orbit overhead as satellites. Route
-Finder reveals every shortest path between distant notes so you can navigate
-connections that a flat graph hides.
+Turn your Obsidian vault into an explorable world. Dense, weakly connected
+regions become continents separated by visible seas; notes become cities,
+links become roads across the surface, and tags orbit overhead as satellites.
+Loose notes remain islands instead of being forced into artificial regions.
+Route Finder reveals every shortest path between distant notes.
 
 Spherical Graph is designed as a stable spatial map: a finite layout operation
 computes positions, validates and saves one complete snapshot, and then stops.
@@ -78,25 +79,33 @@ and a reliable rename keeps the old position under the new path. Select
   commands.
 - Intrinsic, seam-free spherical layout with deterministic exact and sampled
   repulsion modes.
+- Multiresolution CPM community detection with consensus stability,
+  conductance filtering, disjoint continent selection, and explicit island
+  nodes. Continent membership is derived locally and never sent off-device.
+- Continent-aware Initialize/Renew placement in separated intrinsic caps;
+  Refresh reuses persisted continent identity, color, center, and cap where the
+  topology still matches.
 - Incremental Refresh with a new-node warm-up, graph-neighborhood affected set,
   hard-fixed remote nodes, anchors, and a displacement cap.
 - Transactional committed snapshot, schema migrations, stable camera state,
   and safe rename/prune handling.
 - Short-lived inline Web Worker with final-only position transfer plus a
   yielding main-thread compatibility fallback.
-- Three.js rendering with instanced tangent node discs, batched geodesic edges,
-  a muted dashed globe graticule, smoothly fading and zoom-scaling labels,
-  raycast picking, and invalidation-based frames.
+- Three.js rendering with a matte ocean, batched topology-derived land,
+  deterministic organic coastlines, islands, cartographic region labels,
+  instanced tangent city markers, batched geodesic roads, a restrained dashed
+  graticule, smoothly fading labels, responsive narrow-pane framing, and
+  invalidation-based frames.
 - Hover details, selection and neighbor emphasis, active-note emphasis,
   search/focus, open-note actions, camera reset, keyboard controls, and a
   translucent selection panel with clickable direct neighbors.
 - Offline route finding that highlights every shortest path between two notes
   over the existing links, including all equally short alternatives, explicit
-  green `Start` and amber `Dest` markers, and clickable route details.
+  `Start` and `Dest` markers, and clickable route details.
 - Intrinsically packed, render-only tag satellites on an adjustable, invisible
   concentric orbit. Their positions are anchored to the final locations of the
   notes that carry them.
-  Thin violet spherical spirals connect tags to the selected note, every note
+  Thin amber spherical spirals connect tags to the selected note, every note
   in the active shortest-path union, or every note carrying a selected tag.
   Satellites hidden behind the globe are culled geometrically.
 - Solid, transparent, and hidden sphere-surface modes.
@@ -114,21 +123,22 @@ and a reliable rename keeps the old position under the new path. Select
 | Zoom | Wheel or supported pinch gesture |
 | Inspect | Hover a node |
 | Select | Click a node |
-| Select a tag and show its links | Click a violet tag satellite |
+| Select a tag and show its links | Click an amber tag satellite |
 | Clear selection | Click empty canvas space or press `Escape` |
 | Open note | Double-click a node or press `Enter` on a selected search result |
 | Open in new tab | `Ctrl`/`Cmd` + click |
 | Open from selection details | Click a selected, linked, endpoint, or route note; hold `Ctrl`/`Cmd` for a new tab |
 | Hide or show selection details | Select the **Selection details** header |
 | Find and focus | Type in **Find a note…** and choose a result |
-| Find all shortest routes | Select an origin, open **Graph controls**, choose **Find route**, then select a destination |
-| Clear a route | Choose **Clear route** in **Graph controls** |
-| Hide categories without moving the map | Use **Filters** in **Graph controls** |
-| Change globe surface | Use **Appearance** in **Graph controls** |
-| Include pending changes | Choose **Refresh layout** in **Graph controls** |
-| Build a new map | Choose **Renew layout** in **Graph controls**, then confirm |
-| Stop a calculation | Choose **Cancel calculation** in **Graph controls** |
-| Restore view | Choose **Reset camera** in **Graph controls** |
+| Find all shortest routes | Select an origin, open **Map**, choose **Find route**, then select a destination |
+| Clear a route | Choose **Clear route** in **Map** |
+| Hide categories without moving the map | Use **Filters** in **Map** |
+| Hide or show geography | Toggle **Continents** in **Map → Appearance** |
+| Change globe surface | Use **Appearance** in **Map** |
+| Include pending changes | Choose **Refresh layout** in **Map** |
+| Build a new world | Choose **Renew layout** in **Map**, then confirm |
+| Stop a calculation | Choose **Cancel calculation** in **Map** |
+| Restore view | Choose **Reset camera** in **Map** |
 
 Dragging never changes a node position.
 
@@ -142,8 +152,8 @@ Dragging never changes a node position.
 
 ### Appearance
 
-- relative **Globe size** and degree scaling; a larger Globe value makes node
-  markers and the magenta selection frame smaller without moving the layout.
+- relative **Globe size** and degree scaling; a larger Globe value makes city
+  markers and the coral selection frame smaller without moving the layout.
   Initialize and Renew automatically choose this value from the vault's note
   count; Refresh preserves the current value
 - tag-orbit height as a percentage of the globe radius (30% by default), plus
@@ -151,6 +161,7 @@ Dragging never changes a node position.
 - edge opacity
 - labels, maximum pooled labels, and a zoom-in threshold (0–100%); note and
   tag labels fade and scale smoothly around that threshold
+- continent, coastline, island, and cartographic-label visibility
 - sphere surface mode and opacity
 - theme-following background
 - focus-animation duration
@@ -238,8 +249,9 @@ Spherical Graph is designed for private, offline vault use:
 - It reads Markdown file metadata, tags, and Obsidian's resolved-link index.
 - It never modifies note contents and never accesses files outside the vault.
 - It stores plugin settings, vault-relative note paths, normalized layout
-  positions, graph descriptors, and camera state through Obsidian's plugin-data
-  API. Tag satellites are derived at render time and are not persisted.
+  positions, graph descriptors, continent membership/centers, and camera state
+  through Obsidian's plugin-data API. Tag satellites are derived at render time
+  and are not persisted.
 - It performs no runtime network requests, telemetry, remote-code loading,
   advertising, or automatic plugin updates.
 - It requires no account, payment, external key, or remote service.
@@ -257,7 +269,8 @@ Spherical Graph is designed for private, offline vault use:
 - Desktop only; mobile interaction and resource behavior are not validated.
 - Arbitrary non-planar graphs can still have crossing edges on a sphere.
 - Labels are intentionally capped and fade with zoom, so not every visible
-  note is labelled at every camera distance.
+  note is labelled at every camera distance. Narrow panes can lower the
+  on-screen label budget further without changing the configured maximum.
 - Every tag has an instanced satellite marker, while visible tag text labels
   are capped at 96. Tags behind the globe are hidden; optional camera-axis
   fading can additionally protect the center of the view.
@@ -265,8 +278,9 @@ Spherical Graph is designed for private, offline vault use:
   overlap, their shared sections are intentionally drawn once.
 - Very large graphs use deterministic sampled global repulsion; this is an
   approximation rather than exact all-pairs force evaluation.
-- The plugin stores one committed layout snapshot and has no layout undo history,
-  edge bundling, community detection, ghost nodes, or image export.
+- The plugin stores one committed layout snapshot and has no layout undo
+  history, edge bundling, overlapping/fuzzy continent membership, manual
+  country editing, ghost nodes, or image export.
 - Actual GUI verification performed for a release is recorded in
   [VALIDATION.md](VALIDATION.md); automated checks do not imply a manual GUI
   pass.

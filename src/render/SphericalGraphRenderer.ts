@@ -35,6 +35,7 @@ import {
 	renderNodeKind,
 	type RenderFilterState,
 } from './renderFilters';
+import { verticalFovForAspect } from './cameraFraming';
 
 interface FocusAnimation {
 	startedAt: number;
@@ -57,7 +58,7 @@ export class SphericalGraphRenderer {
 	private readonly ownerWindow: Window;
 	private readonly canvas: HTMLCanvasElement;
 	private readonly scene = new Scene();
-	private readonly camera = new PerspectiveCamera(45, 1, 0.1, 200);
+	private readonly camera = new PerspectiveCamera(45, 1, 1, 100);
 	private readonly graphGroup = new Group();
 	private readonly webglRenderer: WebGLRenderer;
 	private readonly controls: ArcballControls;
@@ -212,6 +213,7 @@ export class SphericalGraphRenderer {
 	setSnapshot(snapshot: RenderGraphSnapshot): void {
 		this.assertUsable();
 		const prepared = prepareRenderSnapshot(snapshot);
+		this.sphereLayer.setSnapshot(prepared);
 		this.nodeLayer.setSnapshot(prepared);
 		this.edgeLayer.setSnapshot(prepared);
 		this.tagLayer.setSnapshot(prepared);
@@ -501,6 +503,7 @@ export class SphericalGraphRenderer {
 		this.webglRenderer.setPixelRatio(pixelRatio);
 		this.webglRenderer.setSize(width, height, false);
 		this.camera.aspect = width / height;
+		this.camera.fov = verticalFovForAspect(this.camera.aspect);
 		this.camera.updateProjectionMatrix();
 		this.requestRender();
 	}
@@ -648,7 +651,7 @@ export class SphericalGraphRenderer {
 		this.webglRenderer.setClearColor(
 			this.appearance.backgroundFollowsTheme
 				? this.theme.background
-				: '#02050b',
+				: '#07131f',
 			1,
 		);
 	}
@@ -662,25 +665,34 @@ export class SphericalGraphRenderer {
 			return value.length > 0 ? value : fallback;
 		};
 		return {
-			background: css('--sg-void', '#02050b'),
-			node: css('--sg-cyan', '#21e6ff'),
-			nodeAttachment: css('--sg-attachment', '#ffb547'),
-			nodeUnresolved: css('--sg-unresolved', '#70818d'),
-			nodeNeighbor: css('--sg-cyan-soft', '#73f4ff'),
-			nodeActive: css('--sg-amber', '#ffb547'),
-			nodeHovered: css('--sg-magenta', '#ff4fd8'),
-			nodeSelected: css('--sg-magenta', '#ff4fd8'),
-			nodeRoute: css('--sg-route', '#c8ff3d'),
-			nodeRouteStart: css('--sg-route-start', '#c8ff3d'),
-			nodeRouteEnd: css('--sg-route-end', '#ffb547'),
-			edge: css('--sg-cyan', '#21e6ff'),
-			edgeSelected: css('--sg-magenta', '#ff4fd8'),
-			edgeRoute: css('--sg-route', '#c8ff3d'),
-			graticule: css('--sg-graticule', '#284650'),
-			tag: css('--sg-tag', '#9d7bff'),
-			tagSoft: css('--sg-tag-soft', '#ded7ff'),
-			tagEdge: css('--sg-tag-edge', '#7364c7'),
-			sphere: css('--sg-panel', '#06101a'),
+			background: css('--sg-void', '#07131f'),
+			node: css('--sg-city', '#f1e4c4'),
+			nodeAttachment: css('--sg-attachment', '#b9a26c'),
+			nodeUnresolved: css('--sg-unresolved', '#7f8d91'),
+			nodeNeighbor: css('--sg-city-neighbor', '#fff2cf'),
+			nodeActive: css('--sg-active', '#7eb5c2'),
+			nodeHovered: css('--sg-selection', '#ff6b57'),
+			nodeSelected: css('--sg-selection', '#ff6b57'),
+			nodeRoute: css('--sg-route', '#f1bb55'),
+			nodeRouteStart: css('--sg-route-start', '#f1bb55'),
+			nodeRouteEnd: css('--sg-route-end', '#7eb5c2'),
+			edge: css('--sg-road', '#8da4ae'),
+			edgeSelected: css('--sg-selection', '#ff6b57'),
+			edgeRoute: css('--sg-route', '#f1bb55'),
+			graticule: css('--sg-graticule', '#516675'),
+			tag: css('--sg-tag', '#d49a43'),
+			tagSoft: css('--sg-tag-soft', '#ead2a0'),
+			tagEdge: css('--sg-tag-edge', '#a77937'),
+			sphere: css('--sg-ocean', '#0c2638'),
+			coast: css('--sg-coast', '#d4b572'),
+			land: [
+				css('--sg-land-1', '#66725a'),
+				css('--sg-land-2', '#a07a49'),
+				css('--sg-land-3', '#8d5947'),
+				css('--sg-land-4', '#536776'),
+				css('--sg-land-5', '#77756c'),
+				css('--sg-land-6', '#667f75'),
+			],
 		};
 	}
 

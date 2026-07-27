@@ -67,3 +67,34 @@
 - All markers and links are batched. Main-globe occlusion is always geometric,
   including in transparent and hidden surface modes. The stricter camera-axis
   fade is an optional appearance preference and defaults to disabled.
+
+## Continents and atlas direction
+
+- Community detection and geographic rendering are separate stages. A
+  deterministic multiresolution CPM consensus plus conductance/stability
+  filters chooses only sufficiently large, cohesive regions. Unassigned notes
+  remain islands.
+- Initialize and Renew allocate disjoint intrinsic spherical caps before the
+  ordinary force solve. Refresh matches communities to persisted geography and
+  retains prior centers wherever possible.
+- Surface ownership is exclusive. A dominance margin creates explicit sea
+  rather than allowing overlapping translucent landmasses. Mixed surface
+  triangles are clipped at the ownership boundary; centroid-only triangle
+  acceptance was rejected because it exposes a regular sawtooth coastline.
+- Land triangles are derived and batched at render time; persistence stores
+  semantic geography only. This keeps snapshots compact and lets themes recolor
+  the atlas without moving notes.
+- Coast detail and terrain texture are deterministic procedural functions of
+  the committed snapshot seed and sphere direction. No bitmap texture is
+  shipped, fetched, or persisted, and Refresh cannot randomly redraw the map.
+- The ocean is a slightly inset depth skin, while land, graticule, roads, and
+  cities occupy ordered logical surface layers. This avoids z-fighting without
+  changing the unit-vector layout or the visible globe radius.
+- Narrow panes preserve horizontal globe framing through a derived vertical
+  field of view and use a screen-area label budget. Neither behavior changes
+  the camera distance, saved layout, or the user's maximum-label setting.
+- The former cyberpunk direction is retired. The active style is an editorial
+  scientific atlas: matte navy ocean, muted earth land colors, sand
+  coastlines, irregular bays/headlands, gently mottled relief and contours,
+  ivory cities, coral selection, amber routes/tags, restrained typography, and
+  no additive glow.

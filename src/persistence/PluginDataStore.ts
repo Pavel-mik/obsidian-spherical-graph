@@ -247,6 +247,10 @@ export class PluginDataStore<TSettings> {
 					input.algorithmVersion ??
 					CURRENT_ALGORITHM_VERSION,
 				normTolerance: input.normTolerance,
+				previousGeography:
+					input.mode === "refresh"
+						? current?.geography
+						: undefined,
 			});
 			if (snapshot === undefined) {
 				return undefined;

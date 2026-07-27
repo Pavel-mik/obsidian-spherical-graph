@@ -47,7 +47,7 @@ export function presentLayoutStatus(
 			);
 		case 'fixed-clean':
 			return {
-				text: `${UI_STRINGS.upToDate} · ${model.nodeCount} nodes · ${model.edgeCount} edges${suffix}`,
+				text: `${UI_STRINGS.upToDate} · ${model.nodeCount} notes · ${model.edgeCount} links${continentSuffix(model)}${suffix}`,
 				tone: 'neutral',
 				isBusy: false,
 				canRefresh: false,
@@ -87,6 +87,13 @@ export function presentLayoutStatus(
 				canCancel: false,
 			};
 	}
+}
+
+function continentSuffix(model: ViewStatusModel): string {
+	const count = model.continentCount ?? 0;
+	return count > 0
+		? ` · ${count} ${count === 1 ? 'continent' : 'continents'}`
+		: '';
 }
 
 export class LayoutStatusPresenter {

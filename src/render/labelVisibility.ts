@@ -6,6 +6,8 @@ import {
 const LABEL_FADE_SPAN_PERCENT = 18;
 const LABEL_MIN_SCALE = 0.74;
 const LABEL_MAX_SCALE = 1.08;
+const LABEL_AREA_PER_ITEM = 15_000;
+const MIN_VIEWPORT_LABEL_BUDGET = 8;
 
 export interface LabelZoomVisuals {
 	readonly opacity: number;
@@ -48,4 +50,26 @@ export function labelZoomVisuals(
 		LABEL_MIN_SCALE +
 		(LABEL_MAX_SCALE - LABEL_MIN_SCALE) * (zoomPercent / 100);
 	return { opacity, scale, zoomPercent };
+}
+
+/**
+ * Prevents narrow Obsidian panes from becoming a wall of overlapping labels.
+ * User maxLabels remains the upper bound; this is a responsive display cap.
+ */
+export function labelBudgetForViewport(
+	width: number,
+	height: number,
+): number {
+	if (
+		!Number.isFinite(width) ||
+		!Number.isFinite(height) ||
+		width <= 0 ||
+		height <= 0
+	) {
+		return 0;
+	}
+	return Math.max(
+		MIN_VIEWPORT_LABEL_BUDGET,
+		Math.floor((width * height) / LABEL_AREA_PER_ITEM),
+	);
 }

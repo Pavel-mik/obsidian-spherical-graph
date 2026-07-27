@@ -33,6 +33,7 @@ export interface AppearanceSettings {
 	showLabels: boolean;
 	maxLabels: number;
 	labelZoomThresholdPercent: number;
+	showContinents: boolean;
 	surfaceMode: SurfaceMode;
 	surfaceOpacity: number;
 	backgroundFollowsTheme: boolean;
@@ -93,6 +94,7 @@ export const DEFAULT_SPHERICAL_GRAPH_SETTINGS: SphericalGraphSettings = {
 		showLabels: true,
 		maxLabels: 80,
 		labelZoomThresholdPercent: 50,
+		showContinents: true,
 		surfaceMode: 'solid',
 		surfaceOpacity: 0.92,
 		backgroundFollowsTheme: true,
@@ -349,6 +351,10 @@ export function parseSphericalGraphSettings(
 				appearance.labelZoomThresholdPercent,
 				defaults.appearance.labelZoomThresholdPercent,
 				{ min: 0, max: 100 },
+			),
+			showContinents: booleanValue(
+				appearance.showContinents,
+				defaults.appearance.showContinents,
 			),
 			surfaceMode: surfaceModeValue(
 				appearance.surfaceMode,

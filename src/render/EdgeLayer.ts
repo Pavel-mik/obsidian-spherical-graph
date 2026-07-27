@@ -1,5 +1,4 @@
 import {
-	AdditiveBlending,
 	BufferAttribute,
 	BufferGeometry,
 	Color,
@@ -135,7 +134,6 @@ export class EdgeLayer {
 		);
 		geometry.computeBoundingSphere();
 		const material = new LineBasicMaterial({
-			blending: AdditiveBlending,
 			vertexColors: true,
 			transparent: true,
 			opacity: this.appearance.edgeOpacity,
@@ -314,7 +312,6 @@ export class EdgeLayer {
 		const mesh = new Mesh(
 			geometry,
 			new MeshBasicMaterial({
-				blending: AdditiveBlending,
 				color,
 				depthTest: true,
 				depthWrite: false,

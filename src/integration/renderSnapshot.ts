@@ -141,6 +141,31 @@ export function createRenderGraphSnapshot(
 					...reconciled.positions,
 					...auxiliaryPositions,
 				]);
+	const geography =
+		snapshot.geography === undefined
+			? undefined
+			: {
+					continents: snapshot.geography.continents
+						.map((continent) => ({
+							id: continent.id,
+							label: continent.label,
+							nodeIndices: continent.nodeIds
+								.map((nodeId) => renderIndexById.get(nodeId))
+								.filter(
+									(index): index is number =>
+										index !== undefined,
+								),
+							center: continent.center,
+							capRadius: continent.capRadius,
+							colorIndex: continent.colorIndex,
+						}))
+						.filter((continent) => continent.nodeIndices.length > 0),
+					islandNodeIndices: snapshot.geography.islandNodeIds
+						.map((nodeId) => renderIndexById.get(nodeId))
+						.filter(
+							(index): index is number => index !== undefined,
+						),
+				};
 
 	return {
 		// Include the current topology so metadata-only updates still trigger an
@@ -149,6 +174,7 @@ export function createRenderGraphSnapshot(
 		nodes: Object.freeze(visibleNodes),
 		edges: Object.freeze(visibleEdges),
 		tags: Object.freeze(tags),
+		...(geography === undefined ? {} : { geography }),
 		positions,
 	};
 }

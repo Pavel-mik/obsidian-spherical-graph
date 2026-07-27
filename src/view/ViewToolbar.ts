@@ -19,6 +19,7 @@ export interface ViewToolbarCallbacks extends SearchControllerCallbacks {
 	onRouteToggle(): void;
 	onFiltersChange(filters: RenderFilterState): void;
 	onSurfaceModeChange(mode: SurfaceMode): void;
+	onContinentsVisibilityChange(visible: boolean): void;
 }
 
 export type RouteToolbarState =
@@ -55,6 +56,7 @@ export class ViewToolbar {
 	private readonly attachmentsToggle: FilterToggle;
 	private readonly existingFilesToggle: FilterToggle;
 	private readonly orphansToggle: FilterToggle;
+	private readonly continentsToggle: FilterToggle;
 	private readonly surfaceSelect: HTMLSelectElement;
 
 	constructor(
@@ -62,6 +64,7 @@ export class ViewToolbar {
 		private readonly callbacks: ViewToolbarCallbacks,
 		initialSurfaceMode: SurfaceMode,
 		initialFilters: RenderFilterState = DEFAULT_RENDER_FILTERS,
+		initialContinentsVisible = true,
 	) {
 		this.element = parent.createDiv();
 		this.element.className = 'spherical-graph-toolbar';
@@ -193,7 +196,13 @@ export class ViewToolbar {
 		);
 		this.surfaceSelect.value = initialSurfaceMode;
 		surfaceLabel.append(surfaceText, this.surfaceSelect);
-		appearance.append(surfaceLabel);
+		this.continentsToggle = createFilterToggle(
+			appearance,
+			VIEW_CONTROL_COPY.continents,
+			'continents',
+		);
+		this.continentsToggle.input.checked = initialContinentsVisible;
+		appearance.append(this.continentsToggle.label, surfaceLabel);
 
 		panel.append(actions, filters, appearance);
 		this.menu.append(summary, panel);
@@ -223,6 +232,10 @@ export class ViewToolbar {
 			this.onFiltersChange,
 		);
 		this.surfaceSelect.addEventListener('change', this.onSurfaceChange);
+		this.continentsToggle.input.addEventListener(
+			'change',
+			this.onContinentsChange,
+		);
 	}
 
 	setNodes(nodes: readonly RenderNode[]): void {
@@ -257,6 +270,10 @@ export class ViewToolbar {
 
 	setSurfaceMode(mode: SurfaceMode): void {
 		this.surfaceSelect.value = mode;
+	}
+
+	setContinentsVisible(visible: boolean): void {
+		this.continentsToggle.input.checked = visible;
 	}
 
 	setRouteState(state: RouteToolbarState): void {
@@ -327,6 +344,10 @@ export class ViewToolbar {
 			'change',
 			this.onSurfaceChange,
 		);
+		this.continentsToggle.input.removeEventListener(
+			'change',
+			this.onContinentsChange,
+		);
 		this.search.dispose();
 		this.element.remove();
 	}
@@ -386,6 +407,12 @@ export class ViewToolbar {
 		) {
 			this.callbacks.onSurfaceModeChange(value);
 		}
+	};
+
+	private readonly onContinentsChange = (): void => {
+		this.callbacks.onContinentsVisibilityChange(
+			this.continentsToggle.input.checked,
+		);
 	};
 }
 

@@ -33,6 +33,19 @@ function snapshot(): RenderGraphSnapshot {
 				nodeIndices: [1, 0, 1],
 			},
 		],
+		geography: {
+			continents: [
+				{
+					id: 'continent-a',
+					label: 'Archive',
+					nodeIndices: [0],
+					center: [1, 0, 0],
+					capRadius: 0.5,
+					colorIndex: 0,
+				},
+			],
+			islandNodeIndices: [1],
+		},
 		positions: new Float32Array([1, 0, 0, 0, 1, 0]),
 	};
 }
@@ -47,6 +60,8 @@ describe('prepareRenderSnapshot', () => {
 		expect(prepared.neighborsByIndex.get(0)?.has(1)).toBe(true);
 		expect(prepared.tagById.get('#shared')?.nodeIndices).toEqual([0, 1]);
 		expect(prepared.tagsByNodeIndex.get(1)?.[0]?.id).toBe('#shared');
+		expect(prepared.geography.continents[0]?.label).toBe('Archive');
+		expect(prepared.geography.islandNodeIndices).toEqual([1]);
 
 		prepared.positions[0] = 0;
 		expect(source.positions[0]).toBe(1);
@@ -72,5 +87,23 @@ describe('prepareRenderSnapshot', () => {
 			{ id: '#bad', label: '#bad', nodeIndices: [9] },
 		];
 		expect(() => prepareRenderSnapshot(badTag)).toThrow(/Tag #bad/u);
+
+		const overlappingGeography = snapshot();
+		overlappingGeography.geography = {
+			continents: [
+				{
+					id: 'overlap',
+					label: 'Overlap',
+					nodeIndices: [0],
+					center: [1, 0, 0],
+					capRadius: 0.5,
+					colorIndex: 0,
+				},
+			],
+			islandNodeIndices: [0],
+		};
+		expect(() => prepareRenderSnapshot(overlappingGeography)).toThrow(
+			/invalid island/u,
+		);
 	});
 });

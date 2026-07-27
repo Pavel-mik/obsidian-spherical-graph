@@ -65,6 +65,34 @@ describe('SphericalSolver full layout', () => {
 		}
 	});
 
+	it('keeps continent members inside their reserved intrinsic cap', () => {
+		const nodeCount = 12;
+		const result = new SphericalSolver({
+			...fullInput(nodeCount, 512, {
+				maxIterations: 18,
+				convergenceWindow: 30,
+			}),
+			geography: {
+				assignmentByNode: new Int32Array(nodeCount).fill(0),
+				centers: new Float32Array([1, 0, 0]),
+				capRadii: new Float32Array([0.42]),
+				boundaryStrength: 0.82,
+			},
+		}).solveSync();
+		expect(result.status).toBe('completed');
+		if (result.status !== 'completed') {
+			return;
+		}
+		for (let index = 0; index < nodeCount; index += 1) {
+			expect(
+				geodesicDistance(
+					[1, 0, 0],
+					readVec3(result.positions, index),
+				),
+			).toBeLessThanOrEqual(0.420_001);
+		}
+	});
+
 	it('is deterministic for the same graph, seed, and settings', () => {
 		const input = fullInput(24, 808, {
 			maxIterations: 80,

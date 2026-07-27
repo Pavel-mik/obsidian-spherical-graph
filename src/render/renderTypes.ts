@@ -25,11 +25,26 @@ export interface RenderTag {
 	nodeIndices: readonly number[];
 }
 
+export interface RenderContinent {
+	id: string;
+	label: string;
+	nodeIndices: readonly number[];
+	center: readonly [number, number, number];
+	capRadius: number;
+	colorIndex: number;
+}
+
+export interface RenderGeography {
+	continents: readonly RenderContinent[];
+	islandNodeIndices: readonly number[];
+}
+
 export interface RenderGraphSnapshot {
 	snapshotId: string;
 	nodes: readonly RenderNode[];
 	edges: readonly RenderEdge[];
 	tags?: readonly RenderTag[];
+	geography?: RenderGeography;
 	/**
 	 * Packed intrinsic unit vectors in node-index order. Render code copies this
 	 * buffer on an atomic swap and never writes to the caller's buffer.
@@ -69,6 +84,8 @@ export interface RenderTheme {
 	tagSoft: string;
 	tagEdge: string;
 	sphere: string;
+	coast: string;
+	land: readonly string[];
 }
 
 export interface RenderRouteState {
@@ -108,6 +125,7 @@ export interface PreparedRenderSnapshot {
 	neighborsByIndex: ReadonlyMap<number, ReadonlySet<number>>;
 	tagById: ReadonlyMap<string, RenderTag>;
 	tagsByNodeIndex: ReadonlyMap<number, readonly RenderTag[]>;
+	geography: RenderGeography;
 }
 
 const MAX_UNIT_NORM_ERROR = 1e-3;
@@ -205,6 +223,10 @@ export function prepareRenderSnapshot(
 			tagsByNodeIndex.get(nodeIndex)?.push(preparedTag);
 		}
 	}
+	const geography = prepareRenderGeography(
+		snapshot.geography,
+		nodeByIndex,
+	);
 
 	return {
 		snapshotId: snapshot.snapshotId,
@@ -217,5 +239,61 @@ export function prepareRenderSnapshot(
 		neighborsByIndex: neighbors,
 		tagById,
 		tagsByNodeIndex,
+		geography,
 	};
+}
+
+function prepareRenderGeography(
+	value: RenderGeography | undefined,
+	nodeByIndex: ReadonlyMap<number, RenderNode>,
+): RenderGeography {
+	if (value === undefined) {
+		return { continents: [], islandNodeIndices: [] };
+	}
+	const assigned = new Set<number>();
+	const continentIds = new Set<string>();
+	const continents: RenderContinent[] = [];
+	for (const continent of value.continents) {
+		const nodeIndices = [...new Set(continent.nodeIndices)].sort(
+			(left, right) => left - right,
+		);
+		const norm = Math.hypot(...continent.center);
+		if (
+			continent.id.length === 0 ||
+			continent.label.length === 0 ||
+			continentIds.has(continent.id) ||
+			nodeIndices.length === 0 ||
+			nodeIndices.some(
+				(index) => !nodeByIndex.has(index) || assigned.has(index),
+			) ||
+			!Number.isFinite(norm) ||
+			Math.abs(norm - 1) > MAX_UNIT_NORM_ERROR ||
+			!Number.isFinite(continent.capRadius) ||
+			continent.capRadius <= 0 ||
+			!Number.isSafeInteger(continent.colorIndex) ||
+			continent.colorIndex < 0
+		) {
+			throw new Error(`Invalid render continent: ${continent.id}.`);
+		}
+		continentIds.add(continent.id);
+		for (const nodeIndex of nodeIndices) {
+			assigned.add(nodeIndex);
+		}
+		continents.push({
+			...continent,
+			nodeIndices,
+			center: [...continent.center],
+		});
+	}
+	const islandNodeIndices = [...new Set(value.islandNodeIndices)].sort(
+		(left, right) => left - right,
+	);
+	if (
+		islandNodeIndices.some(
+			(index) => !nodeByIndex.has(index) || assigned.has(index),
+		)
+	) {
+		throw new Error('Render geography contains an invalid island.');
+	}
+	return { continents, islandNodeIndices };
 }

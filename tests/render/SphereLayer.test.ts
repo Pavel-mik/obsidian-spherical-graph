@@ -1,7 +1,16 @@
-import { Group, LineDashedMaterial, LineSegments } from 'three';
+import {
+	Group,
+	LineDashedMaterial,
+	LineSegments,
+	Mesh,
+	ShaderMaterial,
+} from 'three';
 import { describe, expect, it } from 'vitest';
 import { SphereLayer } from '../../src/render/SphereLayer';
-import type { RenderTheme } from '../../src/render/renderTypes';
+import {
+	prepareRenderSnapshot,
+	type RenderTheme,
+} from '../../src/render/renderTypes';
 import { DEFAULT_SETTINGS } from '../../src/settings/settings';
 
 const theme: RenderTheme = {
@@ -24,6 +33,8 @@ const theme: RenderTheme = {
 	tagSoft: '#ded7ff',
 	tagEdge: '#7364c7',
 	sphere: '#252a34',
+	coast: '#d4b572',
+	land: ['#66725a', '#a07a49'],
 };
 
 describe('SphereLayer graticule', () => {
@@ -51,6 +62,57 @@ describe('SphereLayer graticule', () => {
 		expect(
 			(grid as LineSegments).geometry.getAttribute('lineDistance'),
 		).toBeDefined();
+		layer.dispose();
+	});
+
+	it('uses offline procedural atlas materials for ocean and land', () => {
+		const group = new Group();
+		const layer = new SphereLayer(
+			group,
+			DEFAULT_SETTINGS.appearance,
+			theme,
+		);
+		layer.setSnapshot(
+			prepareRenderSnapshot({
+				snapshotId: 'procedural-atlas:test',
+				nodes: [
+					{
+						index: 0,
+						id: 'city',
+						path: 'City.md',
+						basename: 'City',
+						degree: 0,
+						weightedDegree: 0,
+					},
+				],
+				edges: [],
+				positions: new Float32Array([1, 0, 0]),
+				geography: {
+					continents: [
+						{
+							id: 'land',
+							label: 'Land',
+							nodeIndices: [0],
+							center: [1, 0, 0],
+							capRadius: 0.45,
+							colorIndex: 0,
+						},
+					],
+					islandNodeIndices: [],
+				},
+			}),
+		);
+		const ocean = group.getObjectByName('spherical-graph-surface');
+		const land = group.getObjectByName('spherical-graph-continents');
+		const coast = group.getObjectByName('spherical-graph-coastlines');
+		expect(ocean).toBeInstanceOf(Mesh);
+		expect(land).toBeInstanceOf(Mesh);
+		expect(coast).toBeInstanceOf(LineSegments);
+		expect((ocean as Mesh).material).toBeInstanceOf(ShaderMaterial);
+		expect((land as Mesh).material).toBeInstanceOf(ShaderMaterial);
+		expect(
+			((land as Mesh).material as ShaderMaterial).fragmentShader,
+		).toContain('atlasFbm');
 		layer.dispose();
 	});
 });

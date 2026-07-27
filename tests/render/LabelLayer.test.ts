@@ -3,7 +3,10 @@ import {
 	cameraZoomInPercent,
 	routeRoleForNode,
 } from '../../src/render/LabelLayer';
-import { labelZoomVisuals } from '../../src/render/labelVisibility';
+import {
+	labelBudgetForViewport,
+	labelZoomVisuals,
+} from '../../src/render/labelVisibility';
 
 describe('cameraZoomInPercent', () => {
 	it('maps the supported camera range to a stable zoom-in percentage', () => {
@@ -27,6 +30,22 @@ describe('labelZoomVisuals', () => {
 		expect(close.opacity).toBe(1);
 		expect(hidden.scale).toBeLessThan(fading.scale);
 		expect(fading.scale).toBeLessThan(close.scale);
+	});
+});
+
+describe('labelBudgetForViewport', () => {
+	it('keeps the configured maximum useful on a desktop viewport', () => {
+		expect(labelBudgetForViewport(1_536, 937)).toBeGreaterThan(80);
+	});
+
+	it('reduces label density in a narrow pane', () => {
+		expect(labelBudgetForViewport(430, 713)).toBe(20);
+		expect(labelBudgetForViewport(240, 400)).toBe(8);
+	});
+
+	it('returns no budget for invalid viewport dimensions', () => {
+		expect(labelBudgetForViewport(0, 400)).toBe(0);
+		expect(labelBudgetForViewport(Number.NaN, 400)).toBe(0);
 	});
 });
 

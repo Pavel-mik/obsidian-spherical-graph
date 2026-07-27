@@ -246,6 +246,81 @@ Verified:
 - the default globe, route, and open-filter scenarios produced no browser
   console warnings or errors.
 
+## Unreleased continental-atlas update validation
+
+On 2026-07-27 the complete local quality chain passed:
+
+- `npm run check`;
+- ESLint with zero warnings, TypeScript type checking, 39 test files / 184
+  tests, production build, and release-artifact validation;
+- focused geography/render regression tests for community detection,
+  continent-aware placement, solver cap constraints, land ownership,
+  responsive camera framing, and viewport label budgets.
+
+A disposable browser QA page imported the production
+`SphericalGraphRenderer` and release stylesheet directly. It rendered a
+deterministic 65-note, 98-link world with five continents, five islands, and
+seven tag satellites. The QA wrapper supplied only Obsidian-like DOM chrome
+and synthetic public graph data; it did not replace or mock the WebGL
+renderer. The generated desktop screenshots replaced the previous
+cyberpunk-era images in `docs/screenshots/`.
+
+Verified at 1536 × 1024:
+
+- the page identity was `Spherical Graph · Atlas QA`, one non-empty 1536 × 937
+  WebGL canvas loaded, five cartographic continent labels rendered, and there
+  was no horizontal page overflow;
+- matte ocean, disjoint earth-tone landmasses, explicit sea gaps, city discs,
+  subdued surface roads, coral selection, amber tags, and serif region labels
+  remained visually distinct;
+- opening **Map** exposed Actions, Filters, and Appearance with
+  **Continents** checked;
+- toggling **Continents** off changed the authoritative state to `false`,
+  removed every land/coast layer and all continent labels, and produced no
+  renderer error; toggling it on restored all five labels without a layout
+  operation;
+- the route scenario displayed amber route roads and explicit `Start` /
+  `Dest` labels while keeping coral selection roads visually separate;
+- no browser console warning/error, framework error overlay, or renderer error
+  was present after the complete interaction sequence.
+
+Verified at a 430 × 800 narrow-pane breakpoint:
+
+- the derived camera field of view kept the complete globe width in frame;
+- the responsive display budget reduced note-label density while leaving the
+  configured `maxLabels` value untouched;
+- the Selection details panel became a bottom drawer and the document had zero
+  horizontal overflow.
+
+The first browser render exposed depth-buffer interference between the ocean
+and land skins, visible as false triangular holes. The final implementation
+uses an inset ocean depth skin, ordered logical surface layers, and a tighter
+camera clip range. Repeated final renders showed continuous land with no
+console or WebGL errors. This harness validation supplements, but does not
+claim to replace, an actual Obsidian desktop GUI pass for the unreleased
+update.
+
+### Organic-coast visual follow-up
+
+The accepted 1536 × 1024 atlas concept and the production-renderer screenshot
+were compared side by side before this pass. A new disposable 65-note browser
+scene then exercised the production `SphericalGraphRenderer` at each geometry
+iteration. It exposed and resolved two visible approximation defects:
+
+1. low icosphere subdivision made the first coastline visibly polygonal;
+2. increasing subdivision alone revealed regular teeth because a complete
+   triangle inherited its centroid's land owner.
+
+The final renderer uses a finer source surface plus ownership-boundary
+clipping. Browser inspection confirmed continuous irregular coves and
+headlands, mottled land relief, subtle contour/grain detail, independent ocean
+texture, irregular islands, and a continuous sand coastline. **Map →
+Continents** was toggled off and on: land, coastlines, and region labels were
+removed and restored without a layout change. A page-level collector for
+`error`, unhandled rejection, and `console.error` remained empty through the
+complete interaction. Updated globe, route, and open-Map screenshots were
+written to `docs/screenshots/`.
+
 ## Not manually exercised
 
 These remain covered only partially by automated tests or by the manual plan:

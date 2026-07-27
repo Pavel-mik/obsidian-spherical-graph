@@ -161,6 +161,18 @@ function isRefreshPayload(value: unknown): boolean {
 	);
 }
 
+function isGeographyPayload(value: unknown): boolean {
+	if (!isRecord(value)) {
+		return false;
+	}
+	return (
+		value.assignmentByNode instanceof Int32Array &&
+		value.centers instanceof Float32Array &&
+		value.capRadii instanceof Float32Array &&
+		isFiniteNumber(value.boundaryStrength)
+	);
+}
+
 function isRunPayload(value: unknown): value is LayoutRunPayload {
 	if (!isRecord(value)) {
 		return false;
@@ -172,6 +184,8 @@ function isRunPayload(value: unknown): value is LayoutRunPayload {
 		(value.movableMask === undefined ||
 			value.movableMask instanceof Uint8Array) &&
 		(value.refresh === undefined || isRefreshPayload(value.refresh)) &&
+		(value.geography === undefined ||
+			isGeographyPayload(value.geography)) &&
 		(value.settings === undefined || isRecord(value.settings))
 	);
 }
@@ -283,6 +297,11 @@ export function getRunRequestTransferables(
 		add(request.payload.refresh.anchorPositions);
 		add(request.payload.refresh.anchorStrengths);
 		add(request.payload.refresh.maxAnchorDistances);
+	}
+	if (request.payload.geography !== undefined) {
+		add(request.payload.geography.assignmentByNode);
+		add(request.payload.geography.centers);
+		add(request.payload.geography.capRadii);
 	}
 	return [...buffers];
 }

@@ -72,12 +72,44 @@ is normalized and velocity is reprojected into the new tangent plane. The
 integrator sums tangent forces, applies damping, caps angular velocity, applies
 the exponential map, and then applies any Refresh anchor cone.
 
+## Topology-derived continents
+
+The note graph is partitioned before Initialize or Renew by a deterministic
+multiresolution Constant Potts Model (CPM) local-moving optimizer. It runs
+several seeded orders at three resolutions. A real graph edge becomes part of
+the consensus graph only when its endpoints share a community in a majority of
+runs. Connected consensus components are then scored by:
+
+- minimum node count;
+- mean co-assignment stability of internal edges;
+- conductance (boundary weight divided by incident volume); and
+- a bounded size signal.
+
+Only large, stable, low-conductance components become continents. Selection is
+disjoint by construction and capped to seven landmasses. Rejected or
+undersized nodes remain islands; the algorithm never forces total coverage.
+
+Each accepted community receives a deterministic center from a
+Fibonacci-sphere packing and an intrinsic angular cap sized by membership.
+During Refresh, Jaccard matching against the committed geography preserves a
+continent's ID, label, color, center, and cap when membership remains
+substantially the same.
+
+The solver receives only compact `Int32Array` assignments, center vectors, and
+cap radii. A soft tangent boundary force acts near a cap edge, and Initialize /
+Renew hard-clamp members to their intrinsic cap after each exponential-map
+step. Existing Refresh nodes remain governed by the stricter mental-map anchor
+and displacement cap; new nodes use the geographic cap.
+
 ## Deterministic initialization
 
-Initialize and Renew assign deterministically permuted Fibonacci-sphere points
-to the sorted node order. A seed-derived tangent jitter breaks symmetries.
-Changing a Renew generation changes the permutation and jitter, not merely a
-global rotation.
+Initialize and Renew place accepted communities as deterministic tangent-disc
+packings inside their separated spherical caps. Islands choose low-occupancy
+Fibonacci candidates that maximize sea distance from continents and nearby
+islands. When no continent is detected, the original globally distributed
+permuted Fibonacci initialization is used. Changing a Renew generation changes
+center assignment, tangent packing, island candidates, and jitter, not merely
+a global rotation.
 
 Refresh begins existing nodes exactly at their committed unit vectors. A new
 node with committed neighbors begins near their weighted spherical mean plus a
@@ -188,6 +220,28 @@ Close points use normalized linear interpolation. Antipodes use a deterministic
 hashed orthogonal plane. Every sampled point is normalized and scaled to
 \(R+\varepsilon\), so edges follow the surface instead of cutting through the
 sphere. Segment count adapts to angular length.
+
+### Land and sea
+
+The saved geography is rendered on a finely subdivided icosphere. Every
+continent has a deterministic single-valued radial coast envelope composed of
+anisotropy, several angular harmonics, spherical noise, and localized coves and
+headlands. The lower envelope remains inside the cap's layout safety margin,
+so the more detailed outline does not move notes or strand an outer city.
+
+A dominance margin assigns at most one owner and deliberately leaves sea where
+two land potentials compete. Mixed land/sea triangles are clipped by bisection
+at the ownership boundary instead of being accepted wholesale from their
+centroid. The same intersections form the coastline batch, eliminating regular
+mesh teeth while retaining a deterministic irregular silhouette. Explicit and
+decorative shelf islands are emitted as small irregular tangent patches in the
+same batched land mesh.
+
+Ocean and land use separate offline procedural shaders. Seamless spherical
+multi-octave noise supplies subtle water depth, terrain relief, strata, fine
+grain, and restrained contour traces without image assets or runtime network
+access. Ocean, land, coastlines, roads, markers, and graticule still have
+separate materials, so geographic structure cannot be confused with links.
 
 ## Convergence and final validation
 

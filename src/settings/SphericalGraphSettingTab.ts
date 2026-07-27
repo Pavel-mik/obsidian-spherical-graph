@@ -55,6 +55,9 @@ const COPY = {
 	labelZoomThreshold: 'Label zoom-in threshold',
 	labelZoomThresholdDescription:
 		'Labels appear after this zoom level. 0% always shows them; 100% requires the closest zoom.',
+	showContinents: 'Show continents',
+	showContinentsDescription:
+		'Render topology-derived land, coastlines, islands, and map labels. This never moves the fixed layout.',
 	surfaceMode: 'Sphere surface',
 	surfaceOpacity: 'Surface opacity',
 	followTheme: 'Background follows theme',
@@ -194,6 +197,19 @@ export class SphericalGraphSettingTab extends PluginSettingTab {
 					next.appearance.tagOrbitHeightPercent = value;
 				}),
 		);
+
+		new Setting(this.containerEl)
+			.setName(COPY.showContinents)
+			.setDesc(COPY.showContinentsDescription)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(settings.appearance.showContinents)
+					.onChange((value) =>
+						this.commit(settings, 'appearance', (next) => {
+							next.appearance.showContinents = value;
+						}),
+					),
+			);
 
 		new Setting(this.containerEl)
 			.setName(COPY.tagViewProtection)

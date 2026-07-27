@@ -180,6 +180,9 @@ export class SphericalGraphView extends ItemView {
 				onSurfaceModeChange: (mode) => {
 					this.changeSurfaceMode(mode);
 				},
+				onContinentsVisibilityChange: (visible) => {
+					this.changeContinentsVisibility(visible);
+				},
 				onSelect: (node) => {
 					this.handleNodeSelection(node, true);
 				},
@@ -197,6 +200,7 @@ export class SphericalGraphView extends ItemView {
 			},
 			this.currentSettings.appearance.surfaceMode,
 			this.displayFilters,
+			this.currentSettings.appearance.showContinents,
 		);
 		this.root.append(this.stage);
 
@@ -332,6 +336,9 @@ export class SphericalGraphView extends ItemView {
 		this.renderer?.updateAppearance(this.currentSettings.appearance);
 		this.toolbar?.setSurfaceMode(
 			this.currentSettings.appearance.surfaceMode,
+		);
+		this.toolbar?.setContinentsVisible(
+			this.currentSettings.appearance.showContinents,
 		);
 	}
 
@@ -813,6 +820,17 @@ export class SphericalGraphView extends ItemView {
 		this.renderer?.setSurfaceMode(mode);
 		this.invoke(() =>
 			this.options.callbacks.onSurfaceModeChange(mode),
+		);
+	}
+
+	private changeContinentsVisibility(visible: boolean): void {
+		this.currentSettings = cloneSphericalGraphSettings(
+			this.currentSettings,
+		);
+		this.currentSettings.appearance.showContinents = visible;
+		this.renderer?.updateAppearance(this.currentSettings.appearance);
+		this.invoke(() =>
+			this.options.callbacks.onContinentsVisibilityChange(visible),
 		);
 	}
 

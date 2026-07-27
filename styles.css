@@ -1564,3 +1564,426 @@
 		animation-iteration-count: 1 !important;
 	}
 }
+
+/* Continental atlas visual system */
+.spherical-graph-view {
+	--sg-void: #07131f;
+	--sg-ocean: #0c2638;
+	--sg-panel: #0b1b28;
+	--sg-panel-raised: #102332;
+	--sg-panel-hover: #172e3d;
+	--sg-city: #f1e4c4;
+	--sg-city-neighbor: #fff2cf;
+	--sg-selection: #ff6b57;
+	--sg-route: #f1bb55;
+	--sg-route-start: #f1bb55;
+	--sg-route-end: #7eb5c2;
+	--sg-road: #8da4ae;
+	--sg-graticule: #516675;
+	--sg-tag: #d49a43;
+	--sg-tag-soft: #ead2a0;
+	--sg-tag-edge: #a77937;
+	--sg-active: #7eb5c2;
+	--sg-attachment: #b9a26c;
+	--sg-unresolved: #7f8d91;
+	--sg-text: #edf0e8;
+	--sg-muted: #9aa9ad;
+	--sg-danger: #dd7565;
+	--sg-coast: #d4b572;
+	--sg-land-1: #66725a;
+	--sg-land-2: #a07a49;
+	--sg-land-3: #8d5947;
+	--sg-land-4: #536776;
+	--sg-land-5: #77756c;
+	--sg-land-6: #667f75;
+	--sg-line: rgba(129, 150, 159, 0.42);
+	/* Compatibility aliases for earlier component rules. */
+	--sg-cyan: var(--sg-road);
+	--sg-cyan-soft: var(--sg-city);
+	--sg-cyan-dim: #516675;
+	--sg-magenta: var(--sg-selection);
+	--sg-amber: var(--sg-tag);
+	--sg-grid: transparent;
+	--sg-mono: var(--font-interface), "Segoe UI", sans-serif;
+	background: var(--sg-void);
+	color: var(--sg-text);
+	font-family: var(--font-interface), "Segoe UI", sans-serif;
+}
+
+.theme-light .spherical-graph-view {
+	--sg-void: #07131f;
+	--sg-panel: #0b1b28;
+	--sg-panel-raised: #102332;
+	--sg-muted: #a9b5b7;
+}
+
+.spherical-graph-toolbar {
+	gap: 10px;
+	padding: 9px 12px;
+	border-bottom-color: rgba(129, 150, 159, 0.32);
+	background: #0a1925;
+	box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2);
+	color: var(--sg-text);
+	font-family: var(--font-interface), "Segoe UI", sans-serif;
+	font-size: 12px;
+	letter-spacing: 0;
+}
+
+.spherical-graph-toolbar::after {
+	display: none;
+}
+
+.spherical-graph-controls-summary {
+	height: var(--sg-control-height);
+	padding: 0 12px;
+	border-color: rgba(129, 150, 159, 0.46);
+	border-radius: 4px;
+	background: var(--sg-panel-raised);
+	box-shadow: none;
+	clip-path: none;
+	color: var(--sg-text);
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.spherical-graph-controls-summary::before {
+	width: 14px;
+	height: 1px;
+	border: 0;
+	background: currentColor;
+	box-shadow:
+		0 5px currentColor,
+		0 10px currentColor;
+	opacity: 0.76;
+}
+
+.spherical-graph-controls-menu[open] .spherical-graph-controls-summary,
+.spherical-graph-controls-summary:hover,
+.spherical-graph-controls-summary:focus-visible {
+	border-color: var(--sg-coast);
+	box-shadow: 0 0 0 2px rgba(212, 181, 114, 0.16);
+	color: var(--sg-text);
+}
+
+.spherical-graph-controls-panel {
+	gap: 14px;
+	padding: 14px;
+	border-color: rgba(129, 150, 159, 0.5);
+	border-radius: 5px;
+	background: #0b1b28;
+	box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+	backdrop-filter: none;
+	clip-path: none;
+}
+
+.spherical-graph-controls-section + .spherical-graph-controls-section {
+	border-block-start-color: rgba(129, 150, 159, 0.24);
+}
+
+.spherical-graph-controls-heading,
+.spherical-graph-inspector-section-label,
+.spherical-graph-inspector-eyebrow,
+.spherical-graph-inspector-list-label {
+	color: var(--sg-coast);
+	font-family: var(--font-interface), "Segoe UI", sans-serif;
+	font-size: 10px;
+	font-weight: 650;
+	letter-spacing: 0.08em;
+}
+
+.spherical-graph-filter-toggle {
+	border-color: rgba(129, 150, 159, 0.38);
+	border-radius: 3px;
+	background: #102332;
+	color: var(--sg-muted);
+}
+
+.spherical-graph-filter-toggle:hover {
+	border-color: rgba(212, 181, 114, 0.7);
+	background: #172e3d;
+	color: var(--sg-text);
+}
+
+.spherical-graph-filter-indicator {
+	border-color: rgba(129, 150, 159, 0.7);
+	border-radius: 2px;
+	background: transparent;
+	box-shadow: none;
+}
+
+.spherical-graph-filter-checkbox:checked + .spherical-graph-filter-indicator {
+	border-color: var(--sg-coast);
+	background: var(--sg-coast);
+	box-shadow: none;
+}
+
+.spherical-graph-filter-checkbox:focus-visible + .spherical-graph-filter-indicator {
+	box-shadow: 0 0 0 2px rgba(212, 181, 114, 0.22);
+}
+
+.spherical-graph-toolbar-button,
+.spherical-graph-surface-select,
+.spherical-graph-search-input {
+	border-color: rgba(129, 150, 159, 0.42);
+	border-radius: 4px;
+	background: var(--sg-panel-raised);
+	box-shadow: none;
+	clip-path: none;
+	color: var(--sg-text);
+	font-family: var(--font-interface), "Segoe UI", sans-serif;
+	font-size: 12px;
+	font-weight: 520;
+	letter-spacing: 0;
+}
+
+.spherical-graph-toolbar-button:hover,
+.spherical-graph-toolbar-button:focus-visible,
+.spherical-graph-surface-select:hover,
+.spherical-graph-surface-select:focus-visible,
+.spherical-graph-search-input:hover,
+.spherical-graph-search-input:focus-visible {
+	border-color: var(--sg-coast);
+	background: #172e3d;
+	box-shadow: 0 0 0 2px rgba(212, 181, 114, 0.14);
+	color: var(--sg-text);
+}
+
+.spherical-graph-action-renew {
+	border-color: rgba(255, 107, 87, 0.52);
+	color: #f6b0a6;
+}
+
+.spherical-graph-action-route[data-route-state]:not([data-route-state="idle"]) {
+	border-color: var(--sg-route);
+	background: #2a2b24;
+	box-shadow: none;
+	color: #f5d697;
+}
+
+.spherical-graph-search::before,
+.spherical-graph-search::after {
+	display: none;
+}
+
+.spherical-graph-search-results {
+	border-color: rgba(129, 150, 159, 0.48);
+	border-radius: 4px;
+	background: #0b1b28;
+	box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
+	backdrop-filter: none;
+}
+
+.spherical-graph-search-result {
+	border-radius: 2px;
+	color: var(--sg-text);
+	font-family: var(--font-interface), "Segoe UI", sans-serif;
+}
+
+.spherical-graph-search-result:hover,
+.spherical-graph-search-result[aria-selected="true"] {
+	background: #172e3d;
+	color: var(--sg-text);
+}
+
+.spherical-graph-stage {
+	background: var(--sg-void);
+}
+
+.spherical-graph-stage::before,
+.spherical-graph-stage::after {
+	display: none;
+}
+
+.spherical-graph-label {
+	padding: 2px 5px;
+	border: 1px solid rgba(7, 19, 31, 0.64);
+	border-radius: 3px;
+	background: rgba(7, 19, 31, 0.78);
+	box-shadow: none;
+	color: var(--sg-text);
+	font-family: var(--font-interface), "Segoe UI", sans-serif;
+	font-size: 11px;
+	font-weight: 560;
+	letter-spacing: 0;
+	text-shadow: 0 1px 2px #07131f;
+}
+
+.spherical-graph-label[data-selected="true"],
+.spherical-graph-label[data-hovered="true"] {
+	border-color: var(--sg-selection);
+	background: rgba(55, 29, 31, 0.92);
+	box-shadow: none;
+	color: #ffd8d2;
+}
+
+.spherical-graph-label[data-route="true"] {
+	border-color: var(--sg-route);
+	background: rgba(48, 42, 25, 0.9);
+	color: #f8dfab;
+}
+
+.spherical-graph-continent-label {
+	position: absolute;
+	top: 0;
+	left: 0;
+	z-index: 1;
+	color: rgba(245, 229, 191, 0.86);
+	font-family: Georgia, "Times New Roman", serif;
+	font-size: clamp(12px, 1.05vw, 17px);
+	font-weight: 600;
+	letter-spacing: 0.16em;
+	line-height: 1;
+	text-transform: uppercase;
+	text-shadow:
+		0 1px 1px rgba(7, 19, 31, 0.9),
+		0 0 5px rgba(7, 19, 31, 0.68);
+	white-space: nowrap;
+	transform-origin: center;
+	pointer-events: none;
+}
+
+.spherical-graph-tag-label {
+	border-color: rgba(212, 154, 67, 0.48);
+	border-radius: 3px;
+	background: rgba(35, 29, 20, 0.84);
+	box-shadow: none;
+	clip-path: none;
+	color: var(--sg-tag-soft);
+	font-family: var(--font-interface), "Segoe UI", sans-serif;
+	font-weight: 550;
+	text-shadow: 0 1px 2px #07131f;
+}
+
+.spherical-graph-tag-label[data-connected="true"],
+.spherical-graph-tag-label[data-selected="true"] {
+	border-color: var(--sg-tag);
+	background: #302719;
+	box-shadow: inset 2px 0 0 var(--sg-tag);
+	color: #f2ddb0;
+}
+
+.spherical-graph-tag-label[data-selected="true"] {
+	border-color: var(--sg-tag-soft);
+	box-shadow: inset 2px 0 0 var(--sg-tag-soft);
+}
+
+.spherical-graph-label[data-route-role="start"],
+.spherical-graph-label[data-route-role="destination"] {
+	background: rgba(48, 42, 25, 0.92);
+	color: #f8dfab;
+	text-shadow: 0 1px 2px #07131f;
+}
+
+.spherical-graph-inspector {
+	border-color: rgba(129, 150, 159, 0.42);
+	border-radius: 4px;
+	background: rgba(10, 25, 37, 0.95);
+	box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3);
+	backdrop-filter: none;
+	clip-path: none;
+	color: var(--sg-text);
+	font-family: var(--font-interface), "Segoe UI", sans-serif;
+}
+
+.spherical-graph-inspector::before {
+	display: none;
+}
+
+.spherical-graph-inspector-header,
+.spherical-graph-inspector-section,
+.spherical-graph-inspector-link {
+	border-color: rgba(129, 150, 159, 0.24);
+}
+
+.spherical-graph-inspector-header:hover,
+.spherical-graph-inspector-link:hover,
+.spherical-graph-inspector-link:focus-visible {
+	background: #172e3d;
+	box-shadow: none;
+}
+
+.spherical-graph-inspector-primary,
+.spherical-graph-inspector-link-name {
+	color: var(--sg-text);
+}
+
+.spherical-graph-inspector-tag-marker {
+	background: var(--sg-tag);
+	box-shadow: none;
+}
+
+.spherical-graph-status-rail {
+	border-top-color: rgba(129, 150, 159, 0.3);
+	background: #0a1925;
+	box-shadow: none;
+	color: var(--sg-muted);
+	font-family: var(--font-interface), "Segoe UI", sans-serif;
+	font-size: 12px;
+	letter-spacing: 0;
+}
+
+.spherical-graph-status-rail::before {
+	border-color: var(--sg-coast);
+	background: var(--sg-coast);
+	box-shadow: none;
+}
+
+.spherical-graph-status::before {
+	background: var(--sg-coast);
+	box-shadow: none;
+}
+
+.spherical-graph-status[data-tone="pending"]::before {
+	background: var(--sg-route);
+	box-shadow: none;
+}
+
+.spherical-graph-status[data-tone="error"]::before {
+	background: var(--sg-danger);
+	box-shadow: none;
+}
+
+.spherical-graph-status-progress {
+	accent-color: var(--sg-coast);
+}
+
+.spherical-graph-state-overlay,
+.spherical-graph-tooltip,
+.spherical-graph-renew-modal {
+	border-color: rgba(129, 150, 159, 0.5);
+	border-radius: 4px;
+	background: #0b1b28;
+	box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+	clip-path: none;
+	color: var(--sg-text);
+	font-family: var(--font-interface), "Segoe UI", sans-serif;
+}
+
+.spherical-graph-search-result[data-active="true"],
+.spherical-graph-search-result[aria-selected="true"] {
+	border-color: rgba(212, 181, 114, 0.6);
+	background: #172e3d;
+	color: var(--sg-text);
+}
+
+.modal:has(.spherical-graph-renew-modal) {
+	--sg-panel: #0b1b28;
+	--sg-panel-raised: #102332;
+	--sg-cyan: #d4b572;
+	--sg-cyan-soft: #edf0e8;
+	--sg-cyan-dim: #516675;
+	--sg-magenta: #ff6b57;
+	--sg-text: #edf0e8;
+	--sg-muted: #9aa9ad;
+	border-color: rgba(129, 150, 159, 0.5);
+	border-radius: 4px;
+	background: #0b1b28;
+	box-shadow: 0 18px 64px rgba(0, 0, 0, 0.55);
+	clip-path: none;
+}
+
+.spherical-graph-settings-advanced {
+	border-color: var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-secondary);
+}

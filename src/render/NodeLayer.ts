@@ -1,5 +1,4 @@
 import {
-	AdditiveBlending,
 	BufferAttribute,
 	BufferGeometry,
 	CircleGeometry,
@@ -109,9 +108,8 @@ export class NodeLayer {
 		const highlightMesh = new InstancedMesh(
 			new RingGeometry(0.82, 1, NODE_DISC_SEGMENTS),
 			new MeshBasicMaterial({
-				blending: AdditiveBlending,
 				transparent: true,
-				opacity: 0.92,
+				opacity: 0.78,
 				depthTest: true,
 				depthWrite: false,
 				side: DoubleSide,
@@ -126,11 +124,10 @@ export class NodeLayer {
 		this.group.add(highlightMesh);
 
 		const reticleMaterial = new LineBasicMaterial({
-			blending: AdditiveBlending,
 			color: this.theme.nodeSelected,
 			depthTest: true,
 			depthWrite: false,
-			opacity: 0.98,
+			opacity: 0.92,
 			toneMapped: false,
 			transparent: true,
 		});
@@ -478,7 +475,6 @@ export function nodeMarkerScaleForGlobe(globeSize: number): number {
 
 function createNodeMaterial(glow: boolean): ShaderMaterial {
 	return new ShaderMaterial({
-		...(glow ? { blending: AdditiveBlending } : {}),
 		depthTest: true,
 		depthWrite: !glow,
 		side: DoubleSide,
@@ -517,7 +513,7 @@ function createNodeMaterial(glow: boolean): ShaderMaterial {
 					);
 					gl_FragColor = vec4(
 						vInstanceColor,
-						radialFade * limbFade * 0.16
+						radialFade * limbFade * 0.055
 					);
 				}
 			`

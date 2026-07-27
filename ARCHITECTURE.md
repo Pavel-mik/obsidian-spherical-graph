@@ -10,7 +10,8 @@ flowchart LR
     O --> T["GraphChangeTracker"]
     T --> D["Graph diff + pending signature"]
     G --> D
-    D --> L["LayoutLifecycleController"]
+    D --> C["Continental geography<br/>CPM consensus + conductance"]
+    C --> L["LayoutLifecycleController"]
     P["PluginDataStore<br/>committed snapshot"] <--> L
     L --> W["Short-lived worker<br/>or yielding fallback"]
     W -->|"progress only"| L
@@ -30,14 +31,20 @@ flowchart LR
   every unweighted shortest route. It has no dependency on the solver.
 - `src/geometry` contains pure vector, geodesic, exponential-map, SLERP,
   geodesic-arc, hash/PRNG, and proper-rotation alignment functions.
+- `src/geography` detects stable low-conductance communities, selects disjoint
+  continents, preserves matched geographic identity during Refresh, allocates
+  separated intrinsic caps, initializes land and island nodes, and creates the
+  persisted geography descriptor.
 - `src/layout` owns initialization, force evaluation, exact and sampled
   repulsion, Refresh planning and anchoring, the batch solver, worker protocol,
   worker entry point, and the lifecycle state machine.
 - `src/persistence` validates untrusted stored data, migrates schema versions,
   reconciles current paths with a committed snapshot, and serializes atomic
   layout commits separately from debounced settings/camera writes.
-- `src/render` owns Three.js resources: the sphere, one instanced node layer,
-  a muted dashed graticule, batched geodesic edges, selected/route ribbons,
+- `src/render` owns Three.js resources: the ocean sphere, a batched icosphere
+  land mesh, deterministic coastlines and island patches, cartographic region
+  labels, one instanced node layer, a muted dashed graticule, batched geodesic
+  edges, selected/route ribbons,
   endpoint rings, an instanced tag-satellite layer with batched spiral links,
   bounded zoom-gated labels, picking, camera controls, theme and resize
   handling, and deterministic disposal.
@@ -85,9 +92,9 @@ have no active worker or solver.
 
 The renderer and data store reference only the last committed snapshot.
 Starting Initialize, Refresh, or Renew creates independent typed arrays:
-positions, velocities, forces, graph endpoints and weights, movable masks, and
-optional anchors. These working arrays are never written to persistence or
-passed to the renderer.
+positions, velocities, forces, graph endpoints and weights, movable masks,
+geographic assignments/caps, and optional anchors. These working arrays are
+never written to persistence or passed to the renderer.
 
 Progress contains scalar diagnostics. A `completed` message contains the first
 and only position buffer transfer. The main thread validates:
@@ -150,7 +157,19 @@ topology, resize, theme, or focus animation schedule a frame. There is no
 permanent 60 fps loop in a fixed state.
 
 The WebGL graticule is a low-contrast dashed `LineDashedMaterial`; document
-links remain brighter continuous geodesic lines. Route endpoints use separate
+links remain continuous geodesic roads with a separate material. `SphereLayer`
+derives a single-owner land mesh and coastline batch from the committed
+geography. `landGeometry` evaluates deterministic multi-scale radial coast
+profiles and clips mixed icosphere triangles at the exact ownership transition,
+so detailed bays and headlands are smooth rather than aligned to mesh cells.
+The land and ocean `ShaderMaterial`s generate their atlas texture from local
+sphere direction, requiring no texture files or runtime I/O. The ocean depth
+skin sits slightly inside the logical globe so land, graticule, roads, and
+cities retain stable depth ordering across GPU depth buffers. Ocean and
+geographic materials remain independent of graph links.
+The camera widens its vertical field of view in portrait-like panes to preserve
+horizontal globe framing, while the label layer applies a viewport-area display
+budget below the user-configured maximum. Route endpoints use separate
 start/destination colors and double tangent rings. The DOM
 `SelectionDetailsPanel` is a sibling overlay over the same stage and opens
 notes only through the view callback supplied by `main.ts`.
@@ -178,9 +197,10 @@ materials and WebGL state, terminates the worker, and revokes its URL.
 
 The stored envelope contains schema version, validated settings, one committed
 layout, and camera state. A committed layout contains its algorithm version,
-graph signature/descriptor, path-to-unit-vector map, mode, completion time,
+graph signature/descriptor, path-to-unit-vector map, topology-derived
+continents, island IDs, geographic centers/caps/colors, mode, completion time,
 effective seed, and committed Renew generation. It never stores velocity,
-temperature, working buffers, or a resumable solver.
+temperature, land triangles, working buffers, or a resumable solver.
 
 Settings and camera changes are debounced and merged independently. They cannot
 reconstruct or mutate the position map. A successful Renew increments

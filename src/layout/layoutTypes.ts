@@ -1,3 +1,5 @@
+import type { GeographySolverConstraints } from '../geography';
+
 export type LayoutOperationMode = 'initialize' | 'refresh' | 'renew';
 
 export type LayoutPhase =
@@ -85,6 +87,7 @@ export interface LayoutSolverInput {
 	readonly edgeWeights: Float32Array;
 	readonly movableMask?: Uint8Array;
 	readonly refresh?: RefreshConstraints;
+	readonly geography?: GeographySolverConstraints;
 	readonly settings?: Partial<SolverSettings>;
 }
 

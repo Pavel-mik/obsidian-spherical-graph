@@ -62,6 +62,7 @@ export interface ViewStatusModel {
 	state: ViewLifecycleState;
 	nodeCount: number;
 	edgeCount: number;
+	continentCount?: number;
 	progress?: ViewLayoutProgress;
 	compatibilityMode?: boolean;
 	transientNotice?: 'cancelled';
@@ -75,6 +76,7 @@ export interface SphericalGraphViewCallbacks {
 	onOpenFile(node: RenderNode, openInNewLeaf: boolean): Promise<void> | void;
 	onCameraChange(camera: CameraState): Promise<void> | void;
 	onSurfaceModeChange(mode: SurfaceMode): Promise<void> | void;
+	onContinentsVisibilityChange(visible: boolean): Promise<void> | void;
 	onClose(): Promise<void> | void;
 }
 

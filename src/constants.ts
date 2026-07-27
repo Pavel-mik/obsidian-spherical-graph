@@ -3,7 +3,7 @@ export const PLUGIN_NAME = 'Spherical Graph';
 export const VIEW_TYPE = 'spherical-graph-view';
 
 export const SCHEMA_VERSION = 2;
-export const ALGORITHM_VERSION = 1;
+export const ALGORITHM_VERSION = 2;
 
 export const SPHERE_RADIUS = 10;
 export const NODE_SURFACE_LIFT = 0.08;

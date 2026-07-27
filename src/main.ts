@@ -234,6 +234,8 @@ export default class SphericalGraphPlugin extends Plugin {
 				},
 				onSurfaceModeChange: (mode) =>
 					this.changeSurfaceMode(mode),
+				onContinentsVisibilityChange: (visible) =>
+					this.changeContinentsVisibility(visible),
 				onClose: () => {
 					window.setTimeout(() => {
 						if (
@@ -659,6 +661,8 @@ export default class SphericalGraphPlugin extends Plugin {
 			state: this.buildViewState(),
 			nodeCount: graph?.nodes.length ?? 0,
 			edgeCount: graph?.edges.length ?? 0,
+			continentCount:
+				this.renderSnapshot?.geography?.continents.length ?? 0,
 			progress:
 				this.lifecycleView.progress === undefined
 					? undefined
@@ -766,6 +770,12 @@ export default class SphericalGraphPlugin extends Plugin {
 	private changeSurfaceMode(mode: SurfaceMode): void {
 		const next = cloneSphericalGraphSettings(this.settings);
 		next.appearance.surfaceMode = mode;
+		void this.updateSettings(next, 'appearance');
+	}
+
+	private changeContinentsVisibility(visible: boolean): void {
+		const next = cloneSphericalGraphSettings(this.settings);
+		next.appearance.showContinents = visible;
 		void this.updateSettings(next, 'appearance');
 	}
 

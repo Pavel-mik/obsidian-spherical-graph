@@ -8,6 +8,7 @@ import {
 } from './renderFilters';
 import {
 	cameraZoomInPercent,
+	labelBudgetForViewport,
 	labelZoomVisuals,
 } from './labelVisibility';
 import {
@@ -20,6 +21,7 @@ import {
 export class LabelLayer {
 	private readonly root: HTMLElement;
 	private readonly pool: HTMLElement[] = [];
+	private readonly continentPool: HTMLElement[] = [];
 	private snapshot: PreparedRenderSnapshot | undefined;
 	private selection: RenderSelectionState = {};
 	private rankedNodes: readonly RenderNode[] = [];
@@ -80,6 +82,7 @@ export class LabelLayer {
 
 	render(camera: Camera, width: number, height: number): void {
 		this.resizePool();
+		this.renderContinents(camera, width, height);
 		const snapshot = this.snapshot;
 		const zoomVisuals = labelZoomVisuals(
 			camera.position.length(),
@@ -97,9 +100,13 @@ export class LabelLayer {
 			return;
 		}
 
+		const visibleLimit = Math.min(
+			this.pool.length,
+			labelBudgetForViewport(width, height),
+		);
 		let visibleIndex = 0;
 		for (const node of this.candidates) {
-			if (visibleIndex >= this.pool.length) {
+			if (visibleIndex >= visibleLimit) {
 				break;
 			}
 			if (!isRenderNodeVisible(node, this.filters)) {
@@ -186,6 +193,7 @@ export class LabelLayer {
 
 	dispose(): void {
 		this.pool.length = 0;
+		this.continentPool.length = 0;
 		this.root.remove();
 		this.snapshot = undefined;
 		this.rankedNodes = [];
@@ -272,11 +280,93 @@ export class LabelLayer {
 		while (this.pool.length > desired) {
 			this.pool.pop()?.remove();
 		}
+		const continentCount =
+			this.appearance.showContinents
+				? (this.snapshot?.geography.continents.length ?? 0)
+				: 0;
+		while (this.continentPool.length < continentCount) {
+			const element = this.root.createDiv();
+			element.className = 'spherical-graph-continent-label';
+			element.hidden = true;
+			this.root.append(element);
+			this.continentPool.push(element);
+		}
+		while (this.continentPool.length > continentCount) {
+			this.continentPool.pop()?.remove();
+		}
 	}
 
 	private hideAll(): void {
 		for (const element of this.pool) {
 			element.hidden = true;
+		}
+	}
+
+	private renderContinents(
+		camera: Camera,
+		width: number,
+		height: number,
+	): void {
+		const snapshot = this.snapshot;
+		if (
+			snapshot === undefined ||
+			!this.appearance.showContinents ||
+			this.appearance.surfaceMode === 'hidden' ||
+			width <= 0 ||
+			height <= 0
+		) {
+			for (const element of this.continentPool) {
+				element.hidden = true;
+			}
+			return;
+		}
+		const cameraDirection = camera.position.clone().normalize();
+		let visibleIndex = 0;
+		for (const continent of snapshot.geography.continents) {
+			const element = this.continentPool[visibleIndex];
+			if (element === undefined) {
+				break;
+			}
+			this.worldPosition
+				.set(...continent.center)
+				.multiplyScalar(SPHERE_RADIUS + 0.05)
+				.applyMatrix4(this.graphGroup.matrixWorld);
+			const facing = this.worldPosition
+				.clone()
+				.normalize()
+				.dot(cameraDirection);
+			if (facing <= 0.12) {
+				continue;
+			}
+			this.projectedPosition.copy(this.worldPosition).project(camera);
+			if (
+				this.projectedPosition.z < -1 ||
+				this.projectedPosition.z > 1 ||
+				Math.abs(this.projectedPosition.x) > 1.08 ||
+				Math.abs(this.projectedPosition.y) > 1.08
+			) {
+				continue;
+			}
+			const screenX = (this.projectedPosition.x * 0.5 + 0.5) * width;
+			const screenY = (-this.projectedPosition.y * 0.5 + 0.5) * height;
+			const opacity = Math.min(0.78, Math.max(0, (facing - 0.12) / 0.5));
+			const zoom = cameraZoomInPercent(camera.position.length()) / 100;
+			element.textContent = continent.label;
+			element.dataset.continentId = continent.id;
+			element.style.opacity = opacity.toFixed(3);
+			element.style.transform = `translate(${screenX.toFixed(1)}px, ${screenY.toFixed(1)}px) translate(-50%, -50%) scale(${(0.88 + zoom * 0.18).toFixed(3)})`;
+			element.hidden = false;
+			visibleIndex += 1;
+		}
+		for (
+			let index = visibleIndex;
+			index < this.continentPool.length;
+			index += 1
+		) {
+			const element = this.continentPool[index];
+			if (element !== undefined) {
+				element.hidden = true;
+			}
 		}
 	}
 }

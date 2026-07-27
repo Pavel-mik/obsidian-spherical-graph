@@ -13,9 +13,16 @@ import {
 	GraphEdge,
 	GraphNode,
 } from "../graph/graphTypes";
+import {
+	CONTINENTAL_GEOGRAPHY_VERSION,
+	CONTINENT_COLOR_COUNT,
+	createPersistedContinentalGeography,
+	type PersistedContinent,
+	type PersistedContinentalGeography,
+} from "../geography";
 
 export const CURRENT_SCHEMA_VERSION = 2;
-export const CURRENT_ALGORITHM_VERSION = 1;
+export const CURRENT_ALGORITHM_VERSION = 2;
 export const DEFAULT_POSITION_NORM_TOLERANCE = 1e-4;
 
 export type Vector3Tuple = readonly [number, number, number];
@@ -44,6 +51,7 @@ export interface PersistedLayoutSnapshot {
 	readonly completedAt: number;
 	readonly positionsByPath: Readonly<Record<string, Vector3Tuple>>;
 	readonly graphDescriptor: GraphDescriptor;
+	readonly geography?: PersistedContinentalGeography;
 }
 
 export interface PersistedPluginData<TSettings> {
@@ -63,6 +71,7 @@ export interface CompletedLayoutInput {
 	readonly positions: ArrayLike<number>;
 	readonly algorithmVersion?: number;
 	readonly normTolerance?: number;
+	readonly previousGeography?: PersistedContinentalGeography;
 }
 
 export interface ValidatedCompletedPositions {
@@ -82,6 +91,10 @@ export interface ReconciledCommittedLayout {
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+	return Array.isArray(value);
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -208,7 +221,7 @@ export function validateGraphDescriptor(
 ): GraphDescriptor | undefined {
 	if (
 		!isRecord(value) ||
-		!Array.isArray(value.nodeIds) ||
+		!isUnknownArray(value.nodeIds) ||
 		!value.nodeIds.every((id) => typeof id === "string" && id.length > 0) ||
 		!Array.isArray(value.edges) ||
 		typeof value.filterSignature !== "string" ||
@@ -216,7 +229,13 @@ export function validateGraphDescriptor(
 	) {
 		return undefined;
 	}
-	const nodeIds = [...new Set(value.nodeIds)].sort(compareCodeUnits);
+	const rawNodeIds = value.nodeIds.filter(
+		(id): id is string => typeof id === "string" && id.length > 0,
+	);
+	if (rawNodeIds.length !== value.nodeIds.length) {
+		return undefined;
+	}
+	const nodeIds = [...new Set(rawNodeIds)].sort(compareCodeUnits);
 	if (nodeIds.length !== value.nodeIds.length) {
 		return undefined;
 	}
@@ -300,6 +319,13 @@ export function validatePersistedLayoutSnapshot(
 		}
 		positionsByPath[path] = position;
 	}
+	const geography =
+		value.geography === undefined
+			? undefined
+			: validateContinentalGeography(value.geography, descriptor);
+	if (value.geography !== undefined && geography === undefined) {
+		return undefined;
+	}
 
 	return Object.freeze({
 		snapshotId: value.snapshotId,
@@ -312,6 +338,122 @@ export function validatePersistedLayoutSnapshot(
 		completedAt: value.completedAt,
 		positionsByPath: Object.freeze(positionsByPath),
 		graphDescriptor: descriptor,
+		...(geography === undefined ? {} : { geography }),
+	});
+}
+
+function validatePersistedContinent(
+	value: unknown,
+	validNodeIds: ReadonlySet<string>,
+): PersistedContinent | undefined {
+	if (
+		!isRecord(value) ||
+		typeof value.id !== "string" ||
+		value.id.length === 0 ||
+		typeof value.label !== "string" ||
+		value.label.length === 0 ||
+		!Array.isArray(value.nodeIds) ||
+		value.nodeIds.length === 0 ||
+		!value.nodeIds.every(
+			(nodeId) =>
+				typeof nodeId === "string" &&
+				validNodeIds.has(nodeId),
+		) ||
+		new Set(value.nodeIds).size !== value.nodeIds.length ||
+		!isFiniteNumber(value.capRadius) ||
+		value.capRadius < 0.1 ||
+		value.capRadius > 1.2 ||
+		!isNonNegativeInteger(value.colorIndex) ||
+		value.colorIndex >= CONTINENT_COLOR_COUNT ||
+		!isFiniteNumber(value.stability) ||
+		value.stability < 0 ||
+		value.stability > 1 ||
+		!isFiniteNumber(value.conductance) ||
+		value.conductance < 0 ||
+		value.conductance > 1
+	) {
+		return undefined;
+	}
+	const center = validateAndNormalizePosition(value.center);
+	if (center === undefined) {
+		return undefined;
+	}
+	const parsedNodeIds = value.nodeIds.filter(
+		(nodeId): nodeId is string => typeof nodeId === "string",
+	);
+	return Object.freeze({
+		id: value.id,
+		label: value.label,
+		nodeIds: Object.freeze(parsedNodeIds.sort(compareCodeUnits)),
+		center,
+		capRadius: value.capRadius,
+		colorIndex: value.colorIndex,
+		stability: value.stability,
+		conductance: value.conductance,
+	});
+}
+
+export function validateContinentalGeography(
+	value: unknown,
+	descriptor: GraphDescriptor,
+): PersistedContinentalGeography | undefined {
+	if (
+		!isRecord(value) ||
+		value.version !== CONTINENTAL_GEOGRAPHY_VERSION ||
+		!isUnknownArray(value.continents) ||
+		!isUnknownArray(value.islandNodeIds)
+	) {
+		return undefined;
+	}
+	const validNodeIds = new Set(descriptor.nodeIds);
+	const assigned = new Set<string>();
+	const continentIds = new Set<string>();
+	const continents: PersistedContinent[] = [];
+	for (const rawContinent of value.continents) {
+		const continent = validatePersistedContinent(
+			rawContinent,
+			validNodeIds,
+		);
+		if (
+			continent === undefined ||
+			continentIds.has(continent.id) ||
+			continent.nodeIds.some((nodeId) => assigned.has(nodeId))
+		) {
+			return undefined;
+		}
+		continentIds.add(continent.id);
+		for (const nodeId of continent.nodeIds) {
+			assigned.add(nodeId);
+		}
+		continents.push(continent);
+	}
+	const islandNodeIds = value.islandNodeIds.filter(
+		(nodeId): nodeId is string => typeof nodeId === "string",
+	);
+	if (
+		islandNodeIds.length !== value.islandNodeIds.length ||
+		!islandNodeIds.every(
+			(nodeId) =>
+				validNodeIds.has(nodeId) &&
+				!assigned.has(nodeId),
+		) ||
+		new Set(islandNodeIds).size !== islandNodeIds.length
+	) {
+		return undefined;
+	}
+	for (const nodeId of islandNodeIds) {
+		assigned.add(nodeId);
+	}
+	if (
+		assigned.size !== descriptor.nodeIds.length ||
+		descriptor.nodeIds.some((nodeId) => !assigned.has(nodeId))
+	) {
+		return undefined;
+	}
+	return Object.freeze({
+		version: CONTINENTAL_GEOGRAPHY_VERSION,
+		continents: Object.freeze(continents),
+		islandNodeIds: Object.freeze(islandNodeIds.sort(compareCodeUnits)),
 	});
 }
 
@@ -389,6 +531,17 @@ export function createCommittedLayoutSnapshot(
 	) {
 		return undefined;
 	}
+	let geography: PersistedContinentalGeography;
+	try {
+		geography = createPersistedContinentalGeography(
+			input.graph,
+			input.positions,
+			input.effectiveSeed,
+			input.previousGeography,
+		);
+	} catch {
+		return undefined;
+	}
 	return Object.freeze({
 		snapshotId: input.snapshotId,
 		schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -400,6 +553,7 @@ export function createCommittedLayoutSnapshot(
 		completedAt: input.completedAt,
 		positionsByPath: validated.positionsByPath,
 		graphDescriptor: input.graph.descriptor,
+		geography,
 	});
 }
 
@@ -548,11 +702,35 @@ export function renameSnapshotPaths(
 		snapshot.graphDescriptor,
 		pathMap,
 	);
+	const geography =
+		snapshot.geography === undefined
+			? undefined
+			: Object.freeze({
+					...snapshot.geography,
+					continents: Object.freeze(
+						snapshot.geography.continents.map((continent) =>
+							Object.freeze({
+								...continent,
+								nodeIds: Object.freeze(
+									continent.nodeIds.map(
+										(nodeId) => pathMap.get(nodeId) ?? nodeId,
+									),
+								),
+							}),
+						),
+					),
+					islandNodeIds: Object.freeze(
+						snapshot.geography.islandNodeIds.map(
+							(nodeId) => pathMap.get(nodeId) ?? nodeId,
+						),
+					),
+				});
 	return Object.freeze({
 		...snapshot,
 		graphSignature: createGraphSignature(graphDescriptor),
 		positionsByPath: Object.freeze(positionsByPath),
 		graphDescriptor,
+		...(geography === undefined ? {} : { geography }),
 	});
 }
 
@@ -581,11 +759,37 @@ export function pruneSnapshotPaths(
 			positionsByPath[path] = position;
 		}
 	}
+	const geography =
+		snapshot.geography === undefined
+			? undefined
+			: Object.freeze({
+					...snapshot.geography,
+					continents: Object.freeze(
+						snapshot.geography.continents
+							.map((continent) =>
+								Object.freeze({
+									...continent,
+									nodeIds: Object.freeze(
+										continent.nodeIds.filter((nodeId) =>
+											retained.has(nodeId),
+										),
+									),
+								}),
+							)
+							.filter((continent) => continent.nodeIds.length > 0),
+					),
+					islandNodeIds: Object.freeze(
+						snapshot.geography.islandNodeIds.filter((nodeId) =>
+							retained.has(nodeId),
+						),
+					),
+				});
 	return Object.freeze({
 		...snapshot,
 		graphSignature: createGraphSignature(graphDescriptor),
 		positionsByPath: Object.freeze(positionsByPath),
 		graphDescriptor,
+		...(geography === undefined ? {} : { geography }),
 	});
 }
 

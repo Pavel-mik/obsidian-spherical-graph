@@ -5,7 +5,7 @@ import { UI_STRINGS } from '../i18n';
  * design-system allowlist. Titles and aria labels reuse these exact values.
  */
 export const VIEW_CONTROL_COPY = {
-	graphControls: 'Graph controls',
+	graphControls: 'Map',
 	actions: 'Actions',
 	filters: 'Filters',
 	appearance: 'Appearance',
@@ -18,6 +18,7 @@ export const VIEW_CONTROL_COPY = {
 	attachments: 'Attachments',
 	existingFilesOnly: 'Existing files only',
 	orphans: 'Orphans',
+	continents: 'Continents',
 	showTags: 'Show tags',
 	hideTags: 'Hide tags',
 	routeSelectStart: UI_STRINGS.routeSelectStart,

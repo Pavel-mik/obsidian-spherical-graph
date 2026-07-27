@@ -6,6 +6,39 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-27
+
+### Added
+
+- Topology-derived continents using deterministic multiresolution CPM
+  consensus, stability and conductance filtering, disjoint selection, and
+  explicit island nodes.
+- Continent-aware Initialize/Renew placement, Refresh geography matching,
+  compact worker constraints, and persisted semantic geography.
+- Batched organic land, coastlines, islands, cartographic labels, a continent
+  count in the status rail, and a render-only **Map → Continents** toggle.
+
+### Changed
+
+- Replaced the retired cyberpunk presentation with a restrained editorial
+  atlas palette and removed additive selection/road glow.
+- The toolbar disclosure is now named **Map**, and graph roads, graticule,
+  ocean, land, coastlines, cities, routes, and tag satellites have deliberately
+  distinct visual roles.
+- Continents now use clipped multi-scale coast profiles with localized bays and
+  headlands, irregular shelf islands, and offline procedural terrain, strata,
+  and grain. The ocean has a separate subtle procedural depth texture.
+- Narrow panes preserve the globe's horizontal framing and apply a
+  viewport-area label budget below the user's `maxLabels` ceiling.
+
+### Fixed
+
+- Separated the ocean depth skin from the logical land/road surface and
+  tightened the camera clipping range, preventing continent triangles from
+  flickering or breaking into false holes on lower-precision depth buffers.
+- Clipped mixed land/sea triangles at their computed ownership boundary,
+  removing the regular polygon teeth produced by centroid-only classification.
+
 ## [1.1.0] - 2026-07-27
 
 ### Added
@@ -64,6 +97,7 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.1.0...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.2.0...HEAD
+[1.2.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.1.0...1.2.0
 [1.1.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/releases/tag/1.0.0

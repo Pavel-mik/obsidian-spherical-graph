@@ -1,5 +1,9 @@
 import type { GraphDiff } from '../graph/graphDiff';
 import type { GraphData } from '../graph/graphTypes';
+import {
+	createContinentLayoutPlan,
+	initializeContinentalLayout,
+} from '../geography';
 import { tryNormalizeVec3, writeVec3 } from '../geometry/vector3';
 import type { PersistedLayoutSnapshot } from '../persistence/layoutState';
 import type { SphericalGraphSettings } from '../settings/settings';
@@ -130,18 +134,39 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 		const { graph } = context;
 		const buffers = graphBuffers(graph);
 		const resolvedSettings = solverSettings(settings);
+		const geographyPlan = createContinentLayoutPlan(
+			graph,
+			context.effectiveSeed,
+			context.mode === 'refresh'
+				? context.committedSnapshot?.geography
+				: undefined,
+		);
+		const geography = {
+			assignmentByNode: geographyPlan.assignmentByNode.slice(),
+			centers: geographyPlan.centers.slice(),
+			capRadii: geographyPlan.capRadii.slice(),
+			boundaryStrength: 0.82,
+		};
 
 		if (context.mode !== 'refresh') {
 			this.latestRefreshPlan = null;
 			const movableMask = new Uint8Array(graph.nodes.length);
 			movableMask.fill(1);
 			return {
-				positions: initializeFullLayout(
-					graph.nodes.length,
-					context.effectiveSeed,
-				),
+				positions:
+					geographyPlan.continents.length === 0
+						? initializeFullLayout(
+								graph.nodes.length,
+								context.effectiveSeed,
+							)
+						: initializeContinentalLayout(
+								graph,
+								geographyPlan,
+								context.effectiveSeed,
+							),
 				...buffers,
 				movableMask,
+				geography,
 				settings: resolvedSettings,
 			};
 		}
@@ -203,6 +228,7 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 			positions: initialized.positions,
 			...buffers,
 			refresh,
+			geography,
 			settings: resolvedSettings,
 		};
 	}

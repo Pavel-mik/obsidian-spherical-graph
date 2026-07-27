@@ -30,6 +30,8 @@ const theme: RenderTheme = {
 	tagSoft: '#ded7ff',
 	tagEdge: '#7364c7',
 	sphere: '#252a34',
+	coast: '#d4b572',
+	land: ['#66725a', '#a07a49'],
 };
 
 describe('adaptiveSegmentCount', () => {
