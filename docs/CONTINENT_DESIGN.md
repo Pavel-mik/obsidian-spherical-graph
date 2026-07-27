@@ -55,6 +55,10 @@ corners, or decorative grid overlays are part of this system.
 - Topology determines continents before geography is rendered.
 - Communities are detected at multiple CPM resolutions and retained only when
   they are sufficiently large, cohesive, and stable.
+- The ordinary automatic size threshold grows sublinearly. A lower
+  large-vault threshold is reserved for exceptionally stable,
+  low-conductance regions, so a compact smaller book can become a continent
+  while a similarly sized sparse chain remains an archipelago.
 - Selected continents are a disjoint partition subset; rejected nodes remain
   islands rather than being forced into landmasses.
 - Initialize/Renew reserve separated spherical caps for continents. Refresh

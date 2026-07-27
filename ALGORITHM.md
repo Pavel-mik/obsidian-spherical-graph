@@ -80,14 +80,19 @@ several seeded orders at three resolutions. A real graph edge becomes part of
 the consensus graph only when its endpoints share a community in a majority of
 runs. Connected consensus components are then scored by:
 
-- minimum node count;
+- an automatic sublinear ordinary node-count threshold;
 - mean co-assignment stability of internal edges;
 - conductance (boundary weight divided by incident volume); and
 - a bounded size signal.
 
-Only large, stable, low-conductance components become continents. Selection is
-disjoint by construction and capped to seven landmasses. Rejected or
-undersized nodes remain islands; the algorithm never forces total coverage.
+Ordinary candidates must pass the size, stability, and conductance gates.
+Large vaults also have a lower bounded rescue threshold, but it applies only
+when a smaller region is exceptionally stable across resolutions and has very
+low conductance. This recovers compact book- or project-like regions without
+promoting sparse chains or loose archipelagos. An explicitly supplied minimum
+is always absolute and disables rescue below it. Selection is disjoint by
+construction and capped to seven landmasses. Rejected nodes remain islands;
+the algorithm never forces total coverage.
 
 Each accepted community receives a deterministic center from a
 Fibonacci-sphere packing and an intrinsic angular cap sized by membership.

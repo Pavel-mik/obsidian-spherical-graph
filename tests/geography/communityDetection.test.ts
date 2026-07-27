@@ -13,6 +13,7 @@ import type {
 function graphWithGroups(
 	groupSizes: readonly number[],
 	connectGroups = true,
+	islandCount = 0,
 ): GraphData {
 	const nodes: GraphNode[] = [];
 	const edges: GraphEdge[] = [];
@@ -58,6 +59,18 @@ function graphWithGroups(
 			offset = nextOffset;
 		}
 	}
+	for (let island = 0; island < islandCount; island += 1) {
+		const index = nodes.length;
+		nodes.push({
+			index,
+			id: `islands/note-${island}.md`,
+			path: `islands/note-${island}.md`,
+			basename: `island-${island}`,
+			degree: 0,
+			weightedDegree: 0,
+			exists: true,
+		});
+	}
 	const degrees = new Uint32Array(nodes.length);
 	for (const edge of edges) {
 		degrees[edge.source] = (degrees[edge.source] ?? 0) + 1;
@@ -84,6 +97,48 @@ function graphWithGroups(
 			nodeIds: completedNodes.map((node) => node.id),
 			edges: descriptorEdges,
 			filterSignature: 'fixture-filter',
+		},
+	};
+}
+
+function graphWithSparseChain(
+	componentSize: number,
+	islandCount: number,
+): GraphData {
+	const graph = graphWithGroups([], false, componentSize + islandCount);
+	const edges: GraphEdge[] = [];
+	for (let index = 0; index + 1 < componentSize; index += 1) {
+		edges.push({
+			source: index,
+			target: index + 1,
+			weight: 1,
+			forwardWeight: 1,
+			backwardWeight: 0,
+		});
+	}
+	const degrees = new Uint32Array(graph.nodes.length);
+	for (const edge of edges) {
+		degrees[edge.source] = (degrees[edge.source] ?? 0) + 1;
+		degrees[edge.target] = (degrees[edge.target] ?? 0) + 1;
+	}
+	const nodes = graph.nodes.map((node) => ({
+		...node,
+		degree: degrees[node.index] ?? 0,
+		weightedDegree: degrees[node.index] ?? 0,
+	}));
+	return {
+		...graph,
+		nodes,
+		edges,
+		descriptor: {
+			...graph.descriptor,
+			edges: edges.map((edge) => ({
+				sourceId: nodes[edge.source]?.id ?? '',
+				targetId: nodes[edge.target]?.id ?? '',
+				weight: edge.weight,
+				forwardWeight: edge.forwardWeight,
+				backwardWeight: edge.backwardWeight,
+			})),
 		},
 	};
 }
@@ -141,6 +196,53 @@ describe('continental community detection', () => {
 		});
 		expect(result.continents).toEqual([]);
 		expect(result.islandNodeIndices).toEqual([0, 1, 2, 3, 4]);
+	});
+
+	it('recovers exceptionally clear smaller regions in a 636-note vault', () => {
+		const graph = graphWithGroups(
+			[40, 36, 18, 15, 12],
+			true,
+			515,
+		);
+		const result = detectContinentalCommunities(graph, 42);
+
+		expect(graph.nodes).toHaveLength(636);
+		expect(
+			result.continents.map((continent) => continent.memberIndices.length),
+		).toEqual([40, 36, 18, 15, 12]);
+		expect(result.islandNodeIndices).toHaveLength(515);
+		expect(
+			result.continents
+				.slice(3)
+				.every(
+					(continent) =>
+						continent.stability >= 0.72 &&
+						continent.conductance <= 0.28,
+				),
+		).toBe(true);
+	});
+
+	it('does not promote a sparse large-vault chain through the strong-region path', () => {
+		const graph = graphWithSparseChain(15, 621);
+		const result = detectContinentalCommunities(graph, 42);
+
+		expect(result.continents).toEqual([]);
+		expect(result.islandNodeIndices).toHaveLength(636);
+	});
+
+	it('honors an explicit minimum without the automatic strong-region rescue', () => {
+		const graph = graphWithGroups(
+			[40, 36, 18, 15, 12],
+			true,
+			515,
+		);
+		const result = detectContinentalCommunities(graph, 42, {
+			minContinentNodes: 24,
+		});
+
+		expect(
+			result.continents.map((continent) => continent.memberIndices.length),
+		).toEqual([40, 36]);
 	});
 
 	it('optimizes CPM without relying on mutable random state', () => {

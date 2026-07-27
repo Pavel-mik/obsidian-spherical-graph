@@ -31,6 +31,9 @@ export const DEFAULT_COMMUNITY_DETECTION_OPTIONS = Object.freeze({
 	maximumConductance: 0.66,
 });
 
+const STRONG_REGION_MAXIMUM_CONDUCTANCE = 0.28;
+const STRONG_REGION_MINIMUM_STABILITY = 0.72;
+
 function boundedEdgeWeight(value: number): number {
 	return Math.min(4, 0.75 + Math.log1p(Math.max(0, value)));
 }
@@ -251,7 +254,17 @@ function continentId(nodeIds: readonly string[]): string {
 }
 
 function automaticMinimum(nodeCount: number): number {
-	return Math.max(6, Math.min(24, Math.ceil(nodeCount * 0.055)));
+	return Math.max(
+		6,
+		Math.min(18, Math.ceil(Math.sqrt(nodeCount) * 0.62)),
+	);
+}
+
+function automaticStrongRegionMinimum(nodeCount: number): number {
+	return Math.max(
+		6,
+		Math.min(12, Math.ceil(Math.sqrt(nodeCount) * 0.42)),
+	);
 }
 
 /**
@@ -284,7 +297,10 @@ export function detectContinentalCommunities(
 	const threshold =
 		options.consensusThreshold ??
 		DEFAULT_COMMUNITY_DETECTION_OPTIONS.consensusThreshold;
-	const minimum = options.minContinentNodes ?? automaticMinimum(nodeCount);
+	const explicitMinimum = options.minContinentNodes;
+	const minimum = explicitMinimum ?? automaticMinimum(nodeCount);
+	const strongRegionMinimum =
+		explicitMinimum ?? automaticStrongRegionMinimum(nodeCount);
 	const maxContinents =
 		options.maxContinents ??
 		DEFAULT_COMMUNITY_DETECTION_OPTIONS.maxContinents;
@@ -334,7 +350,7 @@ export function detectContinentalCommunities(
 	}
 
 	const candidates = connectedComponents(nodeCount, consensusEdges)
-		.filter((members) => members.length >= minimum)
+		.filter((members) => members.length >= strongRegionMinimum)
 		.map((members) => {
 			const nodeIds = members
 				.map((index) => graph.nodes[index]?.id)
@@ -349,9 +365,23 @@ export function detectContinentalCommunities(
 			} satisfies DetectedContinent;
 		})
 		.filter(
-			(candidate) =>
-				candidate.conductance <= maximumConductance &&
-				candidate.stability >= 0.5,
+			(candidate) => {
+				const standardContinent =
+					candidate.memberIndices.length >= minimum &&
+					candidate.conductance <= maximumConductance &&
+					candidate.stability >= 0.5;
+				const exceptionallyClearRegion =
+					explicitMinimum === undefined &&
+					candidate.memberIndices.length >= strongRegionMinimum &&
+					candidate.conductance <=
+						Math.min(
+							maximumConductance,
+							STRONG_REGION_MAXIMUM_CONDUCTANCE,
+						) &&
+					candidate.stability >=
+						STRONG_REGION_MINIMUM_STABILITY;
+				return standardContinent || exceptionallyClearRegion;
+			},
 		)
 		.sort(
 			(left, right) =>

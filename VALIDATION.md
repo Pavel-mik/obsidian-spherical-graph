@@ -341,6 +341,34 @@ The regression test and disposable browser scene now verify that:
 - the browser console remains free of warnings and errors through the toggle
   sequence.
 
+### Large-vault continent-rescue regression
+
+The follow-up failure was reproduced by the default detector with a
+deterministic 636-note graph. It contained five planted cohesive regions with
+40, 36, 18, 15, and 12 notes plus 515 free notes. The former automatic
+24-note floor retained only the first two regions.
+
+The revised detector and production-renderer QA verify that:
+
+- the complete version 1.2.2 release gate passes with 39 test files / 188
+  tests, production build, and release-artifact validation;
+- all five planted regions are accepted in deterministic size order;
+- the 18-note region passes the ordinary sublinear threshold, while the
+  exceptionally stable and low-conductance 15- and 12-note regions use the
+  guarded rescue path;
+- a separate 15-note sparse chain in a 636-note graph produces zero
+  continents;
+- an explicit 24-note minimum still produces exactly the original 40- and
+  36-note continents;
+- the renderer reports five continents while retaining the 24-of-515
+  representative-island land budget; and
+- **Map → Continents** removes and restores all visible land and labels with
+  an empty page error collector and no browser console warnings or errors.
+
+The detector runs only during a layout operation. Version 1.2.2 deliberately
+does not invalidate or move an existing committed map; **Renew layout** applies
+the revised classification to an unchanged vault.
+
 ## Not manually exercised
 
 These remain covered only partially by automated tests or by the manual plan:

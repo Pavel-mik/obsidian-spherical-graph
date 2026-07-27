@@ -74,6 +74,12 @@
   deterministic multiresolution CPM consensus plus conductance/stability
   filters chooses only sufficiently large, cohesive regions. Unassigned notes
   remain islands.
+- Automatic continent size scales with the square root of vault size instead
+  of a fixed percentage. A smaller component can bypass the ordinary size
+  threshold only when its stability is at least 0.72 and conductance is at
+  most 0.28. This two-tier rule replaced the former 24-node large-vault floor:
+  the old floor erased obvious compact regions, while lowering one global
+  threshold would also promote sparse structures.
 - Initialize and Renew allocate disjoint intrinsic spherical caps before the
   ordinary force solve. Refresh matches communities to persisted geography and
   retains prior centers wherever possible.

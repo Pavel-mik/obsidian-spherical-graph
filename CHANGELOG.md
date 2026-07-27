@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-07-27
+
+### Fixed
+
+- Large vaults no longer discard compact, unmistakable regions solely because
+  they contain fewer than 24 notes. The automatic detector now uses a
+  sublinear ordinary size threshold and a lower rescue threshold reserved for
+  exceptionally stable communities with very few outward links.
+- Sparse chains and loose archipelagos remain islands, explicit detection
+  minimums remain absolute, and the seven-continent cap is unchanged.
+
+### Notes
+
+- Existing committed layouts remain fixed after updating. Use **Renew layout**
+  to classify and place continents with the revised detector.
+
 ## [1.2.1] - 2026-07-27
 
 ### Fixed
