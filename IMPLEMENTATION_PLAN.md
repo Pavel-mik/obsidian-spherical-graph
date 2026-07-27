@@ -16,3 +16,7 @@
 - [x] Pass lint, typecheck, tests, production build, and final artifact checks.
 - [x] Load the plugin in Obsidian and verify search, pending/Refresh, Renew,
   persistence, fixed-position stability, light/dark themes, and compact layout.
+- [x] Add smooth zoom-driven label fading/scaling and consolidate graph actions
+  into a compact disclosure menu while keeping note search visible.
+- [x] Add render-only tag, attachment, existing-file, and orphan filters.
+- [x] Anchor and intrinsically pack tag satellites from committed note positions.

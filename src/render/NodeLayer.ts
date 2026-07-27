@@ -25,6 +25,12 @@ import {
 } from '../constants';
 import { AppearanceSettings } from '../settings/settings';
 import {
+	DEFAULT_RENDER_FILTERS,
+	isRenderNodeVisible,
+	renderNodeKind,
+	type RenderFilterState,
+} from './renderFilters';
+import {
 	PreparedRenderSnapshot,
 	RenderNode,
 	RenderRouteState,
@@ -48,6 +54,7 @@ export class NodeLayer {
 	private selection: RenderSelectionState = {};
 	private route: RenderRouteState | undefined;
 	private routeNodeIds = new Set<string>();
+	private filters: RenderFilterState = DEFAULT_RENDER_FILTERS;
 	private readonly matrix = new Matrix4();
 	private readonly position = new Vector3();
 	private readonly scale = new Vector3(1, 1, 1);
@@ -145,6 +152,11 @@ export class NodeLayer {
 		this.updateInstances();
 	}
 
+	updateFilters(filters: RenderFilterState): void {
+		this.filters = { ...filters };
+		this.updateInstances();
+	}
+
 	updateTheme(theme: RenderTheme): void {
 		this.theme = theme;
 		this.updateInstances();
@@ -169,13 +181,19 @@ export class NodeLayer {
 	}
 
 	nodeForInstance(instanceId: number): RenderNode | undefined {
-		return this.nodesByInstance[instanceId];
+		const node = this.nodesByInstance[instanceId];
+		return node !== undefined && isRenderNodeVisible(node, this.filters)
+			? node
+			: undefined;
 	}
 
 	positionForNode(nodeId: string, target: Vector3): Vector3 | undefined {
 		const snapshot = this.snapshot;
 		const node = snapshot?.nodeById.get(nodeId);
 		if (snapshot === undefined || node === undefined) {
+			return undefined;
+		}
+		if (!isRenderNodeVisible(node, this.filters)) {
 			return undefined;
 		}
 		const offset = node.index * 3;
@@ -234,6 +252,12 @@ export class NodeLayer {
 			if (x === undefined || y === undefined || z === undefined) {
 				continue;
 			}
+			if (!isRenderNodeVisible(node, this.filters)) {
+				this.matrix.makeScale(0, 0, 0);
+				mesh.setMatrixAt(instanceId, this.matrix);
+				glowMesh.setMatrixAt(instanceId, this.matrix);
+				continue;
+			}
 			this.radial.set(x, y, z).normalize();
 			this.position
 				.copy(this.radial)
@@ -264,6 +288,12 @@ export class NodeLayer {
 			this.matrix.compose(this.position, this.rotation, this.scale);
 			mesh.setMatrixAt(instanceId, this.matrix);
 
+			const baseColor =
+				renderNodeKind(node) === 'attachment'
+					? this.theme.nodeAttachment
+					: renderNodeKind(node) === 'unresolved'
+						? this.theme.nodeUnresolved
+						: this.theme.node;
 			const color = isSelected
 				? this.theme.nodeSelected
 				: isHovered
@@ -278,7 +308,7 @@ export class NodeLayer {
 							? this.theme.nodeActive
 							: isNeighbor
 								? this.theme.nodeNeighbor
-								: this.theme.node;
+								: baseColor;
 			mesh.setColorAt(instanceId, this.color.set(color));
 
 			this.scale.setScalar(
@@ -309,7 +339,10 @@ export class NodeLayer {
 				return;
 			}
 			const node = snapshot.nodeById.get(nodeId);
-			if (node === undefined) {
+			if (
+				node === undefined ||
+				!isRenderNodeVisible(node, this.filters)
+			) {
 				return;
 			}
 			const offset = node.index * 3;
@@ -377,7 +410,10 @@ export class NodeLayer {
 			return;
 		}
 		const node = snapshot.nodeById.get(selectedNodeId);
-		if (node === undefined) {
+		if (
+			node === undefined ||
+			!isRenderNodeVisible(node, this.filters)
+		) {
 			reticle.visible = false;
 			return;
 		}

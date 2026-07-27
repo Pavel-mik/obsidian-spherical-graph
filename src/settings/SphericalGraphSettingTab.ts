@@ -34,8 +34,6 @@ const COPY = {
 	excludedFolders: 'Excluded folder prefixes',
 	excludedFoldersDescription:
 		'Comma- or line-separated vault-relative prefixes. Filter changes become pending and never start a calculation.',
-	includeOrphans: 'Include orphan notes',
-	includeOrphansDescription: 'Show Markdown notes with no resolved links.',
 	debounce: 'Change detection debounce',
 	debounceDescription: 'Delay before vault changes are grouped, in milliseconds.',
 	pendingLimit: 'Pending detail limit',
@@ -138,19 +136,6 @@ export class SphericalGraphSettingTab extends PluginSettingTab {
 					);
 				text.inputEl.rows = 3;
 			});
-
-		new Setting(this.containerEl)
-			.setName(COPY.includeOrphans)
-			.setDesc(COPY.includeOrphansDescription)
-			.addToggle((toggle) =>
-				toggle
-					.setValue(settings.data.includeOrphanNotes)
-					.onChange((value) =>
-						this.commit(settings, 'data', (next) => {
-							next.data.includeOrphanNotes = value;
-						}),
-					),
-			);
 
 		this.addNumberSetting(
 			this.containerEl,

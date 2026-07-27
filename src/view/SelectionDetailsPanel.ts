@@ -6,6 +6,7 @@ import {
 	RenderTag,
 	prepareRenderSnapshot,
 } from '../render/renderTypes';
+import { renderNodeKind } from '../render/renderFilters';
 
 export type DetailsRouteKind = 'selecting' | 'complete' | 'unreachable';
 
@@ -343,16 +344,25 @@ export class SelectionDetailsPanel {
 		const button = this.content.createEl('button');
 		button.type = 'button';
 		button.className = 'spherical-graph-inspector-link';
-		button.title = `Open ${node.path}`;
+		const unresolved = renderNodeKind(node) === 'unresolved';
+		button.title = unresolved
+			? `${node.path} does not exist in the vault`
+			: `Open ${node.path}`;
+		button.disabled = unresolved;
 		button.dataset.nodeId = node.id;
 		const name = button.createSpan();
 		name.className = 'spherical-graph-inspector-link-name';
 		name.textContent = node.basename;
 		button.append(name);
-		button.addEventListener('click', (event) => {
-			event.stopPropagation();
-			this.callbacks.onOpen(node, event.ctrlKey || event.metaKey);
-		});
+		if (!unresolved) {
+			button.addEventListener('click', (event) => {
+				event.stopPropagation();
+				this.callbacks.onOpen(
+					node,
+					event.ctrlKey || event.metaKey,
+				);
+			});
+		}
 		return button;
 	}
 }

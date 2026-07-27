@@ -21,6 +21,8 @@
 	--sg-tag-soft: #ded7ff;
 	--sg-tag-edge: #7364c7;
 	--sg-amber: #ffb547;
+	--sg-attachment: #ffb547;
+	--sg-unresolved: #70818d;
 	--sg-text: #d9f8ff;
 	--sg-muted: #7da5b2;
 	--sg-danger: #ff5876;
@@ -106,6 +108,222 @@
 	justify-content: flex-end;
 	gap: var(--sg-gap);
 	min-width: 0;
+}
+
+.spherical-graph-controls-menu {
+	position: relative;
+	flex: 0 0 auto;
+	margin-inline-start: auto;
+}
+
+.spherical-graph-controls-summary {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	box-sizing: border-box;
+	height: var(--sg-control-height);
+	padding: 0 13px;
+	border: 1px solid var(--sg-cyan-dim);
+	background:
+		linear-gradient(135deg, rgba(33, 230, 255, 0.08), transparent 58%),
+		var(--sg-panel-raised);
+	box-shadow: inset 0 0 0 1px rgba(2, 5, 11, 0.56);
+	clip-path: polygon(
+		0 0,
+		calc(100% - 7px) 0,
+		100% 7px,
+		100% 100%,
+		7px 100%,
+		0 calc(100% - 7px)
+	);
+	color: var(--sg-text);
+	font-size: 12px;
+	font-weight: 650;
+	list-style: none;
+	cursor: var(--cursor);
+	user-select: none;
+}
+
+.spherical-graph-controls-summary::-webkit-details-marker {
+	display: none;
+}
+
+.spherical-graph-controls-summary::before {
+	width: 14px;
+	height: 10px;
+	border-block: 1px solid var(--sg-cyan);
+	background: linear-gradient(
+		to bottom,
+		transparent 45%,
+		var(--sg-cyan) 45%,
+		var(--sg-cyan) 55%,
+		transparent 55%
+	);
+	box-shadow: 0 0 7px rgba(33, 230, 255, 0.28);
+	content: "";
+}
+
+.spherical-graph-controls-menu[open] .spherical-graph-controls-summary,
+.spherical-graph-controls-summary:hover,
+.spherical-graph-controls-summary:focus-visible {
+	border-color: var(--sg-cyan);
+	outline: 0;
+	box-shadow:
+		0 0 0 1px rgba(33, 230, 255, 0.28),
+		0 0 16px rgba(33, 230, 255, 0.2);
+	color: var(--sg-cyan-soft);
+}
+
+.spherical-graph-controls-panel {
+	position: absolute;
+	top: calc(100% + 8px);
+	right: 0;
+	z-index: 30;
+	display: grid;
+	gap: 12px;
+	width: min(430px, calc(100vw - 28px));
+	max-height: min(620px, calc(100vh - 120px));
+	padding: 13px;
+	overflow: auto;
+	border: 1px solid color-mix(in srgb, var(--sg-cyan) 58%, transparent);
+	background:
+		linear-gradient(135deg, rgba(33, 230, 255, 0.065), transparent 34%),
+		color-mix(in srgb, var(--sg-panel) 95%, transparent);
+	box-shadow:
+		0 18px 42px rgba(0, 0, 0, 0.52),
+		0 0 24px rgba(33, 230, 255, 0.09),
+		inset 0 0 0 1px rgba(2, 5, 11, 0.78);
+	backdrop-filter: blur(14px);
+	clip-path: polygon(
+		0 0,
+		calc(100% - 11px) 0,
+		100% 11px,
+		100% 100%,
+		11px 100%,
+		0 calc(100% - 11px)
+	);
+}
+
+.spherical-graph-controls-section {
+	display: grid;
+	gap: 8px;
+	min-width: 0;
+}
+
+.spherical-graph-controls-section + .spherical-graph-controls-section {
+	padding-block-start: 11px;
+	border-block-start: 1px solid
+		color-mix(in srgb, var(--sg-cyan-dim) 42%, transparent);
+}
+
+.spherical-graph-controls-heading {
+	color: var(--sg-cyan-soft);
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+}
+
+.spherical-graph-controls-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 7px;
+}
+
+.spherical-graph-controls-grid .spherical-graph-toolbar-button {
+	width: 100%;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.spherical-graph-filter-toggle {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	min-width: 0;
+	height: 32px;
+	padding: 0 10px;
+	border: 1px solid
+		color-mix(in srgb, var(--sg-cyan-dim) 68%, transparent);
+	background: color-mix(in srgb, var(--sg-panel-raised) 82%, transparent);
+	color: var(--sg-muted);
+	cursor: var(--cursor);
+}
+
+.spherical-graph-filter-toggle:hover {
+	border-color: var(--sg-cyan-dim);
+	color: var(--sg-text);
+}
+
+.spherical-graph-filter-toggle[data-disabled="true"] {
+	opacity: 0.42;
+	cursor: default;
+}
+
+.spherical-graph-filter-checkbox {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.spherical-graph-filter-indicator {
+	position: relative;
+	flex: 0 0 14px;
+	width: 14px;
+	height: 14px;
+	border: 1px solid var(--sg-cyan-dim);
+	background: rgba(2, 5, 11, 0.8);
+	box-shadow: inset 0 0 7px rgba(33, 230, 255, 0.08);
+}
+
+.spherical-graph-filter-checkbox:checked
+	+ .spherical-graph-filter-indicator {
+	border-color: var(--sg-cyan);
+	background: color-mix(in srgb, var(--sg-cyan) 18%, var(--sg-panel));
+	box-shadow:
+		0 0 9px rgba(33, 230, 255, 0.24),
+		inset 0 0 8px rgba(33, 230, 255, 0.2);
+}
+
+.spherical-graph-filter-checkbox:checked
+	+ .spherical-graph-filter-indicator::after {
+	position: absolute;
+	inset: 3px;
+	background: var(--sg-cyan);
+	box-shadow: 0 0 6px var(--sg-cyan);
+	content: "";
+}
+
+.spherical-graph-filter-toggle[data-filter="tags"]
+	.spherical-graph-filter-checkbox:checked
+	+ .spherical-graph-filter-indicator {
+	border-color: var(--sg-tag);
+}
+
+.spherical-graph-filter-toggle[data-filter="tags"]
+	.spherical-graph-filter-checkbox:checked
+	+ .spherical-graph-filter-indicator::after {
+	background: var(--sg-tag);
+	box-shadow: 0 0 6px var(--sg-tag);
+}
+
+.spherical-graph-filter-checkbox:focus-visible
+	+ .spherical-graph-filter-indicator {
+	outline: 1px solid var(--sg-cyan);
+	outline-offset: 2px;
+}
+
+.spherical-graph-filter-label {
+	min-width: 0;
+	overflow: hidden;
+	font-size: 11px;
+	font-weight: 600;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .spherical-graph-toolbar-button,
@@ -304,6 +522,11 @@
 	white-space: nowrap;
 }
 
+.spherical-graph-controls-panel .spherical-graph-surface-control {
+	justify-content: space-between;
+	margin-inline-start: 0;
+}
+
 .spherical-graph-surface-select {
 	min-width: 116px;
 	padding: 0 30px 0 10px;
@@ -413,7 +636,9 @@
 		0 0 5px #000,
 		0 0 9px rgba(33, 230, 255, 0.46);
 	white-space: nowrap;
-	will-change: transform;
+	transform-origin: center;
+	transition: opacity 80ms linear;
+	will-change: transform, opacity;
 }
 
 .spherical-graph-label[data-selected="true"] {
@@ -511,7 +736,9 @@
 		0 1px 2px #000,
 		0 0 7px color-mix(in srgb, var(--sg-tag) 34%, transparent);
 	white-space: nowrap;
-	will-change: transform;
+	transform-origin: center;
+	transition: opacity 80ms linear;
+	will-change: transform, opacity;
 }
 
 .spherical-graph-tag-label::before {

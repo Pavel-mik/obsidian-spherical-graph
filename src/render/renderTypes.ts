@@ -1,5 +1,7 @@
 import { AppearanceSettings } from '../settings/settings';
 
+export type RenderNodeKind = 'note' | 'attachment' | 'unresolved';
+
 export interface RenderNode {
 	index: number;
 	id: string;
@@ -7,6 +9,8 @@ export interface RenderNode {
 	basename: string;
 	degree: number;
 	weightedDegree: number;
+	kind?: RenderNodeKind;
+	isOrphan?: boolean;
 }
 
 export interface RenderEdge {
@@ -48,6 +52,8 @@ export interface RenderSelectionState {
 export interface RenderTheme {
 	background: string;
 	node: string;
+	nodeAttachment: string;
+	nodeUnresolved: string;
 	nodeNeighbor: string;
 	nodeActive: string;
 	nodeHovered: string;

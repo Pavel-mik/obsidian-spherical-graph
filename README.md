@@ -4,11 +4,23 @@
 [![Latest release](https://img.shields.io/github/v/release/Pavel-mik/obsidian-spherical-graph?label=release)](https://github.com/Pavel-mik/obsidian-spherical-graph/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
 
-Spherical Graph is a desktop-first Obsidian view that places Markdown notes on
-the surface of a sphere. It is designed as a stable spatial map: a finite
-layout operation computes positions, validates and saves one complete
-snapshot, and then stops. Normal reading, search, selection, rotation, zoom,
-theme changes, and resizing do not move notes.
+Turn your Obsidian vault into an explorable globe. Notes become cities, links
+become roads across the surface, and tags orbit overhead as satellites. Route
+Finder reveals every shortest path between distant notes so you can navigate
+connections that a flat graph hides.
+
+Spherical Graph is designed as a stable spatial map: a finite layout operation
+computes positions, validates and saves one complete snapshot, and then stops.
+Normal reading, search, filtering, selection, rotation, zoom, theme changes,
+and resizing do not move notes.
+
+## See your vault as a world
+
+![Spherical Graph globe with note cities and tag satellites](docs/screenshots/spherical-graph-globe.png)
+
+![Route Finder highlighting shortest paths across the globe](docs/screenshots/spherical-graph-route.png)
+
+![Compact graph controls with render-only filters](docs/screenshots/spherical-graph-filters.png)
 
 ## Requirements
 
@@ -73,19 +85,23 @@ and a reliable rename keeps the old position under the new path. Select
 - Short-lived inline Web Worker with final-only position transfer plus a
   yielding main-thread compatibility fallback.
 - Three.js rendering with instanced tangent node discs, batched geodesic edges,
-  a muted dashed globe graticule, zoom-gated bounded labels, raycast picking,
-  and invalidation-based frames.
+  a muted dashed globe graticule, smoothly fading and zoom-scaling labels,
+  raycast picking, and invalidation-based frames.
 - Hover details, selection and neighbor emphasis, active-note emphasis,
   search/focus, open-note actions, camera reset, keyboard controls, and a
   translucent selection panel with clickable direct neighbors.
 - Offline route finding that highlights every shortest path between two notes
   over the existing links, including all equally short alternatives, explicit
   green `Start` and amber `Dest` markers, and clickable route details.
-- Render-only tag satellites on an adjustable, invisible concentric orbit.
+- Intrinsically packed, render-only tag satellites on an adjustable, invisible
+  concentric orbit. Their positions are anchored to the final locations of the
+  notes that carry them.
   Thin violet spherical spirals connect tags to the selected note, every note
   in the active shortest-path union, or every note carrying a selected tag.
   Satellites hidden behind the globe are culled geometrically.
 - Solid, transparent, and hidden sphere-surface modes.
+- Render-only visibility filters for tags, attachments, unresolved links, and
+  orphan notes. Filters hide markers and incident links without moving the map.
 - Theme-aware colors, resize handling, pop-out owner-window awareness, and
   explicit resource cleanup.
 - No telemetry, runtime network calls, external keys, or note-content writes.
@@ -105,13 +121,14 @@ and a reliable rename keeps the old position under the new path. Select
 | Open from selection details | Click a selected, linked, endpoint, or route note; hold `Ctrl`/`Cmd` for a new tab |
 | Hide or show selection details | Select the **Selection details** header |
 | Find and focus | Type in **Find a note…** and choose a result |
-| Find all shortest routes | Select an origin, choose **Find route**, then select a destination |
-| Clear a route | Select the active route control again |
-| Hide or show all tags | **Tags** |
-| Include pending changes | **Refresh layout** |
-| Build a new map | **Renew layout**, then confirm |
-| Stop a calculation | **Cancel calculation** |
-| Restore view | **Reset camera** |
+| Find all shortest routes | Select an origin, open **Graph controls**, choose **Find route**, then select a destination |
+| Clear a route | Choose **Clear route** in **Graph controls** |
+| Hide categories without moving the map | Use **Filters** in **Graph controls** |
+| Change globe surface | Use **Appearance** in **Graph controls** |
+| Include pending changes | Choose **Refresh layout** in **Graph controls** |
+| Build a new map | Choose **Renew layout** in **Graph controls**, then confirm |
+| Stop a calculation | Choose **Cancel calculation** in **Graph controls** |
+| Restore view | Choose **Reset camera** in **Graph controls** |
 
 Dragging never changes a node position.
 
@@ -120,7 +137,6 @@ Dragging never changes a node position.
 ### Data
 
 - excluded folder prefixes
-- include or exclude orphan notes
 - graph-change debounce
 - pending-diff detail limit
 
@@ -133,7 +149,8 @@ Dragging never changes a node position.
 - tag-orbit height as a percentage of the globe radius (30% by default), plus
   an optional camera-axis protection guard, disabled by default
 - edge opacity
-- labels, maximum pooled labels, and a zoom-in threshold (0–100%)
+- labels, maximum pooled labels, and a zoom-in threshold (0–100%); note and
+  tag labels fade and scale smoothly around that threshold
 - sphere surface mode and opacity
 - theme-following background
 - focus-animation duration
@@ -154,9 +171,11 @@ Dragging never changes a node position.
 - maximum old-node angular displacement
 - large-change warning ratio
 
-Visual settings apply without running a solver. Filter changes create pending
-data changes. Layout settings apply to the next relevant explicit operation;
-changing them alone does not move the current map.
+Visual settings apply without running a solver. The graph-menu filters for
+tags, attachments, unresolved links, and orphan notes are also render-only.
+Data exclusions can create pending changes. Layout settings apply to the next
+relevant explicit operation; changing them alone does not move the current
+map.
 
 ## Installation
 
@@ -237,7 +256,8 @@ Spherical Graph is designed for private, offline vault use:
 
 - Desktop only; mobile interaction and resource behavior are not validated.
 - Arbitrary non-planar graphs can still have crossing edges on a sphere.
-- Labels are intentionally capped, so not every visible note is labelled.
+- Labels are intentionally capped and fade with zoom, so not every visible
+  note is labelled at every camera distance.
 - Every tag has an instanced satellite marker, while visible tag text labels
   are capped at 96. Tags behind the globe are hidden; optional camera-axis
   fading can additionally protect the center of the view.
@@ -245,7 +265,7 @@ Spherical Graph is designed for private, offline vault use:
   overlap, their shared sections are intentionally drawn once.
 - Very large graphs use deterministic sampled global repulsion; this is an
   approximation rather than exact all-pairs force evaluation.
-- Version 1.0 stores one committed layout snapshot and has no layout undo history,
+- The plugin stores one committed layout snapshot and has no layout undo history,
   edge bundling, community detection, ghost nodes, or image export.
 - Actual GUI verification performed for a release is recorded in
   [VALIDATION.md](VALIDATION.md); automated checks do not imply a manual GUI

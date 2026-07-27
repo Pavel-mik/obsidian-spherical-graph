@@ -6,6 +6,7 @@ import {
 } from "../../src/graph/GraphDataService";
 import {
 	GraphDataSource,
+	AttachmentGraphFile,
 	MarkdownGraphFile,
 	ResolvedLinkIndex,
 } from "../../src/graph/graphTypes";
@@ -13,6 +14,8 @@ import {
 class MutableGraphSource implements GraphDataSource {
 	files: MarkdownGraphFile[];
 	resolvedLinks: ResolvedLinkIndex;
+	attachments: AttachmentGraphFile[] = [];
+	unresolvedLinks: ResolvedLinkIndex = {};
 
 	constructor(
 		files: MarkdownGraphFile[],
@@ -28,6 +31,14 @@ class MutableGraphSource implements GraphDataSource {
 
 	getResolvedLinks(): ResolvedLinkIndex {
 		return this.resolvedLinks;
+	}
+
+	getAttachmentFiles(): readonly AttachmentGraphFile[] {
+		return this.attachments;
+	}
+
+	getUnresolvedLinks(): ResolvedLinkIndex {
+		return this.unresolvedLinks;
 	}
 }
 
@@ -203,5 +214,67 @@ describe("GraphDataService", () => {
 		expect(second.nodes[0]?.tags).toEqual(["#different"]);
 		expect(second.signature).toBe(first.signature);
 		expect(second.descriptor).toEqual(first.descriptor);
+	});
+
+	it("keeps attachments and unresolved targets outside the layout signature", () => {
+		const source = new MutableGraphSource(
+			[file("a.md"), file("b.md")],
+			{
+				"a.md": { "b.md": 1, "assets/map.png": 2 },
+			},
+		);
+		source.attachments = [
+			{ path: "assets/map.png", basename: "map" },
+			{ path: "assets/orphan.pdf", basename: "orphan" },
+		];
+		source.unresolvedLinks = {
+			"b.md": { "Missing note.md": 3 },
+		};
+
+		const graph = new GraphDataService(source).buildGraph();
+
+		expect(graph.nodes.map((node) => node.id)).toEqual([
+			"a.md",
+			"b.md",
+		]);
+		expect(graph.auxiliaryNodes).toEqual([
+			expect.objectContaining({
+				id: "assets/map.png",
+				kind: "attachment",
+				degree: 1,
+				weightedDegree: 2,
+			}),
+			expect.objectContaining({
+				id: "assets/orphan.pdf",
+				kind: "attachment",
+				degree: 0,
+			}),
+			expect.objectContaining({
+				id: "unresolved:Missing note.md",
+				kind: "unresolved",
+				degree: 1,
+				weightedDegree: 3,
+			}),
+		]);
+		expect(graph.auxiliaryEdges).toEqual([
+			{
+				sourceId: "a.md",
+				targetId: "assets/map.png",
+				weight: 2,
+			},
+			{
+				sourceId: "b.md",
+				targetId: "unresolved:Missing note.md",
+				weight: 3,
+			},
+		]);
+
+		source.attachments = [];
+		source.unresolvedLinks = {};
+		const withoutAuxiliary = new GraphDataService(
+			source,
+		).buildGraph();
+		expect(withoutAuxiliary.signature).toBe(graph.signature);
+		expect(withoutAuxiliary.descriptor).toEqual(graph.descriptor);
 	});
 });

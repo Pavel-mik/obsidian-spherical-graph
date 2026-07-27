@@ -1,10 +1,15 @@
 import { Camera, Group, Vector3 } from 'three';
-import {
-	MAX_CAMERA_DISTANCE,
-	MIN_CAMERA_DISTANCE,
-	SPHERE_RADIUS,
-} from '../constants';
+import { SPHERE_RADIUS } from '../constants';
 import { AppearanceSettings } from '../settings/settings';
+import {
+	DEFAULT_RENDER_FILTERS,
+	isRenderNodeVisible,
+	type RenderFilterState,
+} from './renderFilters';
+import {
+	cameraZoomInPercent,
+	labelZoomVisuals,
+} from './labelVisibility';
 import {
 	PreparedRenderSnapshot,
 	RenderNode,
@@ -21,6 +26,7 @@ export class LabelLayer {
 	private candidates: readonly RenderNode[] = [];
 	private route: RenderRouteState | undefined;
 	private appearance: AppearanceSettings;
+	private filters: RenderFilterState = DEFAULT_RENDER_FILTERS;
 	private readonly worldPosition = new Vector3();
 	private readonly projectedPosition = new Vector3();
 
@@ -51,6 +57,10 @@ export class LabelLayer {
 		this.resizePool();
 	}
 
+	updateFilters(filters: RenderFilterState): void {
+		this.filters = { ...filters };
+	}
+
 	updateSelection(selection: RenderSelectionState): void {
 		this.selection = { ...selection };
 		this.rebuildCandidates();
@@ -71,12 +81,15 @@ export class LabelLayer {
 	render(camera: Camera, width: number, height: number): void {
 		this.resizePool();
 		const snapshot = this.snapshot;
+		const zoomVisuals = labelZoomVisuals(
+			camera.position.length(),
+			this.appearance.labelZoomThresholdPercent,
+		);
 		if (
 			snapshot === undefined ||
 			!this.appearance.showLabels ||
 			this.appearance.maxLabels === 0 ||
-			cameraZoomInPercent(camera.position.length()) <
-				this.appearance.labelZoomThresholdPercent ||
+			zoomVisuals.opacity <= 0.01 ||
 			width <= 0 ||
 			height <= 0
 		) {
@@ -88,6 +101,9 @@ export class LabelLayer {
 		for (const node of this.candidates) {
 			if (visibleIndex >= this.pool.length) {
 				break;
+			}
+			if (!isRenderNodeVisible(node, this.filters)) {
+				continue;
 			}
 			const offset = node.index * 3;
 			const x = snapshot.positions[offset];
@@ -154,7 +170,8 @@ export class LabelLayer {
 			} else {
 				element.dataset.routeRole = routeRole;
 			}
-			element.style.transform = `translate(${screenX.toFixed(1)}px, ${screenY.toFixed(1)}px) translate(-50%, -50%)`;
+			element.style.opacity = zoomVisuals.opacity.toFixed(3);
+			element.style.transform = `translate(${screenX.toFixed(1)}px, ${screenY.toFixed(1)}px) translate(-50%, -50%) scale(${zoomVisuals.scale.toFixed(3)})`;
 			element.hidden = false;
 			visibleIndex += 1;
 		}
@@ -264,15 +281,7 @@ export class LabelLayer {
 	}
 }
 
-export function cameraZoomInPercent(cameraDistance: number): number {
-	if (!Number.isFinite(cameraDistance)) {
-		return 0;
-	}
-	const normalized =
-		(MAX_CAMERA_DISTANCE - cameraDistance) /
-		(MAX_CAMERA_DISTANCE - MIN_CAMERA_DISTANCE);
-	return Math.max(0, Math.min(1, normalized)) * 100;
-}
+export { cameraZoomInPercent };
 
 export function routeRoleForNode(
 	route: RenderRouteState | undefined,

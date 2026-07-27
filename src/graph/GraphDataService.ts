@@ -13,6 +13,8 @@ import {
 import {
 	GraphData,
 	GraphDataSource,
+	GraphAuxiliaryEdge,
+	GraphAuxiliaryNode,
 	GraphDescriptorEdge,
 	GraphEdge,
 	GraphFilterOptions,
@@ -25,6 +27,12 @@ interface EdgeAccumulator {
 	readonly targetId: string;
 	forwardWeight: number;
 	backwardWeight: number;
+}
+
+interface AuxiliaryEdgeAccumulator {
+	readonly sourceId: string;
+	readonly targetId: string;
+	weight: number;
 }
 
 function basenameFromPath(path: string): string {
@@ -40,6 +48,14 @@ function validLinkWeight(value: number): boolean {
 
 function canonicalEdgeKey(sourceId: string, targetId: string): string {
 	return `${sourceId.length}:${sourceId}${targetId}`;
+}
+
+function auxiliaryEdgeKey(sourceId: string, targetId: string): string {
+	return `${sourceId.length}:${sourceId}${targetId.length}:${targetId}`;
+}
+
+function unresolvedNodeId(path: string): string {
+	return `unresolved:${path}`;
 }
 
 export function normalizeGraphTags(
@@ -73,8 +89,11 @@ function compareDescriptorEdges(
 }
 
 export function createObsidianGraphDataSource(
-	vault: Pick<Vault, "getMarkdownFiles">,
-	metadataCache: Pick<MetadataCache, "resolvedLinks">,
+	vault: Pick<Vault, "getFiles" | "getMarkdownFiles">,
+	metadataCache: Pick<
+		MetadataCache,
+		"resolvedLinks" | "unresolvedLinks"
+	>,
 	getTags?: (file: TFile) => readonly string[] | null,
 ): GraphDataSource {
 	return {
@@ -84,7 +103,16 @@ export function createObsidianGraphDataSource(
 				basename: file.basename,
 				tags: normalizeGraphTags(getTags?.(file)),
 			})),
+		getAttachmentFiles: () =>
+			vault
+				.getFiles()
+				.filter((file) => file.extension.toLowerCase() !== "md")
+				.map((file) => ({
+					path: file.path,
+					basename: file.basename,
+				})),
 		getResolvedLinks: () => metadataCache.resolvedLinks,
+		getUnresolvedLinks: () => metadataCache.unresolvedLinks,
 	};
 }
 
@@ -121,7 +149,49 @@ export class GraphDataService {
 			});
 		}
 
+		const attachmentsByPath = new Map<
+			string,
+			{ readonly path: string; readonly basename: string }
+		>();
+		for (const file of this.source.getAttachmentFiles?.() ?? []) {
+			const path = normalizeVaultPath(file.path);
+			if (
+				path.length === 0 ||
+				isPathExcluded(path, filters.excludedFolderPrefixes)
+			) {
+				continue;
+			}
+			attachmentsByPath.set(path, {
+				path,
+				basename:
+					file.basename.trim().length > 0
+						? file.basename
+						: basenameFromPath(path),
+			});
+		}
+
 		const edgeAccumulators = new Map<string, EdgeAccumulator>();
+		const auxiliaryEdgeAccumulators = new Map<
+			string,
+			AuxiliaryEdgeAccumulator
+		>();
+		const accumulateAuxiliaryEdge = (
+			sourceId: string,
+			targetId: string,
+			weight: number,
+		): void => {
+			const key = auxiliaryEdgeKey(sourceId, targetId);
+			const existing = auxiliaryEdgeAccumulators.get(key);
+			if (existing === undefined) {
+				auxiliaryEdgeAccumulators.set(key, {
+					sourceId,
+					targetId,
+					weight,
+				});
+			} else {
+				existing.weight += weight;
+			}
+		};
 		const resolvedLinks = this.source.getResolvedLinks();
 		const sourcePaths = Object.keys(resolvedLinks).sort(compareGraphIds);
 
@@ -141,10 +211,19 @@ export class GraphDataService {
 				const weight = targets[rawTargetPath];
 				if (
 					sourcePath === targetPath ||
-					!filesByPath.has(targetPath) ||
 					weight === undefined ||
 					!validLinkWeight(weight)
 				) {
+					continue;
+				}
+				if (!filesByPath.has(targetPath)) {
+					if (attachmentsByPath.has(targetPath)) {
+						accumulateAuxiliaryEdge(
+							sourcePath,
+							targetPath,
+							weight,
+						);
+					}
 					continue;
 				}
 
@@ -169,6 +248,41 @@ export class GraphDataService {
 				} else {
 					accumulator.backwardWeight += weight;
 				}
+			}
+		}
+
+		const unresolvedLabelsById = new Map<string, string>();
+		const unresolvedLinks = this.source.getUnresolvedLinks?.() ?? {};
+		for (const rawSourcePath of Object.keys(unresolvedLinks).sort(
+			compareGraphIds,
+		)) {
+			const sourcePath = normalizeVaultPath(rawSourcePath);
+			if (!filesByPath.has(sourcePath)) {
+				continue;
+			}
+			const targets = unresolvedLinks[rawSourcePath];
+			if (targets === undefined) {
+				continue;
+			}
+			for (const rawTargetPath of Object.keys(targets).sort(
+				compareGraphIds,
+			)) {
+				const targetPath = normalizeVaultPath(rawTargetPath);
+				const weight = targets[rawTargetPath];
+				if (
+					targetPath.length === 0 ||
+					isPathExcluded(
+						targetPath,
+						filters.excludedFolderPrefixes,
+					) ||
+					weight === undefined ||
+					!validLinkWeight(weight)
+				) {
+					continue;
+				}
+				const targetId = unresolvedNodeId(targetPath);
+				unresolvedLabelsById.set(targetId, targetPath);
+				accumulateAuxiliaryEdge(sourcePath, targetId, weight);
 			}
 		}
 
@@ -241,6 +355,59 @@ export class GraphDataService {
 				exists: true as const,
 			});
 		});
+		const includedAuxiliaryEdges: GraphAuxiliaryEdge[] = [
+			...auxiliaryEdgeAccumulators.values(),
+		]
+			.filter((edge) => includedIds.has(edge.sourceId))
+			.map((edge) =>
+				Object.freeze({
+					sourceId: edge.sourceId,
+					targetId: edge.targetId,
+					weight: edge.weight,
+				}),
+			)
+			.sort(
+				(left, right) =>
+					compareGraphIds(left.targetId, right.targetId) ||
+					compareGraphIds(left.sourceId, right.sourceId),
+			);
+		const auxiliaryDegree = new Map<
+			string,
+			{ degree: number; weightedDegree: number }
+		>();
+		for (const edge of includedAuxiliaryEdges) {
+			const current = auxiliaryDegree.get(edge.targetId) ?? {
+				degree: 0,
+				weightedDegree: 0,
+			};
+			current.degree += 1;
+			current.weightedDegree += edge.weight;
+			auxiliaryDegree.set(edge.targetId, current);
+		}
+		const auxiliaryNodes: GraphAuxiliaryNode[] = [
+			...[...attachmentsByPath.values()].map((file) => {
+				const metrics = auxiliaryDegree.get(file.path);
+				return Object.freeze({
+					id: file.path,
+					path: file.path,
+					basename: file.basename,
+					kind: "attachment" as const,
+					degree: metrics?.degree ?? 0,
+					weightedDegree: metrics?.weightedDegree ?? 0,
+				});
+			}),
+			...[...unresolvedLabelsById.entries()].map(([id, path]) => {
+				const metrics = auxiliaryDegree.get(id);
+				return Object.freeze({
+					id,
+					path,
+					basename: basenameFromPath(path),
+					kind: "unresolved" as const,
+					degree: metrics?.degree ?? 0,
+					weightedDegree: metrics?.weightedDegree ?? 0,
+				});
+			}),
+		].sort((left, right) => compareGraphIds(left.id, right.id));
 		const descriptor = Object.freeze({
 			nodeIds: Object.freeze([...nodeIds]),
 			edges: Object.freeze(
@@ -252,6 +419,8 @@ export class GraphDataService {
 		return Object.freeze({
 			nodes: Object.freeze(nodes),
 			edges: Object.freeze(edges),
+			auxiliaryNodes: Object.freeze(auxiliaryNodes),
+			auxiliaryEdges: Object.freeze(includedAuxiliaryEdges),
 			signature: createGraphSignature(descriptor),
 			filterSignature,
 			descriptor,

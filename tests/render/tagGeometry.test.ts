@@ -5,6 +5,7 @@ import {
 } from '../../src/constants';
 import {
 	deterministicTagDirection,
+	computeTagOrbitDirections,
 	isPointOccludedByGlobe,
 	sampleTagSpiral,
 } from '../../src/render/tagGeometry';
@@ -18,6 +19,31 @@ describe('tag orbital geometry', () => {
 		expect(second).toEqual(first);
 		expect(Math.hypot(...first)).toBeCloseTo(1, 12);
 		expect(other).not.toEqual(first);
+	});
+
+	it('anchors private tags above their committed note and packs collisions', () => {
+		const tags = [
+			{ id: '#one', nodeIndices: [0] },
+			{ id: '#two', nodeIndices: [0] },
+			{ id: '#shared', nodeIndices: [0, 1] },
+		];
+		const positions = new Float32Array([1, 0, 0, 0, 1, 0]);
+		const first = computeTagOrbitDirections(tags, positions);
+		const second = computeTagOrbitDirections(tags, positions);
+		const one = first.get('#one');
+		const two = first.get('#two');
+		const shared = first.get('#shared');
+
+		expect([...second]).toEqual([...first]);
+		expect(one).toBeDefined();
+		expect(two).toBeDefined();
+		expect(shared).toBeDefined();
+		expect(Math.hypot(...(one ?? []))).toBeCloseTo(1, 8);
+		expect((one?.[0] ?? 0)).toBeGreaterThan(0.95);
+		expect((two?.[0] ?? 0)).toBeGreaterThan(0.95);
+		expect(one).not.toEqual(two);
+		expect((shared?.[0] ?? 0)).toBeGreaterThan(0.45);
+		expect((shared?.[1] ?? 0)).toBeGreaterThan(0.45);
 	});
 
 	it('samples a spherical spiral with a linearly increasing radius', () => {

@@ -19,6 +19,8 @@ import { DEFAULT_SETTINGS } from '../../src/settings/settings';
 const theme: RenderTheme = {
 	background: '#101319',
 	node: '#39d7ff',
+	nodeAttachment: '#ffb547',
+	nodeUnresolved: '#70818d',
 	nodeNeighbor: '#9beeff',
 	nodeActive: '#f3a712',
 	nodeHovered: '#ffe066',
@@ -215,6 +217,57 @@ describe('NodeLayer instance colors', () => {
 		);
 		expect(highlights).toBeInstanceOf(InstancedMesh);
 		expect((highlights as InstancedMesh).count).toBe(4);
+		layer.dispose();
+	});
+
+	it('hides auxiliary node instances without changing their stored position', () => {
+		const group = new Group();
+		const layer = new NodeLayer(
+			group,
+			DEFAULT_SETTINGS.appearance,
+			theme,
+		);
+		layer.setSnapshot(
+			prepareRenderSnapshot({
+				snapshotId: 'filters',
+				nodes: [
+					{
+						index: 0,
+						id: 'A.md',
+						path: 'A.md',
+						basename: 'A',
+						degree: 1,
+						weightedDegree: 1,
+						kind: 'note',
+					},
+					{
+						index: 1,
+						id: 'map.png',
+						path: 'map.png',
+						basename: 'map',
+						degree: 1,
+						weightedDegree: 1,
+						kind: 'attachment',
+					},
+				],
+				edges: [{ source: 0, target: 1, weight: 1 }],
+				positions: new Float32Array([1, 0, 0, 0, 1, 0]),
+			}),
+		);
+
+		expect(layer.nodeForInstance(1)).toBeUndefined();
+		expect(layer.positionForNode('map.png', new Vector3()))
+			.toBeUndefined();
+		layer.updateFilters({
+			showTags: true,
+			showAttachments: true,
+			existingFilesOnly: true,
+			showOrphans: true,
+		});
+		expect(layer.nodeForInstance(1)?.id).toBe('map.png');
+		expect(
+			layer.positionForNode('map.png', new Vector3())?.normalize().y,
+		).toBeCloseTo(1, 8);
 		layer.dispose();
 	});
 });

@@ -143,4 +143,47 @@ describe('createRenderGraphSnapshot', () => {
 		expect(result.nodes[0]?.id).toBe('Renamed.md');
 		expect([...result.positions.slice(0, 3)]).toEqual([1, 0, 0]);
 	});
+
+	it('derives auxiliary positions from committed notes without layout data', () => {
+		const current = graph();
+		const withAttachment: GraphData = {
+			...current,
+			auxiliaryNodes: [
+				{
+					id: 'map.png',
+					path: 'map.png',
+					basename: 'map',
+					kind: 'attachment',
+					degree: 1,
+					weightedDegree: 2,
+				},
+			],
+			auxiliaryEdges: [
+				{
+					sourceId: 'A.md',
+					targetId: 'map.png',
+					weight: 2,
+				},
+			],
+		};
+		const result = createRenderGraphSnapshot(
+			snapshot(),
+			withAttachment,
+		);
+		const attachment = result.nodes.find(
+			(node) => node.id === 'map.png',
+		);
+
+		expect(attachment).toMatchObject({
+			kind: 'attachment',
+			isOrphan: false,
+		});
+		expect(result.positions).toHaveLength(9);
+		expect(result.positions[6]).toBeGreaterThan(0.99);
+		expect(result.edges).toContainEqual({
+			source: 0,
+			target: 2,
+			weight: 2,
+		});
+	});
 });

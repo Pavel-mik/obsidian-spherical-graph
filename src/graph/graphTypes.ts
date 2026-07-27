@@ -9,6 +9,27 @@ export interface GraphNode {
 	readonly exists: true;
 }
 
+export type GraphAuxiliaryNodeKind = 'attachment' | 'unresolved';
+
+/**
+ * Render-only graph node whose direction is derived from the final committed
+ * note positions. Auxiliary nodes never enter the intrinsic layout solver.
+ */
+export interface GraphAuxiliaryNode {
+	readonly id: string;
+	readonly path: string;
+	readonly basename: string;
+	readonly kind: GraphAuxiliaryNodeKind;
+	readonly degree: number;
+	readonly weightedDegree: number;
+}
+
+export interface GraphAuxiliaryEdge {
+	readonly sourceId: string;
+	readonly targetId: string;
+	readonly weight: number;
+}
+
 export interface GraphEdge {
 	readonly source: number;
 	readonly target: number;
@@ -39,6 +60,8 @@ export interface GraphDescriptor {
 export interface GraphData {
 	readonly nodes: readonly GraphNode[];
 	readonly edges: readonly GraphEdge[];
+	readonly auxiliaryNodes?: readonly GraphAuxiliaryNode[];
+	readonly auxiliaryEdges?: readonly GraphAuxiliaryEdge[];
 	readonly signature: string;
 	readonly filterSignature: string;
 	readonly descriptor: GraphDescriptor;
@@ -60,11 +83,20 @@ export interface MarkdownGraphFile {
 	readonly tags?: readonly string[];
 }
 
+export interface AttachmentGraphFile {
+	readonly path: string;
+	readonly basename: string;
+}
+
 export type ResolvedLinkIndex = Readonly<
 	Record<string, Readonly<Record<string, number>>>
 >;
 
+export type UnresolvedLinkIndex = ResolvedLinkIndex;
+
 export interface GraphDataSource {
 	getMarkdownFiles(): readonly MarkdownGraphFile[];
+	getAttachmentFiles?(): readonly AttachmentGraphFile[];
 	getResolvedLinks(): ResolvedLinkIndex;
+	getUnresolvedLinks?(): UnresolvedLinkIndex;
 }

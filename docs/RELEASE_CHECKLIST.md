@@ -35,8 +35,9 @@ git diff --check
 - [ ] Create and push a tag exactly matching `manifest.json`:
 
 ```powershell
-git tag 1.0.0
-git push origin 1.0.0
+$version = (Get-Content manifest.json | ConvertFrom-Json).version
+git tag $version
+git push origin $version
 ```
 
 - [ ] Wait for the **Release Obsidian plugin** workflow.
@@ -45,14 +46,13 @@ git push origin 1.0.0
 - [ ] Confirm the workflow's build provenance attestation is present.
 - [ ] Review generated notes and publish the draft release.
 
-## First Community directory submission
+## Community directory
 
-- [ ] Sign in at <https://community.obsidian.md>.
-- [ ] Link the GitHub account that owns the repository.
-- [ ] Choose **Plugins → New plugin**.
-- [ ] Submit
+- [ ] For a first submission, sign in at <https://community.obsidian.md>, link
+      the repository owner, choose **Plugins → New plugin**, and submit
       `https://github.com/Pavel-mik/obsidian-spherical-graph`.
-- [ ] Accept the current Developer policies and maintenance commitment.
+- [ ] For an existing listing, verify the current description and screenshots
+      in the Community developer dashboard.
 - [ ] Address automated review feedback by incrementing the plugin version and
       publishing a new matching GitHub release.
 

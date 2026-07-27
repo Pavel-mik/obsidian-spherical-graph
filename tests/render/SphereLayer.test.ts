@@ -7,6 +7,8 @@ import { DEFAULT_SETTINGS } from '../../src/settings/settings';
 const theme: RenderTheme = {
 	background: '#101319',
 	node: '#39d7ff',
+	nodeAttachment: '#ffb547',
+	nodeUnresolved: '#70818d',
 	nodeNeighbor: '#9beeff',
 	nodeActive: '#f3a712',
 	nodeHovered: '#ffe066',

@@ -27,8 +27,9 @@ import {
 	RenderTag,
 	RenderTheme,
 } from './renderTypes';
+import { labelZoomVisuals } from './labelVisibility';
 import {
-	deterministicTagDirection,
+	computeTagOrbitDirections,
 	isPointOccludedByGlobe,
 	sampleTagSpiral,
 } from './tagGeometry';
@@ -84,11 +85,11 @@ export class TagLayer {
 		this.removeLinks();
 		this.snapshot = snapshot;
 		this.directions.clear();
-		for (const tag of snapshot.tags) {
-			this.directions.set(
-				tag.id,
-				deterministicTagDirection(tag.id),
-			);
+		for (const [tagId, direction] of computeTagOrbitDirections(
+			snapshot.tags,
+			snapshot.positions,
+		)) {
+			this.directions.set(tagId, direction);
 		}
 		this.createMarkers(snapshot.tags);
 		this.resizeLabelPool();
@@ -196,8 +197,14 @@ export class TagLayer {
 	}
 
 	render(camera: Camera, width: number, height: number): void {
+		const zoomVisuals = labelZoomVisuals(
+			camera.position.length(),
+			this.appearance.labelZoomThresholdPercent,
+		);
 		if (
 			!this.visible ||
+			!this.appearance.showLabels ||
+			zoomVisuals.opacity <= 0.01 ||
 			this.labelRoot === undefined ||
 			this.snapshot === undefined ||
 			width <= 0 ||
@@ -274,7 +281,8 @@ export class TagLayer {
 			element.dataset.selected = String(
 				tag.id === this.selectedTagId,
 			);
-			element.style.transform = `translate(${screenX.toFixed(1)}px, ${screenY.toFixed(1)}px) translate(-50%, -50%)`;
+			element.style.opacity = zoomVisuals.opacity.toFixed(3);
+			element.style.transform = `translate(${screenX.toFixed(1)}px, ${screenY.toFixed(1)}px) translate(-50%, -50%) scale(${zoomVisuals.scale.toFixed(3)})`;
 			element.hidden = false;
 			visibleIndex += 1;
 		}

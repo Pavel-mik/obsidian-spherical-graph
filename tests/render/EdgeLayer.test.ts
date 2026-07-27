@@ -1,4 +1,4 @@
-import { Group, Mesh } from 'three';
+import { Group, LineSegments, Mesh } from 'three';
 import { describe, expect, it } from 'vitest';
 import {
 	adaptiveSegmentCount,
@@ -13,6 +13,8 @@ import { DEFAULT_SETTINGS } from '../../src/settings/settings';
 const theme: RenderTheme = {
 	background: '#101319',
 	node: '#39d7ff',
+	nodeAttachment: '#ffb547',
+	nodeUnresolved: '#70818d',
 	nodeNeighbor: '#9beeff',
 	nodeActive: '#f3a712',
 	nodeHovered: '#ffe066',
@@ -91,6 +93,60 @@ describe('adaptiveSegmentCount', () => {
 		expect(
 			group.getObjectByName('spherical-graph-selected-edge-ribbon'),
 		).toBeUndefined();
+		layer.dispose();
+	});
+
+	it('removes links incident to disabled attachment nodes', () => {
+		const group = new Group();
+		const layer = new EdgeLayer(
+			group,
+			DEFAULT_SETTINGS.appearance,
+			theme,
+		);
+		layer.setSnapshot(
+			prepareRenderSnapshot({
+				snapshotId: 'filters',
+				nodes: [
+					{
+						index: 0,
+						id: 'A',
+						path: 'A.md',
+						basename: 'A',
+						degree: 1,
+						weightedDegree: 1,
+						kind: 'note',
+					},
+					{
+						index: 1,
+						id: 'map.png',
+						path: 'map.png',
+						basename: 'map',
+						degree: 1,
+						weightedDegree: 1,
+						kind: 'attachment',
+					},
+				],
+				edges: [{ source: 0, target: 1, weight: 1 }],
+				positions: new Float32Array([1, 0, 0, 0, 1, 0]),
+			}),
+		);
+		const hiddenLines = group.getObjectByName(
+			'spherical-graph-edges',
+		) as LineSegments;
+		expect(hiddenLines.geometry.getAttribute('position').count).toBe(0);
+
+		layer.updateFilters({
+			showTags: true,
+			showAttachments: true,
+			existingFilesOnly: true,
+			showOrphans: true,
+		});
+		const visibleLines = group.getObjectByName(
+			'spherical-graph-edges',
+		) as LineSegments;
+		expect(
+			visibleLines.geometry.getAttribute('position').count,
+		).toBeGreaterThan(0);
 		layer.dispose();
 	});
 });

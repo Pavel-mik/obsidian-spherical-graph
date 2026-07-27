@@ -12,6 +12,12 @@ import {
 import { UI_STRINGS } from '../i18n';
 import { SphericalGraphRenderer } from '../render/SphericalGraphRenderer';
 import {
+	DEFAULT_RENDER_FILTERS,
+	isRenderNodeVisible,
+	renderNodeKind,
+	type RenderFilterState,
+} from '../render/renderFilters';
+import {
 	CameraState,
 	RenderGraphSnapshot,
 	RenderNode,
@@ -88,7 +94,7 @@ export class SphericalGraphView extends ItemView {
 	private opened = false;
 	private selectedNodeId: string | undefined;
 	private selectedTagId: string | undefined;
-	private tagsVisible = true;
+	private displayFilters: RenderFilterState = DEFAULT_RENDER_FILTERS;
 	private routeSelection: RouteSelectionState = { kind: 'idle' };
 	private renderRoute: RenderRouteState | undefined;
 
@@ -115,6 +121,10 @@ export class SphericalGraphView extends ItemView {
 		this.currentSettings = parseSphericalGraphSettings(
 			options.getSettings(),
 		);
+		this.displayFilters = {
+			...DEFAULT_RENDER_FILTERS,
+			showOrphans: this.currentSettings.data.includeOrphanNotes,
+		};
 	}
 
 	getViewType(): string {
@@ -164,8 +174,8 @@ export class SphericalGraphView extends ItemView {
 				onRouteToggle: () => {
 					this.toggleRouteSelection();
 				},
-				onTagsToggle: () => {
-					this.toggleTags();
+				onFiltersChange: (filters) => {
+					this.changeDisplayFilters(filters);
 				},
 				onSurfaceModeChange: (mode) => {
 					this.changeSurfaceMode(mode);
@@ -186,6 +196,7 @@ export class SphericalGraphView extends ItemView {
 				},
 			},
 			this.currentSettings.appearance.surfaceMode,
+			this.displayFilters,
 		);
 		this.root.append(this.stage);
 
@@ -234,6 +245,7 @@ export class SphericalGraphView extends ItemView {
 					},
 				},
 			});
+			this.renderer.setFilters(this.displayFilters);
 		} catch (error) {
 			this.runtimeError = errorMessage(
 				error,
@@ -343,7 +355,13 @@ export class SphericalGraphView extends ItemView {
 	 */
 	toggleRouteSelection(): boolean {
 		const snapshot = this.model.snapshot;
-		if (snapshot === undefined || snapshot.nodes.length < 2) {
+		const routeNodes =
+			snapshot?.nodes.filter(
+				(node) =>
+					renderNodeKind(node) === 'note' &&
+					isRenderNodeVisible(node, this.displayFilters),
+			) ?? [];
+		if (snapshot === undefined || routeNodes.length < 2) {
 			return false;
 		}
 		if (this.routeSelection.kind !== 'idle') {
@@ -353,7 +371,7 @@ export class SphericalGraphView extends ItemView {
 		const selectedNode =
 			this.selectedNodeId === undefined
 				? undefined
-				: snapshot.nodes.find(
+			: routeNodes.find(
 						(node) => node.id === this.selectedNodeId,
 					);
 		if (selectedNode === undefined) {
@@ -412,10 +430,10 @@ export class SphericalGraphView extends ItemView {
 	private applySnapshot(snapshot: RenderGraphSnapshot): void {
 		try {
 			this.renderer?.setSnapshot(snapshot);
-			this.toolbar?.setNodes(snapshot.nodes);
+			this.syncVisibleNodes(snapshot);
 			this.toolbar?.setTagsAvailable(snapshot.tags?.length ?? 0);
-			this.toolbar?.setTagsVisible(this.tagsVisible);
-			this.renderer?.setTagsVisible(this.tagsVisible);
+			this.toolbar?.setFilterState(this.displayFilters);
+			this.renderer?.setFilters(this.displayFilters);
 			this.detailsPanel?.setSnapshot(snapshot);
 			if (
 				this.selectedNodeId !== undefined &&
@@ -483,6 +501,9 @@ export class SphericalGraphView extends ItemView {
 	}
 
 	private handleTagSelection(tag: RenderTag | undefined): void {
+		if (tag !== undefined && !this.displayFilters.showTags) {
+			return;
+		}
 		this.selectedNodeId = undefined;
 		this.selectedTagId = tag?.id;
 		this.renderer?.setSelectedNode(undefined);
@@ -491,13 +512,43 @@ export class SphericalGraphView extends ItemView {
 		this.detailsPanel?.setSelectedTag(tag?.id);
 	}
 
-	private toggleTags(): void {
-		this.tagsVisible = !this.tagsVisible;
-		this.renderer?.setTagsVisible(this.tagsVisible);
-		this.toolbar?.setTagsVisible(this.tagsVisible);
-		if (!this.tagsVisible && this.selectedTagId !== undefined) {
-			this.handleTagSelection(undefined);
+	private changeDisplayFilters(filters: RenderFilterState): void {
+		this.displayFilters = { ...filters };
+		this.renderer?.setFilters(this.displayFilters);
+		this.toolbar?.setFilterState(this.displayFilters);
+		const snapshot = this.model.snapshot;
+		if (snapshot !== undefined) {
+			this.syncVisibleNodes(snapshot);
+			const selected =
+				this.selectedNodeId === undefined
+					? undefined
+					: snapshot.nodes.find(
+							(node) => node.id === this.selectedNodeId,
+						);
+			if (
+				selected !== undefined &&
+				!isRenderNodeVisible(selected, this.displayFilters)
+			) {
+				this.handleNodeSelection(undefined, false);
+			}
+			if (
+				!this.displayFilters.showTags &&
+				this.selectedTagId !== undefined
+			) {
+				this.handleTagSelection(undefined);
+			}
+			this.reconcileRoute(snapshot);
 		}
+	}
+
+	private syncVisibleNodes(snapshot: RenderGraphSnapshot): void {
+		this.toolbar?.setNodes(
+			snapshot.nodes.filter(
+				(node) =>
+					renderNodeKind(node) === 'note' &&
+					isRenderNodeVisible(node, this.displayFilters),
+			),
+		);
 	}
 
 	private setRouteSource(node: RenderNode): void {
@@ -523,10 +574,16 @@ export class SphericalGraphView extends ItemView {
 	): void {
 		const snapshot = this.model.snapshot;
 		const source = snapshot?.nodes.find(
-			(node) => node.id === sourceNodeId,
+			(node) =>
+				node.id === sourceNodeId &&
+				renderNodeKind(node) === 'note' &&
+				isRenderNodeVisible(node, this.displayFilters),
 		);
 		const target = snapshot?.nodes.find(
-			(node) => node.id === targetNodeId,
+			(node) =>
+				node.id === targetNodeId &&
+				renderNodeKind(node) === 'note' &&
+				isRenderNodeVisible(node, this.displayFilters),
 		);
 		if (
 			snapshot === undefined ||
@@ -538,7 +595,24 @@ export class SphericalGraphView extends ItemView {
 		}
 		const result = findAllShortestPathUnion(
 			snapshot.nodes.length,
-			snapshot.edges,
+			snapshot.edges.filter((edge) => {
+				const edgeSource = snapshot.nodes[edge.source];
+				const edgeTarget = snapshot.nodes[edge.target];
+				return (
+					edgeSource !== undefined &&
+					edgeTarget !== undefined &&
+					renderNodeKind(edgeSource) === 'note' &&
+					renderNodeKind(edgeTarget) === 'note' &&
+					isRenderNodeVisible(
+						edgeSource,
+						this.displayFilters,
+					) &&
+					isRenderNodeVisible(
+						edgeTarget,
+						this.displayFilters,
+					)
+				);
+			}),
 			source.index,
 			target.index,
 		);
@@ -592,7 +666,10 @@ export class SphericalGraphView extends ItemView {
 			return;
 		}
 		const source = snapshot.nodes.find(
-			(node) => node.id === route.sourceNodeId,
+			(node) =>
+				node.id === route.sourceNodeId &&
+				renderNodeKind(node) === 'note' &&
+				isRenderNodeVisible(node, this.displayFilters),
 		);
 		if (source === undefined) {
 			this.clearRoute();
@@ -609,7 +686,10 @@ export class SphericalGraphView extends ItemView {
 			return;
 		}
 		const target = snapshot.nodes.find(
-			(node) => node.id === route.targetNodeId,
+			(node) =>
+				node.id === route.targetNodeId &&
+				renderNodeKind(node) === 'note' &&
+				isRenderNodeVisible(node, this.displayFilters),
 		);
 		if (target === undefined) {
 			this.clearRoute();

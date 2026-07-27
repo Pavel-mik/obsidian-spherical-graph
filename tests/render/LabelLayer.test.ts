@@ -3,6 +3,7 @@ import {
 	cameraZoomInPercent,
 	routeRoleForNode,
 } from '../../src/render/LabelLayer';
+import { labelZoomVisuals } from '../../src/render/labelVisibility';
 
 describe('cameraZoomInPercent', () => {
 	it('maps the supported camera range to a stable zoom-in percentage', () => {
@@ -11,6 +12,21 @@ describe('cameraZoomInPercent', () => {
 		expect(cameraZoomInPercent(27)).toBeCloseTo(68.75, 8);
 		expect(cameraZoomInPercent(100)).toBe(0);
 		expect(cameraZoomInPercent(2)).toBe(100);
+	});
+});
+
+describe('labelZoomVisuals', () => {
+	it('fades and scales labels continuously across the zoom range', () => {
+		const hidden = labelZoomVisuals(36, 50);
+		const fading = labelZoomVisuals(30, 50);
+		const close = labelZoomVisuals(12, 50);
+
+		expect(hidden.opacity).toBe(0);
+		expect(fading.opacity).toBeGreaterThan(0);
+		expect(fading.opacity).toBeLessThan(1);
+		expect(close.opacity).toBe(1);
+		expect(hidden.scale).toBeLessThan(fading.scale);
+		expect(fading.scale).toBeLessThan(close.scale);
 	});
 });
 

@@ -30,6 +30,11 @@ import {
 } from './renderTypes';
 import { SphereLayer } from './SphereLayer';
 import { TagLayer } from './TagLayer';
+import {
+	DEFAULT_RENDER_FILTERS,
+	renderNodeKind,
+	type RenderFilterState,
+} from './renderFilters';
 
 interface FocusAnimation {
 	startedAt: number;
@@ -68,6 +73,7 @@ export class SphericalGraphRenderer {
 	private snapshot: PreparedRenderSnapshot | undefined;
 	private selection: RenderSelectionState = {};
 	private selectedTagId: string | undefined;
+	private filters: RenderFilterState = DEFAULT_RENDER_FILTERS;
 	private resizeObserver: ResizeObserver | undefined;
 	private themeObserver: MutationObserver | undefined;
 	private animationFrame: number | undefined;
@@ -182,6 +188,9 @@ export class SphericalGraphRenderer {
 					this.callbacks.onSelect?.(node);
 				},
 				onOpen: (node, openInNewLeaf) => {
+					if (renderNodeKind(node) === 'unresolved') {
+						return;
+					}
 					this.callbacks.onOpenNode?.(node, openInNewLeaf);
 				},
 			},
@@ -276,7 +285,15 @@ export class SphericalGraphRenderer {
 	}
 
 	setTagsVisible(visible: boolean): void {
-		this.tagLayer.setVisible(visible);
+		this.setFilters({ ...this.filters, showTags: visible });
+	}
+
+	setFilters(filters: RenderFilterState): void {
+		this.filters = { ...filters };
+		this.nodeLayer.updateFilters(this.filters);
+		this.edgeLayer.updateFilters(this.filters);
+		this.labelLayer.updateFilters(this.filters);
+		this.tagLayer.setVisible(this.filters.showTags);
 		this.requestRender();
 	}
 
@@ -647,6 +664,8 @@ export class SphericalGraphRenderer {
 		return {
 			background: css('--sg-void', '#02050b'),
 			node: css('--sg-cyan', '#21e6ff'),
+			nodeAttachment: css('--sg-attachment', '#ffb547'),
+			nodeUnresolved: css('--sg-unresolved', '#70818d'),
 			nodeNeighbor: css('--sg-cyan-soft', '#73f4ff'),
 			nodeActive: css('--sg-amber', '#ffb547'),
 			nodeHovered: css('--sg-magenta', '#ff4fd8'),

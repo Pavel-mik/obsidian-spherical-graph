@@ -80,7 +80,9 @@ function graphFilters(
 ): Partial<GraphFilterOptions> {
 	return {
 		excludedFolderPrefixes: settings.data.excludedFolderPrefixes,
-		includeOrphans: settings.data.includeOrphanNotes,
+		// Orphans always remain in the committed layout. The graph-view toggle
+		// only changes renderer visibility and never starts a solver.
+		includeOrphans: true,
 	};
 }
 
@@ -576,6 +578,17 @@ export default class SphericalGraphPlugin extends Plugin {
 	): Promise<void> {
 		this.currentGraph = observation.graph;
 		this.currentDiff = observation.diff;
+		const committedSnapshot = this.lifecycle?.committedSnapshot;
+		if (committedSnapshot !== undefined) {
+			this.renderSnapshot = createRenderGraphSnapshot(
+				committedSnapshot,
+				observation.graph,
+				observation.diff.renamedNodes,
+			);
+			for (const view of this.graphViews()) {
+				view.setSnapshot(this.renderSnapshot);
+			}
+		}
 		await this.lifecycle?.markGraphChanged(
 			observation.graph,
 			observation.diff,

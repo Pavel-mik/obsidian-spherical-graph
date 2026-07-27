@@ -63,7 +63,7 @@ vulnerabilities.
 
 ## Test coverage summary
 
-The 155 automated tests cover:
+The 165 automated tests cover:
 
 - stable spherical distance, tangent projection/direction, exponential map,
   SLERP/geodesic arcs, antipodal fallback, rotations, and deterministic PRNG;
@@ -90,6 +90,13 @@ The 155 automated tests cover:
   spherical spirals, adjustable orbit radius, main-globe segment occlusion,
   default-off camera-axis shaders, instanced satellite placement, and
   selected/route-only batched tag links.
+- render-only tag, attachment, unresolved-link, and orphan filtering across
+  nodes, edges, labels, picking, route candidates, and snapshot integration;
+- derived attachment/unresolved positions that leave the committed layout
+  signature unchanged;
+- common zoom-driven note/tag label opacity and scale curves;
+- deterministic tag-orbit anchoring and intrinsic packing from final committed
+  note positions, including single-note tags and collision separation.
 
 ## Layout benchmark
 
@@ -207,6 +214,38 @@ The separate lifecycle tests verify that Refresh/Renew progress never sends
 working position buffers to the renderer and that the previous snapshot is
 replaced only by a valid terminal completion.
 
+## Version 1.1.0 update validation
+
+On 2026-07-27 the release candidate passed:
+
+- `npm run check` (ESLint, TypeScript, 35 test files / 165 tests, production
+  build, and release validation);
+- `RELEASE_TAG=1.1.0 npm run validate:release`;
+- `npm audit --omit=dev` with 0 vulnerabilities;
+- `git diff --check` with no whitespace errors.
+
+A browser QA harness loaded the production `SphericalGraphRenderer`,
+`ViewToolbar`, `SelectionDetailsPanel`, and release stylesheet against a
+deterministic 72-note graph. The generated screenshots are committed in
+`docs/screenshots/`.
+
+Verified:
+
+- the only persistent top-bar control besides the disclosure was
+  **Find a note…**; opening **Graph controls** exposed separate Actions,
+  Filters, and Appearance sections;
+- enabling **Attachments** changed the authoritative checkbox state and
+  immediately added all three attachment labels and incident render edges
+  without a layout operation;
+- note and tag labels shared the same zoom response. For the measured
+  `Research Atlas` / `#atlas` pair, the rendered scale changed from 0.974 to
+  0.895 while opacity faded from 1 to 0.56 at an intermediate zoom-out;
+- the route scenario displayed distinct magenta selection links, acid-green
+  shortest-route links, Start/Dest endpoint labels, tag satellites, and the
+  clickable Selection details panel together;
+- the default globe, route, and open-filter scenarios produced no browser
+  console warnings or errors.
+
 ## Not manually exercised
 
 These remain covered only partially by automated tests or by the manual plan:
@@ -222,15 +261,15 @@ These remain covered only partially by automated tests or by the manual plan:
 
 See `MANUAL_TEST_PLAN.md` for the complete follow-up matrix.
 
-## Release artifacts
+## Release artifacts (1.1.0)
 
-- `main.js`: 785,704 bytes after the final production build
-- `manifest.json`: plugin 1.0.0, minimum Obsidian 1.7.2
-- `styles.css`: 30,239 bytes
+- `main.js`: 795,263 bytes after the final production build
+- `manifest.json`: plugin 1.1.0, minimum Obsidian 1.7.2
+- `styles.css`: 35,452 bytes
 - no separate worker JavaScript file is required or present
 
 SHA-256 values from the final build:
 
-- `main.js`: `10590E268DC31D844EC4DB4B06C7ADEE556EFEB8D4006186BB84C82234279C46`
-- `manifest.json`: `2F54451FD4BC1F3E87C97C1525A61661AD5753ACC02C4CCB5226AE7325252041`
-- `styles.css`: `C10828DD6E7301E4F96A796C3199C661CBEB3B6F8977EECDF1996AFD8B0F4DAF`
+- `main.js`: `72E0B878BDAD258DDF134CFF153824A9EC801DF856292460FFB9814BB3C58A87`
+- `manifest.json`: `77D53541E250B9CAA3642718F6EABCD0B996A4C014C64BEF9E32FA5E6D2E5788`
+- `styles.css`: `2AE79536251378C02CA7C78DEA7B9F40124F91CE919F7680E885861862979441`

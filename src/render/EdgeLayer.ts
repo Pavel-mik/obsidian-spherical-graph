@@ -17,6 +17,11 @@ import { Vec3 } from '../geometry/vector3';
 import { canonicalEdgeKey } from '../graph/shortestPaths';
 import { AppearanceSettings } from '../settings/settings';
 import {
+	DEFAULT_RENDER_FILTERS,
+	isRenderNodeVisible,
+	type RenderFilterState,
+} from './renderFilters';
+import {
 	PreparedRenderSnapshot,
 	RenderEdge,
 	RenderRouteState,
@@ -41,6 +46,7 @@ export class EdgeLayer {
 	private routeRibbon: Mesh | undefined;
 	private appearance: AppearanceSettings;
 	private theme: RenderTheme;
+	private filters: RenderFilterState = DEFAULT_RENDER_FILTERS;
 
 	constructor(
 		private readonly group: Group,
@@ -52,15 +58,33 @@ export class EdgeLayer {
 	}
 
 	setSnapshot(snapshot: PreparedRenderSnapshot): void {
-		this.removeLines();
 		this.snapshot = snapshot;
+		this.rebuildLines();
+	}
 
+	updateFilters(filters: RenderFilterState): void {
+		this.filters = { ...filters };
+		this.rebuildLines();
+	}
+
+	private rebuildLines(): void {
+		this.removeLines();
+		const snapshot = this.snapshot;
+		if (snapshot === undefined) {
+			return;
+		}
 		const positions: number[] = [];
 		const records: EdgeDrawRecord[] = [];
 		for (const edge of snapshot.edges) {
 			const startNode = snapshot.nodeByIndex.get(edge.source);
 			const endNode = snapshot.nodeByIndex.get(edge.target);
 			if (startNode === undefined || endNode === undefined) {
+				continue;
+			}
+			if (
+				!isRenderNodeVisible(startNode, this.filters) ||
+				!isRenderNodeVisible(endNode, this.filters)
+			) {
 				continue;
 			}
 			const start = this.readPosition(snapshot, edge.source);

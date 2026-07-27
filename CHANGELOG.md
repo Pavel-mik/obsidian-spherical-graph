@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-27
+
+### Added
+
+- Render-only graph filters for tags, attachments, unresolved links, and
+  orphan notes. Toggling a filter never recalculates or moves the saved layout.
+- Attachment and unresolved-link markers derived from their connected notes.
+
+### Changed
+
+- Note and tag labels now fade and scale smoothly with camera zoom.
+- The compact top bar now keeps note search visible while grouping actions,
+  filters, and appearance controls in an accessible dropdown menu.
+- Tag satellites are intrinsically packed around directions derived from their
+  linked notes. A tag unique to one note therefore orbits above that note
+  instead of appearing on an unrelated hemisphere.
+- Community-facing copy now presents the graph as a globe of cities, roads,
+  and tag satellites, with Route Finder as a core navigation feature.
+
+### Fixed
+
+- Hidden categories and all incident links are consistently excluded from
+  picking, labels, selection emphasis, and route searches.
+
 ## [1.0.0] - 2026-07-24
 
 ### Added
@@ -40,5 +64,6 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.0.0...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.1.0...HEAD
+[1.1.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/releases/tag/1.0.0
