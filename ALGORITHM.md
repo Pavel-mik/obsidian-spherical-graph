@@ -233,7 +233,14 @@ A dominance margin assigns at most one owner and deliberately leaves sea where
 two land potentials compete. Mixed land/sea triangles are clipped by bisection
 at the ownership boundary instead of being accepted wholesale from their
 centroid. The same intersections form the coastline batch, eliminating regular
-mesh teeth while retaining a deterministic irregular silhouette. Explicit and
+mesh teeth while retaining a deterministic irregular silhouette. Semantic
+island membership remains complete, but the land mesh applies a render-only
+level of detail: small vaults can show every isolated island, whereas larger
+vaults receive a deterministic density-aware budget capped at 24 spatially
+separated representatives. Candidates too close to a continent coast are
+omitted, and island radius decreases with note count. Notes without a rendered
+land patch remain ordinary interactive cities over open water, so layout,
+links, routes, labels, and persistence are unchanged. Representative and
 decorative shelf islands are emitted as small irregular tangent patches in the
 same batched land mesh.
 

@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-spherical-graph",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"description": "Explore your vault as a globe: notes are cities, links are roads, tags orbit as satellites, and Route Finder reveals every shortest path.",
 	"private": true,
 	"main": "main.js",

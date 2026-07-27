@@ -321,6 +321,26 @@ removed and restored without a layout change. A page-level collector for
 complete interaction. Updated globe, route, and open-Map screenshots were
 written to `docs/screenshots/`.
 
+### Large-vault island-density regression
+
+The reported failure case was reproduced with the production renderer using a
+deterministic 636-note, 3,390-link scene containing two accepted continents
+and 600 semantic island nodes. Before the fix, the former one-land-patch-per-
+free-note rule covered the globe with hundreds of overlapping polygons.
+
+The regression test and disposable browser scene now verify that:
+
+- the complete `npm run check` chain passes with 39 test files / 185 tests,
+  production build, and release-artifact validation for version 1.2.1;
+- the complete semantic island set is retained while rendered island land is
+  deterministically limited to 24 spatially separated representatives;
+- island radius at 636 notes is less than half its 82-note size;
+- two continent labels, ocean, cities, and roads remain legible;
+- **Map → Continents** removes and restores land, coastlines, islands, and
+  labels without recomputing layout; and
+- the browser console remains free of warnings and errors through the toggle
+  sequence.
+
 ## Not manually exercised
 
 These remain covered only partially by automated tests or by the manual plan:

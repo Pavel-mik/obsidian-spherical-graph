@@ -21,6 +21,8 @@ import type { RenderGeography } from './renderTypes';
 
 export const SEA_OWNER = -1;
 const COAST_SURFACE_OFFSET = 0.004;
+export const MAX_RENDERED_ISLANDS = 24;
+const MIN_RENDERED_ISLAND_SEPARATION = 0.11;
 
 export interface LandSurfaceData {
 	readonly positions: Float32Array;
@@ -28,6 +30,7 @@ export interface LandSurfaceData {
 	readonly shades: Float32Array;
 	readonly coastPositions: Float32Array;
 	readonly triangleCount: number;
+	readonly renderedIslandCount: number;
 }
 
 interface CoastProfile {
@@ -314,6 +317,161 @@ function surfaceShade(point: Vector3, seed: number, owner: number): number {
 	);
 }
 
+function islandLandBudget(nodeCount: number, islandCount: number): number {
+	if (islandCount <= 8) {
+		return islandCount;
+	}
+	const adaptiveBudget = Math.round(6 + Math.sqrt(nodeCount) * 0.72);
+	return Math.min(
+		islandCount,
+		Math.max(8, Math.min(MAX_RENDERED_ISLANDS, adaptiveBudget)),
+	);
+}
+
+export function renderedIslandRadius(
+	nodeCount: number,
+	nodeIndex: number,
+	seed: number,
+): number {
+	const densityScale = Math.min(
+		1,
+		Math.max(0.38, Math.sqrt(96 / Math.max(1, nodeCount))),
+	);
+	return (
+		(0.045 +
+			(hashNumbers(seed, nodeIndex, 0x51) % 1000) / 1000 * 0.018) *
+		densityScale
+	);
+}
+
+interface IslandLandCandidate {
+	readonly nodeIndex: number;
+	readonly center: Vec3;
+	readonly seaClearance: number;
+	readonly tieBreaker: number;
+}
+
+/**
+ * Free nodes are a layout concept, not a mandate to draw one land patch per
+ * note. This deterministic render-only LOD keeps a small set of isolated,
+ * spatially separated representatives. Other free nodes remain visible as
+ * cities over open water and retain their links, picking, and labels.
+ */
+export function selectRenderedIslandNodeIndices(
+	geography: RenderGeography,
+	positions: Float32Array,
+	seed: number,
+): readonly number[] {
+	const nodeCount = positions.length / 3;
+	const budget = islandLandBudget(
+		nodeCount,
+		geography.islandNodeIndices.length,
+	);
+	if (budget === 0) {
+		return [];
+	}
+	const continentModel = createLandModel(
+		{
+			continents: geography.continents,
+			islandNodeIndices: [],
+		},
+		positions,
+		seed,
+	);
+	const candidates: IslandLandCandidate[] = [];
+	for (const nodeIndex of geography.islandNodeIndices) {
+		const center = normalizeVec3(readVec3(positions, nodeIndex));
+		const islandRadius = renderedIslandRadius(nodeCount, nodeIndex, seed);
+		let seaClearance = Math.PI;
+		for (
+			let continentIndex = 0;
+			continentIndex < geography.continents.length;
+			continentIndex += 1
+		) {
+			const continent = geography.continents[continentIndex];
+			if (continent === undefined) {
+				continue;
+			}
+			seaClearance = Math.min(
+				seaClearance,
+				geodesicDistance(center, continent.center) -
+					continentCoastRadius(
+						center,
+						continentIndex,
+						continentModel,
+					),
+			);
+		}
+		if (seaClearance <= islandRadius * 1.4) {
+			continue;
+		}
+		candidates.push({
+			nodeIndex,
+			center,
+			seaClearance,
+			tieBreaker: hashNumbers(seed, nodeIndex, 0x15e1),
+		});
+	}
+	candidates.sort(
+		(left, right) =>
+			right.seaClearance - left.seaClearance ||
+			left.tieBreaker - right.tieBreaker ||
+			left.nodeIndex - right.nodeIndex,
+	);
+
+	const selected: IslandLandCandidate[] = [];
+	for (const separationScale of [1, 0.72, 0.48] as const) {
+		for (const candidate of candidates) {
+			if (
+				selected.length >= budget ||
+				selected.some((entry) => entry.nodeIndex === candidate.nodeIndex)
+			) {
+				continue;
+			}
+			const minimumSeparation =
+				MIN_RENDERED_ISLAND_SEPARATION * separationScale;
+			if (
+				minimumSeparation > 0 &&
+				selected.some(
+					(entry) =>
+						geodesicDistance(entry.center, candidate.center) <
+						minimumSeparation,
+				)
+			) {
+				continue;
+			}
+			selected.push(candidate);
+		}
+		if (selected.length >= budget) {
+			break;
+		}
+	}
+	return selected
+		.map((candidate) => candidate.nodeIndex)
+		.sort((left, right) => left - right);
+}
+
+function islandColorIndex(
+	center: Vec3,
+	geography: RenderGeography,
+	nodeIndex: number,
+	seed: number,
+): number {
+	let nearestColorIndex: number | undefined;
+	let nearestDistance = Number.POSITIVE_INFINITY;
+	for (const continent of geography.continents) {
+		const distance = geodesicDistance(center, continent.center);
+		if (distance < nearestDistance) {
+			nearestDistance = distance;
+			nearestColorIndex = continent.colorIndex;
+		}
+	}
+	return (
+		nearestColorIndex ??
+		hashNumbers(seed, nodeIndex, 0x15c0) % 6
+	);
+}
+
 function appendIslandPatch(
 	landPositions: number[],
 	colorIndices: number[],
@@ -410,8 +568,14 @@ export function buildLandSurfaceData(
 			shades: new Float32Array(),
 			coastPositions: new Float32Array(),
 			triangleCount: 0,
+			renderedIslandCount: 0,
 		};
 	}
+	const renderedIslandNodeIndices = selectRenderedIslandNodeIndices(
+		geography,
+		positions,
+		seed,
+	);
 	const rawGeometry = new IcosahedronGeometry(1, detail);
 	const source =
 		rawGeometry.index === null
@@ -582,20 +746,26 @@ export function buildLandSurfaceData(
 
 	for (
 		let islandIndex = 0;
-		islandIndex < geography.islandNodeIndices.length;
+		islandIndex < renderedIslandNodeIndices.length;
 		islandIndex += 1
 	) {
-		const nodeIndex = geography.islandNodeIndices[islandIndex];
+		const nodeIndex = renderedIslandNodeIndices[islandIndex];
 		if (nodeIndex === undefined) {
 			continue;
 		}
 		const center = normalizeVec3(readVec3(model.positions, nodeIndex));
 		const islandSeed = hashNumbers(seed, nodeIndex, 0x151a);
-		const islandRadius =
-			0.055 +
-			(hashNumbers(islandSeed, 0x51) % 1000) / 1000 * 0.025;
-		const colorIndex =
-			hashNumbers(seed, nodeIndex, 0x15c0) % 6;
+		const islandRadius = renderedIslandRadius(
+			positions.length / 3,
+			nodeIndex,
+			seed,
+		);
+		const colorIndex = islandColorIndex(
+			center,
+			geography,
+			nodeIndex,
+			seed,
+		);
 		triangleCount += appendIslandPatch(
 			landPositions,
 			colorIndices,
@@ -618,5 +788,6 @@ export function buildLandSurfaceData(
 		shades: new Float32Array(shades),
 		coastPositions: new Float32Array(coastPositions),
 		triangleCount,
+		renderedIslandCount: renderedIslandNodeIndices.length,
 	};
 }

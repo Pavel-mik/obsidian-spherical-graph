@@ -3,8 +3,14 @@ import {
 	buildLandSurfaceData,
 	classifyLandOwner,
 	continentCoastRadius,
+	MAX_RENDERED_ISLANDS,
+	renderedIslandRadius,
+	selectRenderedIslandNodeIndices,
 	SEA_OWNER,
 } from '../../src/render/landGeometry';
+import { fibonacciSpherePoint } from '../../src/layout/initialization';
+import { geodesicDistance } from '../../src/geometry/sphericalGeometry';
+import { readVec3 } from '../../src/geometry/vector3';
 import type { RenderGeography } from '../../src/render/renderTypes';
 
 const geography: RenderGeography = {
@@ -57,6 +63,7 @@ describe('land surface geometry', () => {
 		expect(data.shades.length).toBe(data.triangleCount * 3);
 		expect(data.coastPositions.length).toBeGreaterThan(0);
 		expect(data.coastPositions.length % 6).toBe(0);
+		expect(data.renderedIslandCount).toBe(1);
 	});
 
 	it('is deterministic for a committed snapshot seed', () => {
@@ -132,5 +139,76 @@ describe('land surface geometry', () => {
 				}
 			}
 		}
+	});
+
+	it('limits and shrinks island land on a 636-note vault', () => {
+		const nodeCount = 636;
+		const largePositions = new Float32Array(nodeCount * 3);
+		for (let index = 0; index < nodeCount; index += 1) {
+			largePositions.set(fibonacciSpherePoint(index, nodeCount), index * 3);
+		}
+		const largeGeography: RenderGeography = {
+			continents: [
+				{
+					id: 'north',
+					label: 'North',
+					nodeIndices: [0],
+					center: [0, 1, 0],
+					capRadius: 0.42,
+					colorIndex: 0,
+				},
+				{
+					id: 'south',
+					label: 'South',
+					nodeIndices: [1],
+					center: [0, -1, 0],
+					capRadius: 0.42,
+					colorIndex: 1,
+				},
+			],
+			islandNodeIndices: Array.from(
+				{ length: nodeCount - 2 },
+				(_, index) => index + 2,
+			),
+		};
+
+		const first = selectRenderedIslandNodeIndices(
+			largeGeography,
+			largePositions,
+			42,
+		);
+		const second = selectRenderedIslandNodeIndices(
+			largeGeography,
+			largePositions,
+			42,
+		);
+		expect(first).toEqual(second);
+		expect(first.length).toBeGreaterThan(8);
+		expect(first.length).toBeLessThanOrEqual(MAX_RENDERED_ISLANDS);
+		for (let left = 0; left < first.length; left += 1) {
+			for (let right = left + 1; right < first.length; right += 1) {
+				expect(
+					geodesicDistance(
+						readVec3(largePositions, first[left] ?? 0),
+						readVec3(largePositions, first[right] ?? 0),
+					),
+				).toBeGreaterThanOrEqual(0.109);
+			}
+		}
+		expect(renderedIslandRadius(nodeCount, first[0] ?? 0, 42)).toBeLessThan(
+			renderedIslandRadius(82, first[0] ?? 0, 42) * 0.5,
+		);
+
+		const data = buildLandSurfaceData(
+			largeGeography,
+			largePositions,
+			10.015,
+			42,
+			2,
+		);
+		expect(data.renderedIslandCount).toBe(first.length);
+		expect(data.renderedIslandCount).toBeLessThan(
+			largeGeography.islandNodeIndices.length / 20,
+		);
 	});
 });

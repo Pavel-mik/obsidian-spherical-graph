@@ -84,6 +84,12 @@
 - Land triangles are derived and batched at render time; persistence stores
   semantic geography only. This keeps snapshots compact and lets themes recolor
   the atlas without moving notes.
+- A free note is semantically an island but does not necessarily receive its
+  own land polygon. Large-vault rendering selects at most 24 deterministic,
+  well-separated representatives and scales their footprint with density.
+  Rendering every rejected community member as fixed-size land was rejected
+  because it converted the ocean into overlapping confetti without adding
+  navigational information.
 - Coast detail and terrain texture are deterministic procedural functions of
   the committed snapshot seed and sphere direction. No bitmap texture is
   shipped, fetched, or persisted, and Refresh cannot randomly redraw the map.

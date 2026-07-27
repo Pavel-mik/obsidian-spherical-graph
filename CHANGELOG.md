@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-07-27
+
+### Fixed
+
+- Large vaults no longer turn every note outside an accepted continent into a
+  full land patch. The renderer now draws a deterministic, density-aware,
+  spatially separated sample of at most 24 representative islands while all
+  remaining notes stay visible as cities over open water.
+- Representative islands shrink as vault size grows, avoid continent
+  coastlines, and inherit the nearest continent palette, preserving readable
+  oceans and coherent geography without changing layout, picking, routes, or
+  persisted continent membership.
+
 ## [1.2.0] - 2026-07-27
 
 ### Added

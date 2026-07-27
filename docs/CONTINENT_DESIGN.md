@@ -74,10 +74,13 @@ corners, or decorative grid overlays are part of this system.
   contour traces. Ocean uses its own lower-contrast procedural depth texture.
   Both are derived from sphere direction and the snapshot seed; the plugin
   ships no raster texture and makes no runtime request.
-- Every continent node remains inside the coast safety envelope, while
-  unassigned nodes receive smaller irregular island kernels. A small
-  deterministic number of shelf islets adds geographic scale without changing
-  semantic membership.
+- Every continent node remains inside the coast safety envelope. Unassigned
+  nodes remain semantic islands, but large vaults render land only beneath a
+  bounded, spatially dispersed representative sample. Island footprints shrink
+  with vault density and avoid continent coasts; every other unassigned node
+  remains visible as an interactive city over the ocean. A small deterministic
+  number of shelf islets adds geographic scale without changing semantic
+  membership.
 
 ## Core interaction
 
