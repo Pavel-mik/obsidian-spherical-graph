@@ -311,6 +311,7 @@ export class SphereLayer {
 			hashString(snapshot.snapshotId.split(':')[0] ?? snapshot.snapshotId),
 			48,
 			snapshot.edges,
+			snapshot.nodes.map((node) => node.degree),
 		);
 		this.landData = data;
 		const beachGeometry = new BufferGeometry();

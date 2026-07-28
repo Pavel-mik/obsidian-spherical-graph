@@ -110,13 +110,20 @@ a center, reserve surface area, or override the final spatial ownership.
 The analytical surface is a deterministically subdivided icosahedron. Grid
 resolution is selected from the characteristic sixth-neighbor angular spacing,
 so a large dense vault receives finer cells without imposing one fixed global
-map resolution. Every committed note is mapped to its nearest grid vertex.
+map resolution. Every committed note is mapped to its nearest grid vertex, but
+only notes with graph degree at least three participate in the spacing estimate
+and continental density field.
 
 Each note's sixth-neighbor distance supplies a locally adaptive bandwidth,
 clamped around the global characteristic spacing. The density field combines a
 fine compact kernel and a broader compact kernel with weights 0.82 and 0.18.
 Dense local structures therefore retain detail while sparse but coherent areas
 receive enough support to remain connected.
+
+Degree filtering is cartographic rather than positional: it never changes a
+committed vector. Orphan notes have zero land weight, and degree-one/two notes
+are excluded from continent basins so sparse appendices cannot close an ocean
+or enlarge a major landmass.
 
 ### Watershed and connected ocean
 
@@ -130,11 +137,13 @@ evidence in every case.
 Candidate land basins must be sufficiently large and have either graph support
 or spatial prominence above the local density background. At most seven are
 retained. Ownership grows only through sufficiently dense cells in the
-candidate's watershed basin, with actual node cells protected as seeds.
+candidate's watershed basin, with eligible degree-three-or-higher node cells
+protected as seeds.
 Neighboring owners are separated by an explicit sea cell. The remaining sea
 components are reconciled so the analytical map contains exactly one connected
-ocean rather than accidental enclosed holes. Cells and notes without a selected
-owner remain ocean or islands.
+ocean rather than accidental enclosed holes. Degree-one/two notes without a
+selected owner remain island candidates; degree-zero notes remain ordinary
+cities over ocean and create no land.
 
 The final note assignments come from this exclusive spatial ownership, not
 from the CPM assignment. Jaccard matching against the previous committed
@@ -265,11 +274,13 @@ sphere. Segment count adapts to angular length.
 ### Land and sea
 
 The post-layout spatial geography is rendered on a finely subdivided
-icosphere. Every spatial-continent member seeds a density-aware support kernel
-at its committed position. Samples along short internal edges add narrow road
-corridors between nearby kernels. Edges longer than a bounded angular distance
-do not add support, so a single graph link cannot pull a land bridge across
-open water.
+icosphere. Every degree-three-or-higher spatial-continent member seeds a
+density-aware support kernel at its committed position. Samples along short
+internal edges add narrow road corridors between nearby kernels. Edges longer
+than a bounded angular distance do not add support, so a single graph link
+cannot pull a land bridge across open water. The degree check is repeated at
+render time so snapshots created by older plugin versions immediately gain the
+new water/island behavior without regenerating or moving their layout.
 All semantic continent positions are also indexed as territory sites: a closer
 competing continent site carves sea out of another continent's support. A
 single free note does not punch a lake into otherwise supported land. Free
@@ -277,6 +288,13 @@ notes acquire sea-carving influence only when at least two nearby graph-linked
 free neighbors form a spatially coherent group whose internal weight is not
 weaker than its continent-facing weight. Cartesian spatial buckets keep these
 local queries bounded for large vaults.
+
+After enclosed sea components are reconciled, the renderer expands only the
+already connected external ocean, one weak coastal raster ring at a time.
+Member support cells are protected, and candidate cells are ordered by land
+density. The target is 34% for one continent, rises by 2.5 percentage points
+for each additional continent, and is capped at 46%. This widens river-like
+seams into readable seas without manufacturing inland lakes.
 
 The persisted angular extent is a diagnostic summary, not a placement
 constraint or coastline primitive. Coast ownership is the positive union of
@@ -291,17 +309,13 @@ instead of being accepted wholesale from their centroid. The outer ownership
 mask forms a sand underlay; a second, deterministically varying inset mask
 forms the land interior, leaving an irregular beach band. The outer
 intersections also form the detailed coastline batch, eliminating regular mesh
-teeth while retaining a deterministic irregular silhouette. Semantic island
-membership remains complete, but the land mesh applies a render-only level of
-detail:
-small vaults can show every isolated island, whereas larger vaults receive a
-deterministic density-aware budget capped at 24 spatially separated
-representatives. Candidates too close to supported continent territory are
-omitted, and island radius decreases with note count. Notes without a rendered
-land patch remain ordinary interactive cities over open water, so layout,
-links, routes, labels, and persistence are unchanged. Representative and
-decorative shelf islands are emitted as small irregular tangent patches in the
-same batched land mesh.
+teeth while retaining a deterministic irregular silhouette. Degree-one/two
+notes are eligible for independent island patches. Candidates too close to
+supported continent territory or another island are omitted, and island radius
+decreases with note count. Degree-zero notes and any weak-note candidate
+without a safe patch remain ordinary interactive cities over open water, so
+layout, links, routes, labels, and persistence are unchanged. Eligible islands
+are emitted as small irregular tangent patches in the same batched land mesh.
 
 Ocean and land use separate offline procedural shaders. Seamless spherical
 multi-octave noise supplies subtle water depth, terrain relief, strata, fine

@@ -68,13 +68,14 @@ corners, or decorative grid overlays are part of this system.
   weight.
 - Selected continents are a disjoint partition subset; rejected nodes remain
   islands rather than being forced into landmasses.
-- Initialize/Renew reserve separated spherical caps for continents. Refresh
-  reuses persisted continent centers and only places new geography when
-  necessary.
-- Spherical caps are layout constraints, not coastlines. Every continent city
-  supports a local land kernel and short internal roads support narrow
-  corridors. Unsupported parts of a cap remain sea; links longer than the
-  corridor limit cannot manufacture a trans-oceanic land bridge.
+- Initialize/Renew first complete the ordinary deterministic full-sphere
+  layout. Refresh preserves its bounded fixed-position behavior. Geography is
+  derived only afterward and never reserves caps, applies a force, or moves a
+  note.
+- Every degree-three-or-higher continent city supports a local land kernel and
+  short internal roads support narrow corridors. Unsupported areas remain sea;
+  links longer than the corridor limit cannot manufacture a trans-oceanic land
+  bridge.
 - Continent positions act as semantic territory sites. A closer competing
   continent site carves sea from another region, and a dominance margin leaves
   sea where two continent support fields compete. A lone free note cannot
@@ -90,13 +91,12 @@ corners, or decorative grid overlays are part of this system.
   contour traces. Ocean uses its own lower-contrast procedural depth texture.
   Both are derived from sphere direction and the snapshot seed; the plugin
   ships no raster texture and makes no runtime request.
-- Every continent node seeds its own land support. Unassigned nodes remain
-  semantic islands, but large vaults render land only beneath a bounded,
-  spatially dispersed representative sample. Island footprints shrink with
-  vault density and avoid supported continent territory; every other
-  unassigned node remains visible as an interactive city over the ocean. A
-  small deterministic number of shelf islets adds geographic scale without
-  changing semantic membership.
+- Orphan notes remain visible as interactive cities over the ocean and do not
+  seed land. Degree-one/two notes can become spatially separated islands;
+  footprints shrink with vault density and avoid supported continent territory.
+  After land ownership is reconciled, the already connected external ocean
+  retreats weak coasts until it occupies 34–46% of the render raster. This
+  creates readable seas without inland holes or any node movement.
 
 ## Core interaction
 

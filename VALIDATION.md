@@ -507,6 +507,71 @@ land without changing the canvas; drag rotation and camera reset both worked.
 The browser console remained free of warnings and errors. This was a production
 renderer harness, not a full Obsidian-shell session.
 
+### Broad-ocean and weak-node regression (1.3.1)
+
+The large-vault screenshot was reproduced as a render-support saturation
+problem: 636 fixed cities split among three semantic continents covered 10,241
+of 10,242 analytical raster cells. The ocean was technically connected, but
+its 520 externally connected cells occupied only 5.077% of the surface and
+therefore read as narrow rivers.
+
+Version 1.3.1 separates cartographic roles by current graph degree without
+changing any committed vector:
+
+- degree-three-or-higher notes contribute continental spacing, density,
+  watershed population, membership, and render support;
+- degree-one/two notes remain eligible for individual island patches; and
+- degree-zero orphan notes remain interactive cities over water and create no
+  land.
+
+The renderer also expands only the already connected external ocean, one weak
+coastal raster ring at a time, while protecting actual continent-member cells.
+The deterministic target is 34% for one continent, plus 2.5 percentage points
+per additional continent, capped at 46%. Because the expansion front always
+starts in the connected ocean, it cannot create a new inland lake.
+
+Automated validation verifies that:
+
+- the complete release gate passes with 41 test files / 220 tests, ESLint,
+  strict type checking, production build, and release validation;
+- the saturated three-continent fixture now contains 3,995 connected-ocean
+  cells out of 10,242, or 39.006%, with 6,247 land cells and every protected
+  member cell retained;
+- adding loose orphan notes leaves the adaptive density array bit-for-bit
+  unchanged;
+- legacy continent membership is filtered from live degree data, so stored
+  degree-one/two members become island candidates and degree-zero members do
+  not seed land; and
+- persisted geography may intentionally omit orphan nodes and still validates
+  and round-trips, while omission of any linked node is rejected as corrupt.
+
+A disposable 1440 × 940 desktop atlas imported the production
+`SphericalGraphRenderer`, release stylesheet, and degree-aware land renderer.
+Its fixed 96-city scene contained three continents, 12 degree-one/two islands,
+and 12 orphan cities over water. The three landmasses were separated by broad
+open seas with irregular sand coasts. **Hide continents** and
+**Show continents** both worked, and the renderer's position buffer remained
+bit-for-bit stable. The browser console contained no warnings or errors.
+
+The Codex in-app browser was attempted first but rejected all local aliases
+(`127.0.0.1`, `localhost`, and a local DNS alias) with
+`ERR_BLOCKED_BY_CLIENT`. Visual QA therefore used the documented fallback:
+Playwright connected over CDP to the installed headless Edge. This was a
+production-renderer harness, not a full Obsidian-shell session.
+
+## Release artifacts (1.3.1)
+
+- `main.js`: 856,099 bytes
+- `manifest.json`: 356 bytes; plugin 1.3.1
+- `styles.css`: 45,676 bytes
+- no separate worker JavaScript file is required or present
+
+SHA-256 values from the final production build:
+
+- `main.js`: `310086467580BB9354D78C303F0A49ACD0A0F5B8FE076B7F52A0BC05EFC837D8`
+- `manifest.json`: `6D32BA2B63D0C5D356B1C93D6883E1ECB376A7F01DBD72DFEA572DC2BA3AEF4D`
+- `styles.css`: `91F52E4A52064852993BBE71AB995CFC2C18C7DF9B6103144FEADAA552027D5B`
+
 ## Release artifacts (1.3.0)
 
 - `main.js`: 853,702 bytes

@@ -36,8 +36,9 @@ flowchart LR
 - `src/geography` consumes only a completed fixed position buffer. It builds an
   adaptive intrinsic spherical grid and density field, reconciles watershed
   basins, enforces exclusive regions and one connected ocean, uses graph
-  communities only as soft priors, preserves compatible semantic identity
-  during Refresh, and creates the persisted geography descriptor.
+  communities only as soft priors, filters weak-degree notes from continental
+  support, preserves compatible semantic identity during Refresh, and creates
+  the persisted geography descriptor.
 - `src/layout` owns initialization, force evaluation, exact and sampled
   repulsion, Refresh planning and anchoring, the batch solver, worker protocol,
   worker entry point, and the lifecycle state machine. It has no dependency on
@@ -168,14 +169,17 @@ kernels with locally adaptive bandwidths, then creates watershed basins by
 density ascent and deterministic saddle merging. Multiresolution CPM
 communities are passed only as basin marker priors: agreement can support a
 merge or candidate, but it cannot create a location or override spatial
-ownership.
+ownership. Only degree-three-or-higher notes participate in continental
+spacing, density, basin population, and ownership; degree-zero notes contribute
+no land, and degree-one/two notes remain island candidates.
 
 `sphericalRegions` selects sufficiently large graph-supported or
 spatially-prominent basins, grows exclusive low-density-bounded regions,
 inserts sea between competing owners, and reconciles sea components into one
 connected ocean. Note membership is read from the resulting cell ownership;
-unassigned notes remain islands. Previous geography is used only to retain a
-compatible ID, label, and color. Center and diagnostic angular extent are
+eligible unassigned degree-one/two notes remain islands, while orphan notes may
+be omitted from geography altogether. Previous geography is used only to retain
+a compatible ID, label, and color. Center and diagnostic angular extent are
 recomputed from the fixed positions.
 
 The analytical grid, density samples, watershed labels, and cell ownership are
@@ -198,6 +202,11 @@ support, clips mixed icosphere triangles at the exact ownership transition,
 draws the outer mask as sand, and overlays a variably inset land interior.
 Detailed bays, headlands, and the irregular beach band are therefore smooth
 rather than aligned to mesh cells.
+`landSupport` also rechecks live node degrees for backward-compatible snapshots
+and retreats weak coastal ownership from the already connected ocean until a
+34–46% ocean floor is reached. Protected member cells remain land, so this
+render-only retreat widens seas without changing positions or creating inland
+holes.
 The land and ocean `ShaderMaterial`s generate their atlas texture from local
 sphere direction, requiring no texture files or runtime I/O. The ocean depth
 skin sits slightly inside the logical globe so land, graticule, roads, and

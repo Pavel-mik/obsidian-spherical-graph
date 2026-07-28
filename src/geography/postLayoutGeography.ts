@@ -33,6 +33,8 @@ import {
 	type IntrinsicSphericalGrid,
 } from './sphericalGrid';
 
+const MIN_CONTINENTAL_NODE_DEGREE = 3;
+
 export interface PostLayoutGeographyOptions
 	extends SphericalRegionOptions {
 	readonly gridSubdivision?: number;
@@ -232,6 +234,12 @@ function freezeGeography(
 	});
 }
 
+function continentalNodeWeights(graph: GraphData): Float64Array {
+	return Float64Array.from(graph.nodes, (node) =>
+		node.degree >= MIN_CONTINENTAL_NODE_DEGREE ? 1 : 0,
+	);
+}
+
 /**
  * Derives cartographic geography only after the fixed layout has completed.
  * Graph communities are marker priors; they never choose or mutate positions.
@@ -263,7 +271,16 @@ export function derivePostLayoutGeography(
 			ownerByCell: new Int32Array(grid.vertices.length).fill(-1),
 		};
 	}
-	const spacing = estimateNodeSpacing(positions).characteristicSpacing;
+	const nodeWeights = continentalNodeWeights(graph);
+	const supportedNodeCount = nodeWeights.reduce(
+		(count, weight) => count + (weight > 0 ? 1 : 0),
+		0,
+	);
+	const spacing = estimateNodeSpacing(
+		positions,
+		6,
+		nodeWeights,
+	).characteristicSpacing;
 	const subdivision =
 		options.gridSubdivision ?? gridSubdivisionForSpacing(spacing);
 	const grid = createIntrinsicSphericalGrid(subdivision);
@@ -272,15 +289,21 @@ export function derivePostLayoutGeography(
 		seed,
 		options.communityDetection,
 	);
-	const density = evaluateAdaptiveDensity(grid, positions);
+	const density = evaluateAdaptiveDensity(grid, positions, nodeWeights);
 	const minimumBasinNodes =
 		options.minimumContinentNodes ??
 		Math.max(
 			6,
-			Math.min(22, Math.ceil(Math.sqrt(graph.nodes.length) * 0.58)),
+			Math.min(22, Math.ceil(Math.sqrt(supportedNodeCount) * 0.58)),
 		);
+	const priorByNode = detection.assignmentByNode.slice();
+	for (let nodeIndex = 0; nodeIndex < priorByNode.length; nodeIndex += 1) {
+		if ((nodeWeights[nodeIndex] ?? 0) <= 0) {
+			priorByNode[nodeIndex] = -1;
+		}
+	}
 	const watershed = buildSphericalWatershed(grid, density, {
-		priorByNode: detection.assignmentByNode,
+		priorByNode,
 		minimumBasinNodes,
 	});
 	const regionResult = buildSphericalRegions(
@@ -342,8 +365,13 @@ export function derivePostLayoutGeography(
 	});
 	const islandNodeIds: string[] = [];
 	for (let nodeIndex = 0; nodeIndex < graph.nodes.length; nodeIndex += 1) {
-		if ((regionResult.assignmentByNode[nodeIndex] ?? -1) < 0) {
-			const nodeId = graph.nodes[nodeIndex]?.id;
+		const node = graph.nodes[nodeIndex];
+		if (
+			node !== undefined &&
+			node.degree > 0 &&
+			(regionResult.assignmentByNode[nodeIndex] ?? -1) < 0
+		) {
+			const nodeId = node.id;
 			if (nodeId !== undefined) {
 				islandNodeIds.push(nodeId);
 			}

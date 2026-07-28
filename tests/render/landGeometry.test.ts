@@ -4,7 +4,6 @@ import {
 	classifyLandOwner,
 	continentBeachWidth,
 	MAX_BEACH_ANGULAR_WIDTH,
-	MAX_RENDERED_ISLANDS,
 	MIN_BEACH_ANGULAR_WIDTH,
 	renderedIslandRadius,
 	selectRenderedIslandNodeIndices,
@@ -186,74 +185,98 @@ describe('land surface geometry', () => {
 		expect(classifyLandOwner(unsupported, model)).toBe(SEA_OWNER);
 	});
 
-	it('limits and shrinks island land on a 636-note vault', () => {
-		const nodeCount = 636;
-		const largePositions = new Float32Array(nodeCount * 3);
-		for (let index = 0; index < nodeCount; index += 1) {
-			largePositions.set(fibonacciSpherePoint(index, nodeCount), index * 3);
-		}
-		const largeGeography: RenderGeography = {
-			continents: [
-				{
-					id: 'north',
-					label: 'North',
-					nodeIndices: [0],
-					center: [0, 1, 0],
-					capRadius: 0.42,
-					colorIndex: 0,
-				},
-				{
-					id: 'south',
-					label: 'South',
-					nodeIndices: [1],
-					center: [0, -1, 0],
-					capRadius: 0.42,
-					colorIndex: 1,
-				},
-			],
-			islandNodeIndices: Array.from(
-				{ length: nodeCount - 2 },
-				(_, index) => index + 2,
-			),
-		};
-
-		const first = selectRenderedIslandNodeIndices(
-			largeGeography,
-			largePositions,
-			42,
-		);
-		const second = selectRenderedIslandNodeIndices(
-			largeGeography,
-			largePositions,
-			42,
-		);
-		expect(first).toEqual(second);
-		expect(first.length).toBeGreaterThan(8);
-		expect(first.length).toBeLessThanOrEqual(MAX_RENDERED_ISLANDS);
-		for (let left = 0; left < first.length; left += 1) {
-			for (let right = left + 1; right < first.length; right += 1) {
-				expect(
-					geodesicDistance(
-						readVec3(largePositions, first[left] ?? 0),
-						readVec3(largePositions, first[right] ?? 0),
-					),
-				).toBeGreaterThanOrEqual(0.109);
+	it(
+		'omits orphans and keeps low-degree island land small on a 636-note vault',
+		() => {
+			const nodeCount = 636;
+			const largePositions = new Float32Array(nodeCount * 3);
+			const nodeDegrees = new Uint8Array(nodeCount);
+			nodeDegrees[0] = 3;
+			nodeDegrees[1] = 3;
+			for (let index = 0; index < nodeCount; index += 1) {
+				largePositions.set(
+					fibonacciSpherePoint(index, nodeCount),
+					index * 3,
+				);
+				if (index >= 102) {
+					nodeDegrees[index] = index % 2 === 0 ? 1 : 2;
+				}
 			}
-		}
-		expect(renderedIslandRadius(nodeCount, first[0] ?? 0, 42)).toBeLessThan(
-			renderedIslandRadius(82, first[0] ?? 0, 42) * 0.5,
-		);
+			const largeGeography: RenderGeography = {
+				continents: [
+					{
+						id: 'north',
+						label: 'North',
+						nodeIndices: [0],
+						center: [0, 1, 0],
+						capRadius: 0.42,
+						colorIndex: 0,
+					},
+					{
+						id: 'south',
+						label: 'South',
+						nodeIndices: [1],
+						center: [0, -1, 0],
+						capRadius: 0.42,
+						colorIndex: 1,
+					},
+				],
+				islandNodeIndices: Array.from(
+					{ length: nodeCount - 2 },
+					(_, index) => index + 2,
+				),
+			};
 
-		const data = buildLandSurfaceData(
-			largeGeography,
-			largePositions,
-			10.015,
-			42,
-			2,
-		);
-		expect(data.renderedIslandCount).toBe(first.length);
-		expect(data.renderedIslandCount).toBeLessThan(
-			largeGeography.islandNodeIndices.length / 20,
-		);
-	});
+			const first = selectRenderedIslandNodeIndices(
+				largeGeography,
+				largePositions,
+				42,
+				[],
+				nodeDegrees,
+			);
+			const second = selectRenderedIslandNodeIndices(
+				largeGeography,
+				largePositions,
+				42,
+				[],
+				nodeDegrees,
+			);
+			expect(first).toEqual(second);
+			expect(first.length).toBeGreaterThan(400);
+			expect(first.every((nodeIndex) => nodeIndex >= 102)).toBe(true);
+			for (let left = 0; left < first.length; left += 1) {
+				for (let right = left + 1; right < first.length; right += 1) {
+					expect(
+						geodesicDistance(
+							readVec3(largePositions, first[left] ?? 0),
+							readVec3(
+								largePositions,
+								first[right] ?? 0,
+							),
+						),
+					).toBeGreaterThanOrEqual(0.109);
+				}
+			}
+			expect(
+				renderedIslandRadius(nodeCount, first[0] ?? 0, 42),
+			).toBeLessThan(
+				renderedIslandRadius(82, first[0] ?? 0, 42) * 0.5,
+			);
+
+			const data = buildLandSurfaceData(
+				largeGeography,
+				largePositions,
+				10.015,
+				42,
+				2,
+				[],
+				nodeDegrees,
+			);
+			expect(data.renderedIslandCount).toBe(first.length);
+			expect(data.renderedIslandCount).toBeLessThanOrEqual(
+				nodeCount - 102,
+			);
+		},
+		15_000,
+	);
 });

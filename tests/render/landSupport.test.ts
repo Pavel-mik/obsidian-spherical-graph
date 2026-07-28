@@ -3,12 +3,14 @@ import {
 	classifySupportedContinent,
 	continentSupportClearance,
 	createLandSupportModel,
+	eligibleIslandNodeIndices,
 	landSupportDiagnostics,
 } from '../../src/render/landSupport';
 import { exponentialMap } from '../../src/geometry/sphericalGeometry';
 import {
 	addVec3,
 	crossVec3,
+	dotVec3,
 	normalizeVec3,
 	orthogonalUnitVec3,
 	scaleVec3,
@@ -155,6 +157,52 @@ describe('node- and edge-supported continent territory', () => {
 		for (const freeNode of freeNodes) {
 			expect(classifySupportedContinent(freeNode, model)).toBe(-1);
 		}
+	});
+
+	it('keeps legacy orphan and low-degree members out of continent support', () => {
+		const directions: readonly Vec3[] = [
+			[-1, 0, 0],
+			[0, 1, 0],
+			[0, -1, 0],
+			center,
+		];
+		const geography: RenderGeography = {
+			continents: [
+				{
+					id: 'legacy',
+					label: 'Legacy',
+					nodeIndices: [0, 1, 2, 3],
+					center,
+					capRadius: 1,
+					colorIndex: 0,
+				},
+			],
+			islandNodeIndices: [0],
+		};
+		const degrees = new Uint8Array([0, 1, 2, 3]);
+		const model = createLandSupportModel(
+			geography,
+			new Float32Array(directions.flat()),
+			[
+				{ source: 1, target: 2, weight: 1 },
+				{ source: 2, target: 3, weight: 1 },
+			],
+			42,
+			degrees,
+		);
+
+		expect(eligibleIslandNodeIndices(geography, 4, degrees)).toEqual([1, 2]);
+		expect(landSupportDiagnostics(model).densityAnchorCount).toBe(1);
+		expect(classifySupportedContinent(directions[0] ?? center, model)).toBe(
+			-1,
+		);
+		expect(classifySupportedContinent(directions[1] ?? center, model)).toBe(
+			-1,
+		);
+		expect(classifySupportedContinent(directions[2] ?? center, model)).toBe(
+			-1,
+		);
+		expect(classifySupportedContinent(center, model)).toBe(0);
 	});
 
 	it('uses a short internal road as a narrow bridge without filling the cap', () => {
@@ -348,32 +396,43 @@ describe('node- and edge-supported continent territory', () => {
 	});
 
 	it(
-		'bounds raster and anchor work for a 636-node committed layout',
+		'bounds a 636-node raster while reserving broad connected ocean',
 		() => {
 			const nodeCount = 636;
 			const largePositions = new Float32Array(nodeCount * 3);
+			const centers: readonly Vec3[] = [
+				[1, 0, 0],
+				[-0.5, Math.sqrt(0.75), 0],
+				[-0.5, -Math.sqrt(0.75), 0],
+			];
+			const members = centers.map(() => [] as number[]);
 			for (let index = 0; index < nodeCount; index += 1) {
-				largePositions.set(
-					fibonacciSpherePoint(index, nodeCount),
-					index * 3,
-				);
+				const point = fibonacciSpherePoint(index, nodeCount);
+				largePositions.set(point, index * 3);
+				const owner =
+					centers
+						.map((candidate, candidateIndex) => ({
+							candidateIndex,
+							score: dotVec3(candidate, point),
+						}))
+						.sort(
+							(left, right) =>
+								right.score - left.score ||
+								left.candidateIndex - right.candidateIndex,
+						)[0]?.candidateIndex ?? 0;
+				members[owner]?.push(index);
 			}
 			const startedAt = performance.now();
 			const model = createLandSupportModel(
 				{
-					continents: [
-						{
-							id: 'global-sample',
-							label: 'Global sample',
-							nodeIndices: Array.from(
-								{ length: nodeCount },
-								(_, index) => index,
-							),
-							center,
-							capRadius: Math.PI,
-							colorIndex: 0,
-						},
-					],
+					continents: members.map((nodeIndices, owner) => ({
+						id: `global-sample-${owner}`,
+						label: `Global sample ${owner}`,
+						nodeIndices,
+						center: centers[owner] ?? center,
+						capRadius: Math.PI,
+						colorIndex: owner,
+					})),
 					islandNodeIndices: [],
 				},
 				largePositions,
@@ -385,7 +444,9 @@ describe('node- and edge-supported continent territory', () => {
 
 			expect(diagnostics.rasterCellCount).toBeLessThanOrEqual(10_242);
 			expect(diagnostics.densityAnchorCount).toBe(nodeCount);
-			expect(diagnostics.connectedOceanCellCount).toBeGreaterThan(0);
+			expect(diagnostics.connectedOceanFraction).toBeGreaterThanOrEqual(
+				0.389,
+			);
 			expect(elapsed).toBeLessThan(3_500);
 		},
 		7_000,

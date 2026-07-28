@@ -6,6 +6,28 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-07-28
+
+### Changed
+
+- Continental density, watershed population, and land support now use only
+  notes with at least three links. Orphan notes remain interactive cities over
+  water, while degree-one/two notes are eligible for separate island patches.
+- The renderer deterministically expands only the already connected external
+  ocean to a 34–46% coverage floor, widening river-like seams into readable
+  seas while protecting continent-member cells.
+- Legacy 1.3.0 geography receives the new degree-aware rendering immediately;
+  existing committed node positions do not need to be regenerated or moved.
+
+### Fixed
+
+- Large, saturated vaults no longer allow continent support to cover nearly the
+  entire globe with only one-cell channels between landmasses.
+- Orphan and weakly linked notes no longer inflate continental density or close
+  the visual ocean, and orphan notes no longer create unnecessary land patches.
+- Connected-ocean expansion cannot manufacture inland lakes because it advances
+  exclusively from the existing external sea.
+
 ## [1.3.0] - 2026-07-28
 
 ### Added
@@ -225,7 +247,14 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.2.0...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.3.1...HEAD
+[1.3.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.3.0...1.3.1
+[1.3.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.2.5...1.3.0
+[1.2.5]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.2.4...1.2.5
+[1.2.4]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.2.3...1.2.4
+[1.2.3]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.2.2...1.2.3
+[1.2.2]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.2.1...1.2.2
+[1.2.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.2.0...1.2.1
 [1.2.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.1.0...1.2.0
 [1.1.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/releases/tag/1.0.0

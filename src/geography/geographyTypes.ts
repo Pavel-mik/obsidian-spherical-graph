@@ -32,5 +32,9 @@ export interface PersistedContinent {
 export interface PersistedContinentalGeography {
 	readonly version: typeof CONTINENTAL_GEOGRAPHY_VERSION;
 	readonly continents: readonly PersistedContinent[];
+	/**
+	 * Non-continent notes eligible for a small land patch. Orphans may be
+	 * omitted entirely and remain visible as cities over open water.
+	 */
 	readonly islandNodeIds: readonly string[];
 }

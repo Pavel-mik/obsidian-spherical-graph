@@ -14,6 +14,11 @@ export interface SphericalDensityField {
 	readonly localSpacing: Float64Array;
 	readonly density: Float64Array;
 	readonly nodeCells: Int32Array;
+	/**
+	 * Per-node cartographic support. Zero-weight nodes retain a grid mapping
+	 * for diagnostics, but do not affect spacing, density, or watershed size.
+	 */
+	readonly nodeWeights: Float64Array;
 }
 
 export interface SphericalWatershed {
@@ -70,9 +75,28 @@ export function quantile(
 	);
 }
 
+function validatedNodeWeights(
+	nodeCount: number,
+	nodeWeights?: ArrayLike<number>,
+): Float64Array {
+	if (nodeWeights !== undefined && nodeWeights.length !== nodeCount) {
+		throw new RangeError('Node weights must align with positions.');
+	}
+	const weights = new Float64Array(nodeCount);
+	for (let index = 0; index < nodeCount; index += 1) {
+		const value = nodeWeights?.[index] ?? 1;
+		if (!Number.isFinite(value) || value < 0) {
+			throw new RangeError('Node weights must be finite and non-negative.');
+		}
+		weights[index] = value;
+	}
+	return weights;
+}
+
 export function estimateNodeSpacing(
 	positions: ArrayLike<number>,
 	neighborRank = 6,
+	nodeWeights?: ArrayLike<number>,
 ): {
 	readonly characteristicSpacing: number;
 	readonly localSpacing: Float64Array;
@@ -85,21 +109,50 @@ export function estimateNodeSpacing(
 		throw new RangeError('Invalid positions or nearest-neighbor rank.');
 	}
 	const count = positions.length / 3;
+	const weights = validatedNodeWeights(count, nodeWeights);
 	const directions = Array.from({ length: count }, (_, index) =>
 		normalizeVec3(readVec3(positions, index)),
 	);
-	const retained = Math.max(1, Math.min(neighborRank, count - 1));
+	const activeIndices = Array.from(
+		{ length: count },
+		(_, index) => index,
+	).filter((index) => (weights[index] ?? 0) > 0);
+	if (activeIndices.length <= 1) {
+		const localSpacing = new Float64Array(count);
+		localSpacing.fill(0.6);
+		return {
+			characteristicSpacing: 0.6,
+			localSpacing,
+		};
+	}
+	const retained = Math.min(neighborRank, activeIndices.length - 1);
 	const nearest = Array.from({ length: count }, () => {
 		const values = new Float64Array(retained);
 		values.fill(Number.POSITIVE_INFINITY);
 		return values;
 	});
-	for (let left = 0; left < count; left += 1) {
+	for (
+		let leftOffset = 0;
+		leftOffset < activeIndices.length;
+		leftOffset += 1
+	) {
+		const left = activeIndices[leftOffset];
+		if (left === undefined) {
+			continue;
+		}
 		const leftDirection = directions[left];
 		if (leftDirection === undefined) {
 			continue;
 		}
-		for (let right = left + 1; right < count; right += 1) {
+		for (
+			let rightOffset = leftOffset + 1;
+			rightOffset < activeIndices.length;
+			rightOffset += 1
+		) {
+			const right = activeIndices[rightOffset];
+			if (right === undefined) {
+				continue;
+			}
 			const rightDirection = directions[right];
 			if (rightDirection === undefined) {
 				continue;
@@ -114,7 +167,7 @@ export function estimateNodeSpacing(
 	}
 	const localSpacing = new Float64Array(count);
 	const finite: number[] = [];
-	for (let index = 0; index < count; index += 1) {
+	for (const index of activeIndices) {
 		const chordSquared =
 			nearest[index]?.[retained - 1] ?? Number.POSITIVE_INFINITY;
 		const angle = Number.isFinite(chordSquared)
@@ -134,6 +187,10 @@ export function estimateNodeSpacing(
 		0.7,
 	);
 	for (let index = 0; index < localSpacing.length; index += 1) {
+		if ((weights[index] ?? 0) <= 0) {
+			localSpacing[index] = characteristicSpacing;
+			continue;
+		}
 		localSpacing[index] = clamp(
 			localSpacing[index] || characteristicSpacing,
 			characteristicSpacing * 0.5,
@@ -158,8 +215,10 @@ function compactKernel(
 export function evaluateAdaptiveDensity(
 	grid: IntrinsicSphericalGrid,
 	positions: ArrayLike<number>,
+	nodeWeights?: ArrayLike<number>,
 ): SphericalDensityField {
-	const spacing = estimateNodeSpacing(positions);
+	const weights = validatedNodeWeights(positions.length / 3, nodeWeights);
+	const spacing = estimateNodeSpacing(positions, 6, weights);
 	const nodeCells = mapPositionsToGrid(grid, positions);
 	const directions = Array.from(
 		{ length: positions.length / 3 },
@@ -173,6 +232,10 @@ export function evaluateAdaptiveDensity(
 		}
 		let value = 0;
 		for (let nodeIndex = 0; nodeIndex < directions.length; nodeIndex += 1) {
+			const weight = weights[nodeIndex] ?? 0;
+			if (weight <= 0) {
+				continue;
+			}
 			const direction = directions[nodeIndex];
 			if (direction === undefined) {
 				continue;
@@ -194,7 +257,7 @@ export function evaluateAdaptiveDensity(
 			const coarse =
 				compactKernel(chordSquared, coarseBandwidth * 2.1) /
 				Math.max(1e-6, coarseBandwidth * coarseBandwidth);
-			value += fine * 0.82 + coarse * 0.18;
+			value += (fine * 0.82 + coarse * 0.18) * weight;
 		}
 		density[cell] = value;
 	}
@@ -203,6 +266,7 @@ export function evaluateAdaptiveDensity(
 		localSpacing: spacing.localSpacing,
 		density,
 		nodeCells,
+		nodeWeights: weights,
 	};
 }
 
@@ -269,6 +333,9 @@ export function buildSphericalWatershed(
 	const basinNodeCounts = new Map<number, number>();
 	const priorCounts = new Map<number, Map<number, number>>();
 	for (let nodeIndex = 0; nodeIndex < field.nodeCells.length; nodeIndex += 1) {
+		if ((field.nodeWeights[nodeIndex] ?? 0) <= 0) {
+			continue;
+		}
 		const cell = field.nodeCells[nodeIndex] ?? 0;
 		const root = roots[cell] ?? cell;
 		basinNodeCounts.set(root, (basinNodeCounts.get(root) ?? 0) + 1);

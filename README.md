@@ -7,7 +7,8 @@
 Turn your Obsidian vault into an explorable world. Dense, weakly connected
 regions become continents separated by visible seas; notes become cities,
 links become roads across the surface, and tags orbit overhead as satellites.
-Loose notes remain islands instead of being forced into artificial regions.
+Orphan notes remain cities over open water, while notes with one or two links
+become small islands instead of inflating a continent.
 Route Finder reveals every shortest path between distant notes.
 
 Spherical Graph is designed as a stable spatial map: a finite layout operation
@@ -21,7 +22,9 @@ position. It then evaluates adaptive density on an intrinsic spherical grid,
 builds a watershed with one explicit connected ocean, derives spatial
 continents, and finally renders coasts and beaches. Graph communities are a
 soft prior for interpreting the finished map; geography is never a force,
-initialization constraint, or reason to move a note.
+initialization constraint, or reason to move a note. Only notes with at least
+three links contribute continental density; weaker notes remain visually
+available without closing the seas between major regions.
 
 ## See your vault as a world
 
@@ -96,8 +99,12 @@ and a reliable rename keeps the old position under the new path. Select
   icosahedral grid, local-spacing density kernels, watershed basins, exclusive
   spatial regions, and an explicit connected ocean. Multiresolution CPM
   community detection supplies only a soft graph prior for basin reconciliation
-  and naming; spatial evidence decides the final continents and leaves
-  unassigned notes as islands.
+  and naming; spatial evidence decides the final continents. Degree-zero notes
+  stay as cities over water, and degree-one/two notes can receive independent
+  island patches.
+- A deterministic connected-ocean floor widens weak coastal seams into readable
+  seas while preserving every fixed node position and every required
+  continent-city support cell.
 - Jaccard matching preserves stable continent identity, label, and color across
   compatible Refreshes. Centers and diagnostic extents are always re-derived
   from the fixed positions and never constrain layout.

@@ -40,6 +40,10 @@ const MEMBER_GUARANTEE_MAX_RADIUS = 0.024;
 const BOUNDARY_NOISE_BAND = 0.052;
 const BOUNDARY_SEARCH_RADIUS = 0.14;
 const SUPPORT_DISTANCE_CAP = 0.2;
+const MIN_CONTINENTAL_NODE_DEGREE = 3;
+const BASE_MINIMUM_CONNECTED_OCEAN_FRACTION = 0.34;
+const OCEAN_FRACTION_PER_ADDITIONAL_CONTINENT = 0.025;
+const MAXIMUM_CONNECTED_OCEAN_FRACTION = 0.46;
 
 interface DensityAnchor {
 	readonly direction: Vec3;
@@ -115,6 +119,8 @@ export interface LandSupportDiagnostics {
 	readonly densityAnchorCount: number;
 	readonly boundarySampleCount: number;
 	readonly connectedOceanCellCount: number;
+	readonly connectedOceanFraction: number;
+	readonly landCellCount: number;
 }
 
 interface SeaComponent {
@@ -201,9 +207,46 @@ function forEachNearby<T>(
 	}
 }
 
+export function eligibleIslandNodeIndices(
+	geography: RenderGeography,
+	nodeCount: number,
+	nodeDegrees?: ArrayLike<number>,
+): readonly number[] {
+	const indices = new Set<number>();
+	for (const nodeIndex of geography.islandNodeIndices) {
+		const degree = nodeDegrees?.[nodeIndex];
+		if (
+			Number.isSafeInteger(nodeIndex) &&
+			nodeIndex >= 0 &&
+			nodeIndex < nodeCount &&
+			(degree === undefined || degree > 0)
+		) {
+			indices.add(nodeIndex);
+		}
+	}
+	if (nodeDegrees !== undefined) {
+		for (const continent of geography.continents) {
+			for (const nodeIndex of continent.nodeIndices) {
+				const degree = nodeDegrees[nodeIndex] ?? 0;
+				if (
+					Number.isSafeInteger(nodeIndex) &&
+					nodeIndex >= 0 &&
+					nodeIndex < nodeCount &&
+					degree > 0 &&
+					degree < MIN_CONTINENTAL_NODE_DEGREE
+				) {
+					indices.add(nodeIndex);
+				}
+			}
+		}
+	}
+	return [...indices].sort((left, right) => left - right);
+}
+
 function semanticAssignments(
 	geography: RenderGeography,
 	nodeCount: number,
+	nodeDegrees?: ArrayLike<number>,
 ): Int32Array {
 	const assignments = new Int32Array(nodeCount);
 	assignments.fill(-2);
@@ -213,21 +256,25 @@ function semanticAssignments(
 		owner += 1
 	) {
 		for (const nodeIndex of geography.continents[owner]?.nodeIndices ?? []) {
+			const degree = nodeDegrees?.[nodeIndex];
 			if (
 				Number.isSafeInteger(nodeIndex) &&
 				nodeIndex >= 0 &&
 				nodeIndex < nodeCount &&
+				(degree === undefined ||
+					degree >= MIN_CONTINENTAL_NODE_DEGREE) &&
 				assignments[nodeIndex] === -2
 			) {
 				assignments[nodeIndex] = owner;
 			}
 		}
 	}
-	for (const nodeIndex of geography.islandNodeIndices) {
+	for (const nodeIndex of eligibleIslandNodeIndices(
+		geography,
+		nodeCount,
+		nodeDegrees,
+	)) {
 		if (
-			Number.isSafeInteger(nodeIndex) &&
-			nodeIndex >= 0 &&
-			nodeIndex < nodeCount &&
 			assignments[nodeIndex] === -2
 		) {
 			assignments[nodeIndex] = -1;
@@ -250,17 +297,19 @@ function median(values: readonly number[]): number {
 function ownerMemberDirections(
 	geography: RenderGeography,
 	positions: Float32Array,
+	assignments: Int32Array,
 ): readonly (readonly {
 	readonly nodeIndex: number;
 	readonly direction: Vec3;
 }[])[] {
-	return geography.continents.map((continent) =>
+	return geography.continents.map((continent, owner) =>
 		continent.nodeIndices
 			.filter(
 				(nodeIndex) =>
 					Number.isSafeInteger(nodeIndex) &&
 					nodeIndex >= 0 &&
-					nodeIndex * 3 + 2 < positions.length,
+					nodeIndex * 3 + 2 < positions.length &&
+					(assignments[nodeIndex] ?? -2) === owner,
 			)
 			.map((nodeIndex) => ({
 				nodeIndex,
@@ -301,13 +350,18 @@ function adaptiveBandwidth(
 function createMemberAnchors(
 	geography: RenderGeography,
 	positions: Float32Array,
+	assignments: Int32Array,
 	seed: number,
 ): {
 	readonly members: MutableBuckets<MemberNode>;
 	readonly anchors: MutableBuckets<DensityAnchor>;
 	readonly bandwidthByNode: Float64Array;
 } {
-	const ownerMembers = ownerMemberDirections(geography, positions);
+	const ownerMembers = ownerMemberDirections(
+		geography,
+		positions,
+		assignments,
+	);
 	const members = createBuckets<MemberNode>(DENSITY_BUCKET_CELL_SIZE);
 	const anchors = createBuckets<DensityAnchor>(DENSITY_BUCKET_CELL_SIZE);
 	const bandwidthByNode = new Float64Array(positions.length / 3);
@@ -929,6 +983,123 @@ function fillEnclosedHoles(
 	return connectedOcean;
 }
 
+function connectedSeaFromExisting(
+	grid: IntrinsicSphericalGrid,
+	owners: Int32Array,
+	existing: Uint8Array,
+): Uint8Array {
+	const connected = new Uint8Array(grid.vertices.length);
+	const queue: number[] = [];
+	for (let cell = 0; cell < existing.length; cell += 1) {
+		if (existing[cell] === 1 && (owners[cell] ?? -1) < 0) {
+			connected[cell] = 1;
+			queue.push(cell);
+		}
+	}
+	for (let cursor = 0; cursor < queue.length; cursor += 1) {
+		const cell = queue[cursor];
+		if (cell === undefined) {
+			continue;
+		}
+		for (const neighbor of grid.neighbors[cell] ?? []) {
+			if (
+				connected[neighbor] === 0 &&
+				(owners[neighbor] ?? -1) < 0
+			) {
+				connected[neighbor] = 1;
+				queue.push(neighbor);
+			}
+		}
+	}
+	return connected;
+}
+
+function connectedOceanTargetFraction(ownerCount: number): number {
+	return clamp(
+		BASE_MINIMUM_CONNECTED_OCEAN_FRACTION +
+			Math.max(0, ownerCount - 1) *
+				OCEAN_FRACTION_PER_ADDITIONAL_CONTINENT,
+		BASE_MINIMUM_CONNECTED_OCEAN_FRACTION,
+		MAXIMUM_CONNECTED_OCEAN_FRACTION,
+	);
+}
+
+/**
+ * Expands only the already connected external ocean, one coastal raster ring
+ * at a time. Member cells remain protected. This turns weak one-cell seams
+ * into readable seas without creating inland holes or moving any node.
+ */
+function expandConnectedOcean(
+	grid: IntrinsicSphericalGrid,
+	owners: Int32Array,
+	initialConnectedOcean: Uint8Array,
+	forced: Int32Array,
+	bestDensity: Float32Array,
+	ownerCount: number,
+): Uint8Array {
+	let connectedOcean = connectedSeaFromExisting(
+		grid,
+		owners,
+		initialConnectedOcean,
+	);
+	const targetCount = Math.ceil(
+		grid.vertices.length * connectedOceanTargetFraction(ownerCount),
+	);
+	let connectedCount = connectedOcean.reduce(
+		(total, value) => total + value,
+		0,
+	);
+	while (connectedCount < targetCount) {
+		const frontier = new Set<number>();
+		for (let cell = 0; cell < connectedOcean.length; cell += 1) {
+			if (connectedOcean[cell] !== 1) {
+				continue;
+			}
+			for (const neighbor of grid.neighbors[cell] ?? []) {
+				if (
+					(owners[neighbor] ?? -1) >= 0 &&
+					(forced[neighbor] ?? -1) < 0
+				) {
+					frontier.add(neighbor);
+				}
+			}
+		}
+		if (frontier.size === 0) {
+			break;
+		}
+		const ordered = [...frontier].sort(
+			(left, right) =>
+				(bestDensity[left] ?? 0) -
+					(bestDensity[right] ?? 0) ||
+				left - right,
+		);
+		const removeCount = Math.min(
+			ordered.length,
+			targetCount - connectedCount,
+		);
+		for (let index = 0; index < removeCount; index += 1) {
+			const cell = ordered[index];
+			if (cell !== undefined) {
+				owners[cell] = -1;
+			}
+		}
+		connectedOcean = connectedSeaFromExisting(
+			grid,
+			owners,
+			connectedOcean,
+		);
+		const nextCount = connectedOcean.reduce(
+			(total, value) => total + value,
+			0,
+		);
+		if (nextCount <= connectedCount) {
+			break;
+		}
+		connectedCount = nextCount;
+	}
+	return connectedOcean;
+}
+
 function createRasterPointBuckets(
 	grid: IntrinsicSphericalGrid,
 ): MutableBuckets<RasterPoint> {
@@ -1019,8 +1190,8 @@ function buildLandRaster(
 	waterSeeds: SpatialBuckets<WaterSeed>,
 	maximumSupport: number,
 ): LandRaster {
-	const memberCount = geography.continents.reduce(
-		(total, continent) => total + continent.nodeIndices.length,
+	const memberCount = assignments.reduce(
+		(total, owner) => total + (owner >= 0 ? 1 : 0),
 		0,
 	);
 	const effectiveSamples = Math.max(64, memberCount * 4);
@@ -1043,11 +1214,19 @@ function buildLandRaster(
 		fields.byOwner,
 	);
 	const growth = growLandOwners(grid, fields, forced, waterSeeds);
-	const connectedOcean = fillEnclosedHoles(
+	const initialConnectedOcean = fillEnclosedHoles(
 		grid,
 		growth.owners,
 		growth.waterLocks,
 		fields.best,
+	);
+	const connectedOcean = expandConnectedOcean(
+		grid,
+		growth.owners,
+		initialConnectedOcean,
+		forced,
+		fields.best,
+		geography.continents.length,
 	);
 	const boundaries = boundarySamples(
 		grid,
@@ -1082,20 +1261,29 @@ export function createLandSupportModel(
 	positions: Float32Array,
 	edges: readonly RenderEdge[],
 	seed: number,
+	nodeDegrees?: ArrayLike<number>,
 ): LandSupportModel {
 	if (positions.length % 3 !== 0) {
 		throw new RangeError(
 			'Land support positions must contain complete vectors.',
 		);
 	}
+	if (
+		nodeDegrees !== undefined &&
+		nodeDegrees.length !== positions.length / 3
+	) {
+		throw new RangeError('Land support degrees must align with positions.');
+	}
 	const modelSeed = hashNumbers(seed, 0x1a4d);
 	const assignments = semanticAssignments(
 		geography,
 		positions.length / 3,
+		nodeDegrees,
 	);
 	const created = createMemberAnchors(
 		geography,
 		positions,
+		assignments,
 		modelSeed,
 	);
 	addTrustedEdgeAnchors(
@@ -1399,13 +1587,20 @@ export function landSupportDiagnostics(
 	model: LandSupportModel,
 ): LandSupportDiagnostics {
 	let connectedOceanCellCount = 0;
+	let landCellCount = 0;
 	for (const value of model.raster.connectedOcean) {
 		connectedOceanCellCount += value;
+	}
+	for (const owner of model.raster.ownerByCell) {
+		landCellCount += owner >= 0 ? 1 : 0;
 	}
 	return {
 		rasterCellCount: model.raster.grid.vertices.length,
 		densityAnchorCount: bucketValueCount(model.anchors),
 		boundarySampleCount: model.raster.boundaries.length,
 		connectedOceanCellCount,
+		connectedOceanFraction:
+			connectedOceanCellCount / model.raster.grid.vertices.length,
+		landCellCount,
 	};
 }

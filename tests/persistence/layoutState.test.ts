@@ -267,6 +267,61 @@ describe("snapshot reconciliation and migrations", () => {
 		expect(snapshot?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
 	});
 
+	it("preserves a fixed snapshot whose orphan notes are omitted from geography", () => {
+		const currentGraph = graph(["orphan.md"]);
+		const snapshot = createCommittedLayoutSnapshot({
+			snapshotId: "orphan-over-water",
+			graph: currentGraph,
+			mode: "initialize",
+			effectiveSeed: 42,
+			renewGeneration: 0,
+			completedAt: 10,
+			positions: new Float32Array([1, 0, 0]),
+		});
+
+		expect(snapshot?.geography?.continents).toEqual([]);
+		expect(snapshot?.geography?.islandNodeIds).toEqual([]);
+		expect(
+			validatePersistedLayoutSnapshot(
+				JSON.parse(JSON.stringify(snapshot)) as unknown,
+			)?.snapshotId,
+		).toBe("orphan-over-water");
+	});
+
+	it("rejects geography that omits a linked note", () => {
+		const currentGraph = new GraphDataService(
+			graphSource(["a.md", "b.md"], {
+				"a.md": { "b.md": 1 },
+			}),
+		).buildGraph();
+		const snapshot = createCommittedLayoutSnapshot({
+			snapshotId: "truncated-geography",
+			graph: currentGraph,
+			mode: "initialize",
+			effectiveSeed: 42,
+			renewGeneration: 0,
+			completedAt: 10,
+			positions: new Float32Array([1, 0, 0, 0, 1, 0]),
+		});
+		if (snapshot === undefined) {
+			throw new Error("Expected a valid linked-note fixture.");
+		}
+		const raw = JSON.parse(JSON.stringify(snapshot)) as {
+			geography: {
+				version: number;
+				continents: unknown[];
+				islandNodeIds: string[];
+			};
+		};
+		raw.geography = {
+			version: raw.geography.version,
+			continents: [],
+			islandNodeIds: [],
+		};
+
+		expect(validatePersistedLayoutSnapshot(raw)).toBeUndefined();
+	});
+
 	it("invalidates pre-geography-layout snapshots after the algorithm upgrade", () => {
 		const currentGraph = graph(["a.md"]);
 		const legacySnapshot = createCommittedLayoutSnapshot({

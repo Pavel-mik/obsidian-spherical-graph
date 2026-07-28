@@ -186,8 +186,15 @@ vault.
       position buffer.
     - In a clustered synthetic vault, confirm large spatially dense regions
       form non-overlapping landmasses around their visible nodes, with sea
-      between neighboring owners. Confirm small disconnected groups and notes
-      outside accepted land remain islands.
+      between neighboring owners. Confirm small disconnected groups and weakly
+      linked notes outside accepted land remain islands.
+    - In a mixed-degree fixture, confirm degree-zero orphan notes remain
+      interactive cities over water, degree-one/two notes can receive separate
+      island patches, and only degree-three-or-higher notes support continents.
+    - In a saturated three-continent fixture, confirm the connected ocean covers
+      at least 39% of the render raster and reads as broad water between
+      landmasses rather than one-cell river seams. Confirm protected continent
+      member cells remain on land and no new inland lakes appear.
     - Use an instrumented geography run to confirm every land cell has exactly
       one owner and all ocean cells form one connected component.
     - Use a fixture where one graph community occupies two distant spatial
@@ -213,6 +220,8 @@ vault.
       above threshold, and pair-evaluation growth follows the configured sample
       count rather than all pairs.
     - Confirm instanced nodes, batched edges, and bounded labels.
+    - Confirm increasing the number of orphan notes does not change the
+      continental density field or enlarge the landmasses.
     - Change **Globe size** from 100 to 200 and confirm node discs and the
       selected-node coral frame become half as large while the globe,
       camera, and committed positions stay unchanged.

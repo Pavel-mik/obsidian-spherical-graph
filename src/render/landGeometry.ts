@@ -22,6 +22,7 @@ import {
 	classifySupportedContinent,
 	continentSupportClearance,
 	createLandSupportModel,
+	eligibleIslandNodeIndices,
 	sampleContinentSupport,
 	type LandSupportModel,
 } from './landSupport';
@@ -35,8 +36,8 @@ const LAND_SURFACE_OFFSET = 0.0025;
 const COAST_SURFACE_OFFSET = 0.006;
 export const MIN_BEACH_ANGULAR_WIDTH = 0.006;
 export const MAX_BEACH_ANGULAR_WIDTH = 0.025;
-export const MAX_RENDERED_ISLANDS = 24;
 const MIN_RENDERED_ISLAND_SEPARATION = 0.11;
+const MIN_ISLAND_SEA_GAP = 0.012;
 
 export interface LandSurfaceData {
 	readonly positions: Float32Array;
@@ -64,6 +65,7 @@ interface LandModel {
 	readonly positions: Float32Array;
 	readonly seed: number;
 	readonly edges?: readonly RenderEdge[];
+	readonly nodeDegrees?: ArrayLike<number>;
 	readonly coastProfiles?: readonly CoastProfile[];
 	readonly support?: LandSupportModel;
 }
@@ -155,12 +157,14 @@ function createLandModel(
 	positions: Float32Array,
 	seed: number,
 	edges: readonly RenderEdge[] = [],
+	nodeDegrees?: ArrayLike<number>,
 ): LandModel {
 	const model: LandModel = {
 		geography,
 		positions,
 		seed,
 		edges,
+		nodeDegrees,
 	};
 	return {
 		...model,
@@ -172,6 +176,7 @@ function createLandModel(
 			positions,
 			edges,
 			seed,
+			nodeDegrees,
 		),
 	};
 }
@@ -251,12 +256,17 @@ export function classifyLandOwner(
 		return continentOwner;
 	}
 
+	const eligibleIslands = eligibleIslandNodeIndices(
+		model.geography,
+		model.positions.length / 3,
+		model.nodeDegrees,
+	);
 	for (
 		let islandIndex = 0;
-		islandIndex < model.geography.islandNodeIndices.length;
+		islandIndex < eligibleIslands.length;
 		islandIndex += 1
 	) {
-		const nodeIndex = model.geography.islandNodeIndices[islandIndex];
+		const nodeIndex = eligibleIslands[islandIndex];
 		if (nodeIndex === undefined) {
 			continue;
 		}
@@ -284,6 +294,7 @@ function classifyContinentOwner(
 			model.positions,
 			model.edges ?? [],
 			model.seed,
+			model.nodeDegrees,
 		);
 		landSupportCache.set(model, support);
 	}
@@ -437,17 +448,6 @@ function surfaceShade(point: Vector3, seed: number, owner: number): number {
 	);
 }
 
-function islandLandBudget(nodeCount: number, islandCount: number): number {
-	if (islandCount <= 8) {
-		return islandCount;
-	}
-	const adaptiveBudget = Math.round(6 + Math.sqrt(nodeCount) * 0.72);
-	return Math.min(
-		islandCount,
-		Math.max(8, Math.min(MAX_RENDERED_ISLANDS, adaptiveBudget)),
-	);
-}
-
 export function renderedIslandRadius(
 	nodeCount: number,
 	nodeIndex: number,
@@ -467,27 +467,30 @@ export function renderedIslandRadius(
 interface IslandLandCandidate {
 	readonly nodeIndex: number;
 	readonly center: Vec3;
+	readonly radius: number;
 	readonly seaClearance: number;
 	readonly tieBreaker: number;
 }
 
 /**
- * Free nodes are a layout concept, not a mandate to draw one land patch per
- * note. This deterministic render-only LOD keeps a small set of isolated,
- * spatially separated representatives. Other free nodes remain visible as
- * cities over open water and retain their links, picking, and labels.
+ * Eligible non-continent nodes receive deterministic, spatially separated
+ * island patches. Degree-zero notes are filtered before this stage and remain
+ * visible as cities over open water without manufacturing land.
  */
 export function selectRenderedIslandNodeIndices(
 	geography: RenderGeography,
 	positions: Float32Array,
 	seed: number,
 	edges: readonly RenderEdge[] = [],
+	nodeDegrees?: ArrayLike<number>,
 ): readonly number[] {
 	const nodeCount = positions.length / 3;
-	const budget = islandLandBudget(
+	const eligibleIslands = eligibleIslandNodeIndices(
+		geography,
 		nodeCount,
-		geography.islandNodeIndices.length,
+		nodeDegrees,
 	);
+	const budget = eligibleIslands.length;
 	if (budget === 0) {
 		return [];
 	}
@@ -496,9 +499,10 @@ export function selectRenderedIslandNodeIndices(
 		positions,
 		seed,
 		edges,
+		nodeDegrees,
 	);
 	const candidates: IslandLandCandidate[] = [];
-	for (const nodeIndex of geography.islandNodeIndices) {
+	for (const nodeIndex of eligibleIslands) {
 		const center = normalizeVec3(readVec3(positions, nodeIndex));
 		const islandRadius = renderedIslandRadius(nodeCount, nodeIndex, seed);
 		let seaClearance = Math.PI;
@@ -518,6 +522,7 @@ export function selectRenderedIslandNodeIndices(
 							positions,
 							edges,
 							seed,
+							nodeDegrees,
 						),
 				),
 			);
@@ -528,6 +533,7 @@ export function selectRenderedIslandNodeIndices(
 		candidates.push({
 			nodeIndex,
 			center,
+			radius: islandRadius,
 			seaClearance,
 			tieBreaker: hashNumbers(seed, nodeIndex, 0x15e1),
 		});
@@ -555,7 +561,12 @@ export function selectRenderedIslandNodeIndices(
 				selected.some(
 					(entry) =>
 						geodesicDistance(entry.center, candidate.center) <
-						minimumSeparation,
+						Math.max(
+							minimumSeparation,
+							entry.radius +
+								candidate.radius +
+								MIN_ISLAND_SEA_GAP,
+						),
 				)
 			) {
 				continue;
@@ -700,9 +711,12 @@ export function buildLandSurfaceData(
 	seed: number,
 	detail = 48,
 	edges: readonly RenderEdge[] = [],
+	nodeDegrees?: ArrayLike<number>,
 ): LandSurfaceData {
 	if (
 		positions.length % 3 !== 0 ||
+		(nodeDegrees !== undefined &&
+			nodeDegrees.length !== positions.length / 3) ||
 		!Number.isFinite(radius) ||
 		radius <= 0 ||
 		!Number.isSafeInteger(detail) ||
@@ -731,6 +745,7 @@ export function buildLandSurfaceData(
 		positions,
 		seed,
 		edges,
+		nodeDegrees,
 	);
 	const rawGeometry = new IcosahedronGeometry(1, detail);
 	const source =
@@ -754,11 +769,18 @@ export function buildLandSurfaceData(
 		positions,
 		seed,
 		edges,
+		nodeDegrees,
 	);
 	const continentModel = model;
 	const supportModel =
 		model.support ??
-		createLandSupportModel(geography, positions, edges, seed);
+		createLandSupportModel(
+			geography,
+			positions,
+			edges,
+			seed,
+			nodeDegrees,
+		);
 	const classifyVector = (point: Vector3): number => {
 		const key = vertexKey(point);
 		const cached = ownerCache.get(key);

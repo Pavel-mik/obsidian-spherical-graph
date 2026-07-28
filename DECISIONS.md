@@ -94,8 +94,10 @@
   ocean component rather than overlapping translucent landmasses.
 - Continent acceptance combines spatial size and prominence with optional graph
   support. Final membership comes from the owning grid cell at each fixed note
-  position; notes outside accepted land remain islands. This makes coastline
-  and membership agree with the visible city distribution.
+  position. Only degree-three-or-higher notes can support or join continental
+  land; degree-one/two notes are island candidates, while orphan notes stay as
+  cities over open water. This prevents sparse graph appendices from inflating
+  a landmass while keeping every note interactive.
 - Refresh continuity preserves matched continent identity, label, and color
   through deterministic overlap matching. Centers and diagnostic extents are
   always rederived from the current fixed positions; a persisted extent is
@@ -108,12 +110,16 @@
   semantic geography only. This keeps snapshots compact and lets themes recolor
   the atlas without moving notes. Density, watershed, and cell-ownership arrays
   are temporary analytical data and are not persisted.
-- A free note is semantically an island but does not necessarily receive its
-  own land polygon. Large-vault rendering selects at most 24 deterministic,
-  well-separated representatives and scales their footprint with density.
-  Rendering every rejected community member as fixed-size land was rejected
-  because it converted the ocean into overlapping confetti without adding
-  navigational information.
+- Degree-one/two notes can receive deterministic, density-scaled island
+  polygons when there is enough clearance from a continent and another island.
+  Orphan notes never seed a polygon. A hard representative budget was rejected
+  because it hid useful sparse islands; geometric clearance and decreasing
+  radius bound overlap without turning the ocean into confetti.
+- A connected ocean must occupy at least 34% of the analytical render raster,
+  increasing by 2.5 percentage points per additional continent up to 46%.
+  Expansion proceeds only inward from the existing external ocean and protects
+  member cells. This explicit visual invariant was chosen because one-cell sea
+  seams are analytically connected but read as rivers rather than oceans.
 - Coast detail and terrain texture are deterministic procedural functions of
   the committed snapshot seed and sphere direction. No bitmap texture is
   shipped, fetched, or persisted, and Refresh cannot randomly redraw the map.

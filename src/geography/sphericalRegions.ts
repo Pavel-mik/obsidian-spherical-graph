@@ -117,6 +117,9 @@ function candidateBasins(
 	const nodesByBasin = new Map<number, number[]>();
 	const nodeDensities: number[] = [];
 	for (let nodeIndex = 0; nodeIndex < graph.nodes.length; nodeIndex += 1) {
+		if ((field.nodeWeights[nodeIndex] ?? 0) <= 0) {
+			continue;
+		}
 		const basin = watershed.basinByNode[nodeIndex] ?? -1;
 		if (basin < 0) {
 			continue;
@@ -128,8 +131,12 @@ function candidateBasins(
 		nodeDensities.push(field.density[cell] ?? 0);
 	}
 	const typicalNodeDensity = quantile(nodeDensities, 0.5);
+	const supportedNodeCount = field.nodeWeights.reduce(
+		(count, weight) => count + (weight > 0 ? 1 : 0),
+		0,
+	);
 	const minimum =
-		options.minimumContinentNodes ?? automaticMinimum(graph.nodes.length);
+		options.minimumContinentNodes ?? automaticMinimum(supportedNodeCount);
 	const minimumProminence = options.minimumProminence ?? 0.08;
 	const candidates: CandidateBasin[] = [];
 	for (const [basin, nodeIndices] of nodesByBasin) {
@@ -239,7 +246,7 @@ function candidateBasins(
 		const sizeSignal = Math.min(
 			1,
 			seedNodeIndices.length /
-				Math.max(minimum, graph.nodes.length * 0.16),
+				Math.max(minimum, supportedNodeCount * 0.16),
 		);
 		const score =
 			sizeSignal * 0.3 +
@@ -336,8 +343,13 @@ function addSeaBetweenOwners(
 	ownerByCell: Int32Array,
 ): void {
 	const protectedCells = new Uint8Array(grid.vertices.length);
-	for (const cell of field.nodeCells) {
-		protectedCells[cell] = 1;
+	for (let nodeIndex = 0; nodeIndex < field.nodeCells.length; nodeIndex += 1) {
+		if ((field.nodeWeights[nodeIndex] ?? 0) > 0) {
+			const cell = field.nodeCells[nodeIndex];
+			if (cell !== undefined) {
+				protectedCells[cell] = 1;
+			}
+		}
 	}
 	const eroded = ownerByCell.slice();
 	for (let cell = 0; cell < ownerByCell.length; cell += 1) {
@@ -439,6 +451,9 @@ export function buildSphericalRegions(
 	assignmentByNode.fill(-1);
 	const membersByOwner = candidates.map(() => [] as number[]);
 	for (let nodeIndex = 0; nodeIndex < graph.nodes.length; nodeIndex += 1) {
+		if ((field.nodeWeights[nodeIndex] ?? 0) <= 0) {
+			continue;
+		}
 		const cell = field.nodeCells[nodeIndex] ?? 0;
 		const owner = ownerByCell[cell] ?? -1;
 		if (owner >= 0 && owner < candidates.length) {

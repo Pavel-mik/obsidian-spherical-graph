@@ -26,8 +26,8 @@
   fine/coarse density fields, watershed basins, and one connected ocean; use
   graph communities only as a soft prior.
 - [x] Select exclusive spatial continents, preserve semantic identity across
-  Refresh, leave unassigned notes as islands, and render deterministic land,
-  irregular coastlines, and sand beaches without feeding geography back into
-  node positions.
+  Refresh, keep orphan notes over water, treat degree-one/two notes as islands,
+  and render deterministic land, broad connected oceans, irregular coastlines,
+  and sand beaches without feeding geography back into node positions.
 - [x] Replace the retired cyberpunk treatment with the continental atlas design
   system and add an on-screen Continents toggle.

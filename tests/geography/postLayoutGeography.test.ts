@@ -97,6 +97,52 @@ function addLooseNodes(graph: GraphData, count: number): GraphData {
 	};
 }
 
+function addWeakNodes(
+	graph: GraphData,
+	degrees: readonly number[],
+): GraphData {
+	const nodes = [...graph.nodes];
+	const edges = [...graph.edges];
+	for (const degree of degrees) {
+		const index = nodes.length;
+		nodes.push({
+			index,
+			id: `Weak/degree-${degree}-${index}.md`,
+			path: `Weak/degree-${degree}-${index}.md`,
+			basename: `degree-${degree}-${index}`,
+			degree,
+			weightedDegree: degree,
+			exists: true,
+		});
+		for (let neighbor = 0; neighbor < degree; neighbor += 1) {
+			edges.push({
+				source: neighbor,
+				target: index,
+				weight: 1,
+				forwardWeight: 1,
+				backwardWeight: 0,
+			});
+		}
+	}
+	return {
+		...graph,
+		nodes,
+		edges,
+		signature: `${graph.signature}-weak-${degrees.join('-')}`,
+		descriptor: {
+			...graph.descriptor,
+			nodeIds: nodes.map((node) => node.id),
+			edges: edges.map((edge) => ({
+				sourceId: nodes[edge.source]?.id ?? '',
+				targetId: nodes[edge.target]?.id ?? '',
+				weight: edge.weight,
+				forwardWeight: edge.forwardWeight,
+				backwardWeight: edge.backwardWeight,
+			})),
+		},
+	};
+}
+
 function withoutEdges(graph: GraphData): GraphData {
 	const nodes = graph.nodes.map((node) => ({
 		...node,
@@ -203,7 +249,10 @@ describe('post-layout spherical geography', () => {
 				.map((continent) => continent.label)
 				.sort(),
 		).toEqual(['Books', 'Research']);
-		expect(analysis.geography.islandNodeIds.length).toBeGreaterThanOrEqual(4);
+		expect(analysis.geography.islandNodeIds).toEqual([]);
+		expect([...analysis.assignmentByNode.slice(20)]).toEqual(
+			Array.from({ length: 6 }, () => -1),
+		);
 		expect(
 			oceanComponentCount(analysis.grid, analysis.ownerByCell),
 		).toBe(1);
@@ -280,7 +329,7 @@ describe('post-layout spherical geography', () => {
 		expect(analysis.geography.continents[0]?.nodeIds).toHaveLength(16);
 	});
 
-	it('can recognize a spatial continent without any graph-community edges', () => {
+	it('keeps a dense cluster of orphan notes over open water', () => {
 		const graph = withoutEdges(graphWithGroups([12]));
 		const positions = packPositions([
 			clusterDirections([1, 0, 0], 12),
@@ -296,9 +345,51 @@ describe('post-layout spherical geography', () => {
 			},
 		);
 
-		expect(analysis.geography.continents).toHaveLength(1);
-		expect(analysis.geography.continents[0]?.nodeIds).toHaveLength(12);
+		expect(analysis.geography.continents).toEqual([]);
 		expect(analysis.geography.islandNodeIds).toEqual([]);
+		expect([...analysis.density.density].every((value) => value === 0)).toBe(
+			true,
+		);
+		expect([...analysis.ownerByCell].every((owner) => owner === -1)).toBe(
+			true,
+		);
+	});
+
+	it('keeps degree-one and degree-two notes as islands, never continent support', () => {
+		const graph = addWeakNodes(graphWithGroups([10]), [0, 1, 2, 2]);
+		const positions = packPositions([
+			clusterDirections([1, 0, 0], 10),
+			[
+				[-1, 0, 0],
+				[0, 1, 0],
+				[0, -1, 0],
+				[0, 0, 1],
+			],
+		]);
+		const analysis = derivePostLayoutGeography(
+			graph,
+			positions,
+			43,
+			undefined,
+			{
+				gridSubdivision: 4,
+				minimumContinentNodes: 6,
+			},
+		);
+
+		expect(analysis.geography.continents).toHaveLength(1);
+		expect(analysis.geography.continents[0]?.nodeIds).toHaveLength(10);
+		expect(analysis.geography.islandNodeIds).toEqual([
+			'Weak/degree-1-11.md',
+			'Weak/degree-2-12.md',
+			'Weak/degree-2-13.md',
+		]);
+		expect([...analysis.assignmentByNode.slice(10)]).toEqual([
+			-1,
+			-1,
+			-1,
+			-1,
+		]);
 	});
 
 	it('does not let a topological prior turn a uniform globe into one continent', () => {
@@ -373,9 +464,32 @@ describe('post-layout spherical geography', () => {
 				0,
 			),
 		).toBeGreaterThanOrEqual(80);
-		expect(
-			analysis.geography.islandNodeIds.length,
-		).toBeGreaterThanOrEqual(Math.floor(looseCount * 0.5));
+		expect(analysis.geography.islandNodeIds).toEqual([]);
+		const coreGraph = graphWithGroups(groupSizes);
+		const corePositions = packPositions([
+			...groupSizes.map((size, index) =>
+				clusterDirections(
+					centers[index] ?? [1, 0, 0],
+					size,
+					0.34,
+				),
+			),
+		]);
+		const coreAnalysis = derivePostLayoutGeography(
+			coreGraph,
+			corePositions,
+			83,
+			undefined,
+			{
+				gridSubdivision: 4,
+				minimumContinentNodes: 10,
+				maximumContinents: 7,
+			},
+		);
+		expect(analysis.density.characteristicSpacing).toBe(
+			coreAnalysis.density.characteristicSpacing,
+		);
+		expect(analysis.density.density).toEqual(coreAnalysis.density.density);
 	});
 
 	it('is deterministic and reuses matched persisted identity', () => {

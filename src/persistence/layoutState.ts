@@ -444,12 +444,21 @@ export function validateContinentalGeography(
 	for (const nodeId of islandNodeIds) {
 		assigned.add(nodeId);
 	}
+	const linkedNodeIds = new Set<string>();
+	for (const edge of descriptor.edges) {
+		linkedNodeIds.add(edge.sourceId);
+		linkedNodeIds.add(edge.targetId);
+	}
 	if (
-		assigned.size !== descriptor.nodeIds.length ||
-		descriptor.nodeIds.some((nodeId) => !assigned.has(nodeId))
+		descriptor.nodeIds.some(
+			(nodeId) =>
+				!assigned.has(nodeId) && linkedNodeIds.has(nodeId),
+		)
 	) {
 		return undefined;
 	}
+	// Geography is intentionally non-exhaustive only for true orphan notes.
+	// Any omitted linked node indicates truncated or corrupt persisted data.
 	return Object.freeze({
 		version: CONTINENTAL_GEOGRAPHY_VERSION,
 		continents: Object.freeze(continents),
