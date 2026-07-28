@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { RenderNode } from '../../src/render/renderTypes';
-import { findSearchResults } from '../../src/view/SearchController';
+import { RenderNode, RenderTag } from '../../src/render/renderTypes';
+import {
+	findGraphSearchResults,
+	findSearchResults,
+} from '../../src/view/SearchController';
 
 const nodes: RenderNode[] = [
 	{
@@ -29,6 +32,19 @@ const nodes: RenderNode[] = [
 	},
 ];
 
+const tags: RenderTag[] = [
+	{
+		id: '#spherical-design',
+		label: '#spherical-design',
+		nodeIndices: [1],
+	},
+	{
+		id: '#daily',
+		label: '#daily',
+		nodeIndices: [0, 2],
+	},
+];
+
 describe('findSearchResults', () => {
 	it('ranks basename matches before path-only and subsequence matches', () => {
 		const results = findSearchResults(nodes, 'sphere');
@@ -42,5 +58,27 @@ describe('findSearchResults', () => {
 	it('is empty for blank queries and obeys the result limit', () => {
 		expect(findSearchResults(nodes, '  ')).toEqual([]);
 		expect(findSearchResults(nodes, 'a', 1)).toHaveLength(1);
+	});
+
+	it('finds tags with or without the hash prefix and keeps their type', () => {
+		const plain = findGraphSearchResults(
+			nodes,
+			tags,
+			'spherical-design',
+		);
+		const hashed = findGraphSearchResults(nodes, tags, '#daily');
+
+		expect(plain[0]).toMatchObject({
+			kind: 'tag',
+			tag: { id: '#spherical-design' },
+		});
+		expect(hashed[0]).toMatchObject({
+			kind: 'tag',
+			tag: { id: '#daily', nodeIndices: [0, 2] },
+		});
+	});
+
+	it('applies one shared result limit across notes and tags', () => {
+		expect(findGraphSearchResults(nodes, tags, 'daily', 1)).toHaveLength(1);
 	});
 });

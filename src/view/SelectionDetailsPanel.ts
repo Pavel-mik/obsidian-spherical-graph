@@ -20,6 +20,7 @@ export interface SelectionDetailsModel {
 	selected?: {
 		node: RenderNode;
 		connections: readonly RenderNode[];
+		tags: readonly RenderTag[];
 	};
 	tag?: {
 		tag: RenderTag;
@@ -36,6 +37,7 @@ export interface SelectionDetailsModel {
 
 interface SelectionDetailsCallbacks {
 	onOpen(node: RenderNode, openInNewLeaf: boolean): void;
+	onSelectTag(tag: RenderTag): void;
 }
 
 let selectionDetailsSequence = 0;
@@ -218,6 +220,8 @@ export class SelectionDetailsPanel {
 		metadata.className = 'spherical-graph-inspector-meta';
 		metadata.textContent = `${selected.connections.length} direct ${
 			selected.connections.length === 1 ? 'connection' : 'connections'
+		} · ${selected.tags.length} linked ${
+			selected.tags.length === 1 ? 'tag' : 'tags'
 		}`;
 		section.append(metadata);
 		section.append(
@@ -225,6 +229,13 @@ export class SelectionDetailsPanel {
 				'Linked notes',
 				selected.connections,
 				'No linked notes',
+			),
+		);
+		section.append(
+			this.createTagList(
+				'Linked tags',
+				selected.tags,
+				'No linked tags',
 			),
 		);
 		this.content.append(section);
@@ -365,6 +376,48 @@ export class SelectionDetailsPanel {
 		}
 		return button;
 	}
+
+	private createTagList(
+		label: string,
+		tags: readonly RenderTag[],
+		emptyText: string,
+	): HTMLElement {
+		const wrapper = this.content.createDiv();
+		wrapper.className = 'spherical-graph-inspector-list-block';
+		const labelElement = wrapper.createDiv();
+		labelElement.className = 'spherical-graph-inspector-list-label';
+		labelElement.textContent = label;
+		wrapper.append(labelElement);
+
+		const list = wrapper.createDiv();
+		list.className = 'spherical-graph-inspector-list';
+		if (tags.length === 0) {
+			const empty = list.createDiv();
+			empty.className = 'spherical-graph-inspector-empty';
+			empty.textContent = emptyText;
+			list.append(empty);
+		} else {
+			for (const tag of tags) {
+				const button = this.content.createEl('button');
+				button.type = 'button';
+				button.className =
+					'spherical-graph-inspector-link spherical-graph-inspector-tag-link';
+				button.title = `Select ${tag.label} and show its links`;
+				button.dataset.tagId = tag.id;
+				const name = button.createSpan();
+				name.className = 'spherical-graph-inspector-link-name';
+				name.textContent = tag.label;
+				button.append(name);
+				button.addEventListener('click', (event) => {
+					event.stopPropagation();
+					this.callbacks.onSelectTag(tag);
+				});
+				list.append(button);
+			}
+		}
+		wrapper.append(list);
+		return wrapper;
+	}
 }
 
 export function buildSelectionDetailsModel(
@@ -394,6 +447,15 @@ export function buildSelectionDetailsModel(
 						.sort((left, right) =>
 							left.basename.localeCompare(right.basename),
 						),
+					tags: [
+						...(
+							snapshot.tagsByNodeIndex.get(
+								selectedNode.index,
+							) ?? []
+						),
+					].sort((left, right) =>
+						left.label.localeCompare(right.label),
+					),
 				};
 	const selectedTag =
 		selectedTagId === undefined

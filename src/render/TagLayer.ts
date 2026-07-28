@@ -152,6 +152,19 @@ export class TagLayer {
 		return this.snapshot?.tags[instanceId];
 	}
 
+	positionForTag(tagId: string, target: Vector3): Vector3 | undefined {
+		if (!this.visible || !this.snapshot?.tagById.has(tagId)) {
+			return undefined;
+		}
+		const direction = this.directions.get(tagId);
+		if (direction === undefined) {
+			return undefined;
+		}
+		return target
+			.set(direction[0], direction[1], direction[2])
+			.multiplyScalar(tagOrbitRadiusForAppearance(this.appearance));
+	}
+
 	isTagPickable(instanceId: number, camera: Camera): boolean {
 		if (!this.visible) {
 			return false;

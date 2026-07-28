@@ -162,4 +162,91 @@ describe('node- and edge-supported continent territory', () => {
 
 		expect(classifySupportedContinent(center, model)).toBe(-1);
 	});
+
+	it('loosens a dense circular community into a deterministic organic coast without interior lakes', () => {
+		const ringCount = 24;
+		const members: Vec3[] = [center];
+		for (let index = 0; index < ringCount; index += 1) {
+			const phase = (index / ringCount) * Math.PI * 2;
+			members.push(
+				exponentialMap(center, [
+					0,
+					Math.cos(phase) * 0.32,
+					Math.sin(phase) * 0.32,
+				]),
+			);
+		}
+		const organicGeography: RenderGeography = {
+			continents: [
+				{
+					id: 'round-community',
+					label: 'Round community',
+					nodeIndices: members.map((_, index) => index),
+					center,
+					capRadius: 0.5,
+					colorIndex: 0,
+				},
+			],
+			islandNodeIndices: [],
+		};
+		const edges = Array.from({ length: ringCount }, (_, index) => ({
+			source: 0,
+			target: index + 1,
+			weight: 1,
+		}));
+		const model = createLandSupportModel(
+			organicGeography,
+			new Float32Array(members.flat()),
+			edges,
+			42,
+		);
+
+		for (const member of members) {
+			expect(classifySupportedContinent(member, model)).toBe(0);
+		}
+		for (let azimuthIndex = 0; azimuthIndex < 48; azimuthIndex += 1) {
+			const phase = (azimuthIndex / 48) * Math.PI * 2;
+			const interior = exponentialMap(center, [
+				0,
+				Math.cos(phase) * 0.27,
+				Math.sin(phase) * 0.27,
+			]);
+			expect(classifySupportedContinent(interior, model)).toBe(0);
+		}
+
+		const coastRadii = Array.from({ length: 96 }, (_, azimuthIndex) => {
+			const phase = (azimuthIndex / 96) * Math.PI * 2;
+			let lastLandRadius = 0;
+			for (let radius = 0; radius <= 0.62; radius += 0.002) {
+				const sample = exponentialMap(center, [
+					0,
+					Math.cos(phase) * radius,
+					Math.sin(phase) * radius,
+				]);
+				if (classifySupportedContinent(sample, model) === 0) {
+					lastLandRadius = radius;
+				}
+			}
+			return lastLandRadius;
+		});
+		expect(Math.max(...coastRadii) - Math.min(...coastRadii)).toBeGreaterThan(
+			0.035,
+		);
+		const repeat = createLandSupportModel(
+			organicGeography,
+			new Float32Array(members.flat()),
+			edges,
+			42,
+		);
+		for (let index = 0; index < coastRadii.length; index += 12) {
+			const phase = (index / coastRadii.length) * Math.PI * 2;
+			const radius = coastRadii[index] ?? 0;
+			const sample = exponentialMap(center, [
+				0,
+				Math.cos(phase) * radius,
+				Math.sin(phase) * radius,
+			]);
+			expect(classifySupportedContinent(sample, repeat)).toBe(0);
+		}
+	});
 });

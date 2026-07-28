@@ -6,6 +6,7 @@ import {
 import {
 	exponentialMap,
 	geodesicDistance,
+	tangentDirection,
 } from '../geometry/sphericalGeometry';
 import {
 	addVec3,
@@ -21,6 +22,7 @@ import {
 	classifySupportedContinent,
 	continentSupportClearance,
 	createLandSupportModel,
+	sampleContinentSupport,
 	type LandSupportModel,
 } from './landSupport';
 import type {
@@ -29,7 +31,10 @@ import type {
 } from './renderTypes';
 
 export const SEA_OWNER = -1;
-const COAST_SURFACE_OFFSET = 0.004;
+const LAND_SURFACE_OFFSET = 0.0025;
+const COAST_SURFACE_OFFSET = 0.006;
+export const MIN_BEACH_ANGULAR_WIDTH = 0.006;
+export const MAX_BEACH_ANGULAR_WIDTH = 0.025;
 export const MAX_RENDERED_ISLANDS = 24;
 const MIN_RENDERED_ISLAND_SEPARATION = 0.11;
 
@@ -37,8 +42,10 @@ export interface LandSurfaceData {
 	readonly positions: Float32Array;
 	readonly colorIndices: Uint8Array;
 	readonly shades: Float32Array;
+	readonly beachPositions: Float32Array;
 	readonly coastPositions: Float32Array;
 	readonly triangleCount: number;
+	readonly beachTriangleCount: number;
 	readonly renderedIslandCount: number;
 }
 
@@ -76,6 +83,42 @@ function terrainNoise(direction: Vec3, seed: number): number {
 			phase * 0.7,
 	);
 	return first * 0.68 + second * 0.32;
+}
+
+export function continentBeachWidth(
+	direction: Vec3,
+	owner: number,
+	seed: number,
+): number {
+	const point = normalizeVec3(direction);
+	const phase = hashToSignedUnitFloat(seed, owner, 0xbeac4) * Math.PI;
+	const field =
+		Math.sin(
+			point[0] * 8.3 +
+				point[1] * 11.7 -
+				point[2] * 7.1 +
+				phase,
+		) *
+			0.55 +
+		Math.sin(
+			point[0] * 19.1 -
+				point[1] * 16.7 +
+				point[2] * 22.3 -
+				phase * 0.7,
+		) *
+			0.3 +
+		Math.sin(
+			point[0] * 41.3 +
+				point[1] * 37.9 -
+				point[2] * 43.7 +
+				phase * 1.3,
+		) *
+			0.15;
+	const unit = Math.min(1, Math.max(0, field * 0.5 + 0.5));
+	return (
+		MIN_BEACH_ANGULAR_WIDTH +
+		(MAX_BEACH_ANGULAR_WIDTH - MIN_BEACH_ANGULAR_WIDTH) * unit
+	);
 }
 
 function createCoastProfile(
@@ -262,24 +305,78 @@ function pushAtRadius(
 	);
 }
 
+function appendDetailedCoastSegment(
+	target: number[],
+	start: Vec3,
+	end: Vec3,
+	ownerCenter: Vec3,
+	seed: number,
+	owner: number,
+	radius: number,
+): void {
+	const subdivisions = 4;
+	let previous = normalizeVec3(start);
+	for (let subdivision = 1; subdivision <= subdivisions; subdivision += 1) {
+		const fraction = subdivision / subdivisions;
+		const base = normalizeVec3([
+			start[0] * (1 - fraction) + end[0] * fraction,
+			start[1] * (1 - fraction) + end[1] * fraction,
+			start[2] * (1 - fraction) + end[2] * fraction,
+		]);
+		const phase =
+			hashToSignedUnitFloat(seed, owner, 0xc0a57) * Math.PI;
+		const jitterField =
+			Math.sin(
+				base[0] * 137.3 -
+					base[1] * 113.9 +
+					base[2] * 151.7 +
+					phase,
+			) *
+				0.62 +
+			Math.sin(
+				base[0] * 281.9 +
+					base[1] * 263.3 -
+					base[2] * 239.7 -
+					phase * 0.73,
+			) *
+				0.38;
+		const point =
+			subdivision === subdivisions
+				? base
+				: exponentialMap(
+						base,
+						scaleVec3(
+							tangentDirection(base, ownerCenter, owner),
+							jitterField * 0.0055,
+						),
+					);
+		target.push(
+			previous[0] * radius,
+			previous[1] * radius,
+			previous[2] * radius,
+			point[0] * radius,
+			point[1] * radius,
+			point[2] * radius,
+		);
+		previous = point;
+	}
+}
+
 interface ClippedLandPolygon {
 	readonly points: readonly Vector3[];
 	readonly coastIntersections: readonly Vector3[];
 }
 
-function bisectOwnerBoundary(
+function bisectPredicateBoundary(
 	start: Vector3,
 	end: Vector3,
-	owner: number,
-	classify: (point: Vector3) => number,
+	isInside: (point: Vector3) => boolean,
 ): Vector3 {
-	let inside =
-		classify(start) === owner ? start.clone() : end.clone();
-	let outside =
-		classify(start) === owner ? end.clone() : start.clone();
+	let inside = isInside(start) ? start.clone() : end.clone();
+	let outside = isInside(start) ? end.clone() : start.clone();
 	for (let iteration = 0; iteration < 11; iteration += 1) {
 		const middle = inside.clone().add(outside).normalize();
-		if (classify(middle) === owner) {
+		if (isInside(middle)) {
 			inside = middle;
 		} else {
 			outside = middle;
@@ -288,10 +385,9 @@ function bisectOwnerBoundary(
 	return inside.add(outside).normalize();
 }
 
-function clipTriangleToOwner(
+function clipTriangleByPredicate(
 	triangle: readonly [Vector3, Vector3, Vector3],
-	owner: number,
-	classify: (point: Vector3) => number,
+	isInside: (point: Vector3) => boolean,
 ): ClippedLandPolygon {
 	const points: Vector3[] = [];
 	const coastIntersections: Vector3[] = [];
@@ -301,16 +397,15 @@ function clipTriangleToOwner(
 		if (current === undefined || next === undefined) {
 			continue;
 		}
-		const currentInside = classify(current) === owner;
-		const nextInside = classify(next) === owner;
+		const currentInside = isInside(current);
+		const nextInside = isInside(next);
 		if (currentInside && nextInside) {
 			points.push(next);
 		} else if (currentInside !== nextInside) {
-			const intersection = bisectOwnerBoundary(
+			const intersection = bisectPredicateBoundary(
 				current,
 				next,
-				owner,
-				classify,
+				isInside,
 			);
 			points.push(intersection);
 			coastIntersections.push(intersection);
@@ -497,6 +592,7 @@ function appendIslandPatch(
 	landPositions: number[],
 	colorIndices: number[],
 	shades: number[],
+	beachPositions: number[],
 	coastPositions: number[],
 	center: Vec3,
 	baseAngularRadius: number,
@@ -511,6 +607,7 @@ function appendIslandPatch(
 	const phase5 = hashToSignedUnitFloat(seed, 5) * Math.PI;
 	const phase7 = hashToSignedUnitFloat(seed, 7) * Math.PI;
 	const ring: Vec3[] = [];
+	const innerRing: Vec3[] = [];
 	for (let segment = 0; segment < segmentCount; segment += 1) {
 		const phase = (segment / segmentCount) * Math.PI * 2;
 		const localRadius =
@@ -519,6 +616,12 @@ function appendIslandPatch(
 				Math.sin(phase * 3 + phase3) * 0.12 +
 				Math.sin(phase * 5 + phase5) * 0.065 +
 				Math.sin(phase * 7 + phase7) * 0.035);
+		const beachWidth = Math.min(
+			localRadius * 0.32,
+			MIN_BEACH_ANGULAR_WIDTH +
+				(Math.sin(phase * 4 - phase5) * 0.5 + 0.5) *
+					0.004,
+		);
 		const tangentDirection = normalizeVec3(
 			addVec3(
 				scaleVec3(firstTangent, Math.cos(phase)),
@@ -531,18 +634,41 @@ function appendIslandPatch(
 				scaleVec3(tangentDirection, localRadius),
 			),
 		);
+		innerRing.push(
+			exponentialMap(
+				center,
+				scaleVec3(
+					tangentDirection,
+					Math.max(localRadius * 0.5, localRadius - beachWidth),
+				),
+			),
+		);
 	}
 	for (let segment = 0; segment < segmentCount; segment += 1) {
 		const start = ring[segment];
 		const end = ring[(segment + 1) % segmentCount];
-		if (start === undefined || end === undefined) {
+		const innerStart = innerRing[segment];
+		const innerEnd = innerRing[(segment + 1) % segmentCount];
+		if (
+			start === undefined ||
+			end === undefined ||
+			innerStart === undefined ||
+			innerEnd === undefined
+		) {
 			continue;
 		}
 		for (const point of [center, start, end]) {
-			landPositions.push(
+			beachPositions.push(
 				point[0] * radius,
 				point[1] * radius,
 				point[2] * radius,
+			);
+		}
+		for (const point of [center, innerStart, innerEnd]) {
+			landPositions.push(
+				point[0] * (radius + LAND_SURFACE_OFFSET),
+				point[1] * (radius + LAND_SURFACE_OFFSET),
+				point[2] * (radius + LAND_SURFACE_OFFSET),
 			);
 			colorIndices.push(colorIndex);
 			shades.push(
@@ -550,13 +676,14 @@ function appendIslandPatch(
 					terrainNoise(point, hashNumbers(seed, 0x5ade)) * 0.055,
 			);
 		}
-		coastPositions.push(
-			start[0] * (radius + COAST_SURFACE_OFFSET),
-			start[1] * (radius + COAST_SURFACE_OFFSET),
-			start[2] * (radius + COAST_SURFACE_OFFSET),
-			end[0] * (radius + COAST_SURFACE_OFFSET),
-			end[1] * (radius + COAST_SURFACE_OFFSET),
-			end[2] * (radius + COAST_SURFACE_OFFSET),
+		appendDetailedCoastSegment(
+			coastPositions,
+			start,
+			end,
+			center,
+			seed,
+			colorIndex,
+			radius + COAST_SURFACE_OFFSET,
 		);
 	}
 	return segmentCount;
@@ -588,8 +715,10 @@ export function buildLandSurfaceData(
 			positions: new Float32Array(),
 			colorIndices: new Uint8Array(),
 			shades: new Float32Array(),
+			beachPositions: new Float32Array(),
 			coastPositions: new Float32Array(),
 			triangleCount: 0,
+			beachTriangleCount: 0,
 			renderedIslandCount: 0,
 		};
 	}
@@ -608,12 +737,14 @@ export function buildLandSurfaceData(
 	const landPositions: number[] = [];
 	const colorIndices: number[] = [];
 	const shades: number[] = [];
+	const beachPositions: number[] = [];
 	const coastPositions: number[] = [];
 	const a = new Vector3();
 	const b = new Vector3();
 	const c = new Vector3();
 	const centroid = new Vector3();
 	const ownerCache = new Map<string, number>();
+	const interiorCache = new Map<string, boolean>();
 	const model = createLandModel(
 		geography,
 		positions,
@@ -621,6 +752,9 @@ export function buildLandSurfaceData(
 		edges,
 	);
 	const continentModel = model;
+	const supportModel =
+		model.support ??
+		createLandSupportModel(geography, positions, edges, seed);
 	const classifyVector = (point: Vector3): number => {
 		const key = vertexKey(point);
 		const cached = ownerCache.get(key);
@@ -634,7 +768,27 @@ export function buildLandSurfaceData(
 		ownerCache.set(key, owner);
 		return owner;
 	};
+	const hasInteriorLand = (point: Vector3, owner: number): boolean => {
+		const key = `${owner}|${vertexKey(point)}`;
+		const cached = interiorCache.get(key);
+		if (cached !== undefined) {
+			return cached;
+		}
+		const direction: Vec3 = [point.x, point.y, point.z];
+		const support = sampleContinentSupport(
+			direction,
+			owner,
+			supportModel,
+		);
+		const inside =
+			classifyVector(point) === owner &&
+			support !== undefined &&
+			support.margin >= continentBeachWidth(direction, owner, seed);
+		interiorCache.set(key, inside);
+		return inside;
+	};
 	let triangleCount = 0;
+	let beachTriangleCount = 0;
 	for (let vertex = 0; vertex + 2 < attribute.count; vertex += 3) {
 		a.fromBufferAttribute(attribute, vertex).normalize();
 		b.fromBufferAttribute(attribute, vertex + 1).normalize();
@@ -658,25 +812,50 @@ export function buildLandSurfaceData(
 					] ?? owner,
 				) %
 					6;
-			const clipped = clipTriangleToOwner(
+			const outer = clipTriangleByPredicate(
 				[a, b, c],
-				owner,
-				classifyVector,
+				(point) => classifyVector(point) === owner,
 			);
-			const first = clipped.points[0];
+			const beachFirst = outer.points[0];
+			if (beachFirst !== undefined) {
+				for (
+					let pointIndex = 1;
+					pointIndex + 1 < outer.points.length;
+					pointIndex += 1
+				) {
+					const second = outer.points[pointIndex];
+					const third = outer.points[pointIndex + 1];
+					if (second === undefined || third === undefined) {
+						continue;
+					}
+					for (const point of [beachFirst, second, third]) {
+						pushAtRadius(beachPositions, point, radius);
+					}
+					beachTriangleCount += 1;
+				}
+			}
+			const inner = clipTriangleByPredicate(
+				[a, b, c],
+				(point) => hasInteriorLand(point, owner),
+			);
+			const first = inner.points[0];
 			if (first !== undefined) {
 				for (
 					let pointIndex = 1;
-					pointIndex + 1 < clipped.points.length;
+					pointIndex + 1 < inner.points.length;
 					pointIndex += 1
 				) {
-					const second = clipped.points[pointIndex];
-					const third = clipped.points[pointIndex + 1];
+					const second = inner.points[pointIndex];
+					const third = inner.points[pointIndex + 1];
 					if (second === undefined || third === undefined) {
 						continue;
 					}
 					for (const point of [first, second, third]) {
-						pushAtRadius(landPositions, point, radius);
+						pushAtRadius(
+							landPositions,
+							point,
+							radius + LAND_SURFACE_OFFSET,
+						);
 						colorIndices.push(colorIndex);
 						shades.push(surfaceShade(point, seed, owner));
 					}
@@ -686,24 +865,26 @@ export function buildLandSurfaceData(
 			for (
 				let intersectionIndex = 0;
 				intersectionIndex + 1 <
-				clipped.coastIntersections.length;
+				outer.coastIntersections.length;
 				intersectionIndex += 2
 			) {
 				const start =
-					clipped.coastIntersections[intersectionIndex];
+					outer.coastIntersections[intersectionIndex];
 				const end =
-					clipped.coastIntersections[intersectionIndex + 1];
+					outer.coastIntersections[intersectionIndex + 1];
 				if (start === undefined || end === undefined) {
 					continue;
 				}
-				pushAtRadius(
+				const continentCenter =
+					geography.continents[owner]?.center ??
+					[start.x, start.y, start.z] as Vec3;
+				appendDetailedCoastSegment(
 					coastPositions,
-					start,
-					radius + COAST_SURFACE_OFFSET,
-				);
-				pushAtRadius(
-					coastPositions,
-					end,
+					[start.x, start.y, start.z],
+					[end.x, end.y, end.z],
+					continentCenter,
+					seed,
+					owner,
 					radius + COAST_SURFACE_OFFSET,
 				);
 			}
@@ -750,10 +931,11 @@ export function buildLandSurfaceData(
 				continue;
 			}
 			const patchSeed = hashNumbers(shelfSeed, shelfIndex, 0x151a);
-			triangleCount += appendIslandPatch(
+			const patchTriangleCount = appendIslandPatch(
 				landPositions,
 				colorIndices,
 				shades,
+				beachPositions,
 				coastPositions,
 				shelfCenter,
 				0.018 +
@@ -762,6 +944,8 @@ export function buildLandSurfaceData(
 				patchSeed,
 				radius,
 			);
+			triangleCount += patchTriangleCount;
+			beachTriangleCount += patchTriangleCount;
 		}
 	}
 
@@ -787,10 +971,11 @@ export function buildLandSurfaceData(
 			nodeIndex,
 			seed,
 		);
-		triangleCount += appendIslandPatch(
+		const patchTriangleCount = appendIslandPatch(
 			landPositions,
 			colorIndices,
 			shades,
+			beachPositions,
 			coastPositions,
 			center,
 			islandRadius,
@@ -798,6 +983,8 @@ export function buildLandSurfaceData(
 			islandSeed,
 			radius,
 		);
+		triangleCount += patchTriangleCount;
+		beachTriangleCount += patchTriangleCount;
 	}
 	source.dispose();
 	if (source !== rawGeometry) {
@@ -807,8 +994,10 @@ export function buildLandSurfaceData(
 		positions: new Float32Array(landPositions),
 		colorIndices: new Uint8Array(colorIndices),
 		shades: new Float32Array(shades),
+		beachPositions: new Float32Array(beachPositions),
 		coastPositions: new Float32Array(coastPositions),
 		triangleCount,
+		beachTriangleCount,
 		renderedIslandCount: renderedIslandNodeIndices.length,
 	};
 }

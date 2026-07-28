@@ -7,7 +7,12 @@ export type {
 	StatusPresentation,
 	StatusTone,
 } from './LayoutStatusPresenter';
-export { findSearchResults, SearchController } from './SearchController';
+export {
+	findGraphSearchResults,
+	findSearchResults,
+	SearchController,
+} from './SearchController';
+export type { SearchResult } from './SearchController';
 export {
 	RENEW_CONFIRMATION_COPY,
 	VIEW_CONTROL_COPY,

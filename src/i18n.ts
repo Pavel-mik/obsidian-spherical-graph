@@ -6,7 +6,7 @@ export const UI_STRINGS = {
 	cancelCalculation: 'Cancel calculation',
 	resetCamera: 'Reset camera',
 	findRoute: 'Find route between notes',
-	searchPlaceholder: 'Find a note…',
+	searchPlaceholder: 'Find a note or tag…',
 	noSavedLayout: 'No saved layout',
 	noNotes: 'No Markdown notes match the current filters.',
 	upToDate: 'Up to date',

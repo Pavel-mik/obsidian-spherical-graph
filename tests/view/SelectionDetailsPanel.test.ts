@@ -36,6 +36,11 @@ const snapshot = prepareRenderSnapshot({
 	],
 	tags: [
 		{
+			id: '#atlas',
+			label: '#atlas',
+			nodeIndices: [0],
+		},
+		{
 			id: '#project',
 			label: '#project',
 			nodeIndices: [1, 0],
@@ -59,6 +64,10 @@ describe('buildSelectionDetailsModel', () => {
 		expect(
 			model.selected?.connections.map((node) => node.basename),
 		).toEqual(['Beta', 'Zulu']);
+		expect(model.selected?.tags.map((tag) => tag.label)).toEqual([
+			'#atlas',
+			'#project',
+		]);
 	});
 
 	it('exposes route endpoints and all nodes in the shortest-path union', () => {

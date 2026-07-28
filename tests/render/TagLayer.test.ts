@@ -107,6 +107,14 @@ describe('TagLayer', () => {
 			DEFAULT_TAG_ORBIT_RADIUS,
 			6,
 		);
+		const focusPosition = layer.positionForTag('#a', new Vector3());
+		expect(focusPosition?.length()).toBeCloseTo(
+			DEFAULT_TAG_ORBIT_RADIUS,
+			6,
+		);
+		expect(
+			layer.positionForTag('#missing', new Vector3()),
+		).toBeUndefined();
 
 		const raisedAppearance = {
 			...DEFAULT_SETTINGS.appearance,
@@ -168,6 +176,9 @@ describe('TagLayer', () => {
 			group.getObjectByName('spherical-graph-tag-links'),
 		).toBeInstanceOf(LineSegments);
 		layer.setVisible(false);
+		expect(
+			layer.positionForTag('#a', new Vector3()),
+		).toBeUndefined();
 		expect(
 			group.getObjectByName('spherical-graph-tag-satellites')
 				?.visible,

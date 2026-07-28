@@ -2,7 +2,7 @@ import {
 	DEFAULT_RENDER_FILTERS,
 	type RenderFilterState,
 } from '../render/renderFilters';
-import { RenderNode } from '../render/renderTypes';
+import { RenderNode, RenderTag } from '../render/renderTypes';
 import { SurfaceMode } from '../settings/settings';
 import { StatusPresentation } from './LayoutStatusPresenter';
 import {
@@ -241,6 +241,10 @@ export class ViewToolbar {
 	setNodes(nodes: readonly RenderNode[]): void {
 		this.search.setNodes(nodes);
 		this.routeButton.disabled = nodes.length < 2;
+	}
+
+	setTags(tags: readonly RenderTag[]): void {
+		this.search.setTags(tags);
 	}
 
 	setTagsAvailable(tagCount: number): void {

@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
 	buildLandSurfaceData,
 	classifyLandOwner,
+	continentBeachWidth,
+	MAX_BEACH_ANGULAR_WIDTH,
 	MAX_RENDERED_ISLANDS,
+	MIN_BEACH_ANGULAR_WIDTH,
 	renderedIslandRadius,
 	selectRenderedIslandNodeIndices,
 	SEA_OWNER,
@@ -67,6 +70,10 @@ describe('land surface geometry', () => {
 		expect(data.positions.length).toBe(data.triangleCount * 9);
 		expect(data.colorIndices.length).toBe(data.triangleCount * 3);
 		expect(data.shades.length).toBe(data.triangleCount * 3);
+		expect(data.beachPositions.length).toBeGreaterThan(0);
+		expect(data.beachPositions.length).toBe(
+			data.beachTriangleCount * 9,
+		);
 		expect(data.coastPositions.length).toBeGreaterThan(0);
 		expect(data.coastPositions.length % 6).toBe(0);
 		expect(data.renderedIslandCount).toBe(1);
@@ -89,7 +96,34 @@ describe('land surface geometry', () => {
 		);
 		expect([...first.positions]).toEqual([...second.positions]);
 		expect([...first.colorIndices]).toEqual([...second.colorIndices]);
+		expect([...first.beachPositions]).toEqual([
+			...second.beachPositions,
+		]);
 		expect([...first.coastPositions]).toEqual([...second.coastPositions]);
+	});
+
+	it('varies the beach width continuously inside a bounded sandy band', () => {
+		const widths = Array.from({ length: 64 }, (_, index) => {
+			const phase = (index / 64) * Math.PI * 2;
+			return continentBeachWidth(
+				exponentialMap([1, 0, 0], [
+					0,
+					Math.cos(phase) * 0.4,
+					Math.sin(phase) * 0.4,
+				]),
+				0,
+				42,
+			);
+		});
+		expect(Math.min(...widths)).toBeGreaterThanOrEqual(
+			MIN_BEACH_ANGULAR_WIDTH,
+		);
+		expect(Math.max(...widths)).toBeLessThanOrEqual(
+			MAX_BEACH_ANGULAR_WIDTH,
+		);
+		expect(Math.max(...widths) - Math.min(...widths)).toBeGreaterThan(
+			0.003,
+		);
 	});
 
 	it('covers every member while leaving unsupported parts of the old radial cap at sea', () => {

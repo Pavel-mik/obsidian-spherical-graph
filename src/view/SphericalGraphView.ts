@@ -186,6 +186,9 @@ export class SphericalGraphView extends ItemView {
 				onSelect: (node) => {
 					this.handleNodeSelection(node, true);
 				},
+				onSelectTag: (tag) => {
+					this.handleTagSelection(tag, true);
+				},
 				onOpen: (node, openInNewLeaf) => {
 					this.invoke(() =>
 						this.options.callbacks.onOpenFile(
@@ -261,6 +264,9 @@ export class SphericalGraphView extends ItemView {
 				this.invoke(() =>
 					this.options.callbacks.onOpenFile(node, openInNewLeaf),
 				);
+			},
+			onSelectTag: (tag) => {
+				this.handleTagSelection(tag, true);
 			},
 		});
 
@@ -507,7 +513,10 @@ export class SphericalGraphView extends ItemView {
 		}
 	}
 
-	private handleTagSelection(tag: RenderTag | undefined): void {
+	private handleTagSelection(
+		tag: RenderTag | undefined,
+		focus = false,
+	): void {
 		if (tag !== undefined && !this.displayFilters.showTags) {
 			return;
 		}
@@ -517,6 +526,9 @@ export class SphericalGraphView extends ItemView {
 		this.renderer?.setSelectedTag(tag?.id);
 		this.detailsPanel?.setSelectedNode(undefined);
 		this.detailsPanel?.setSelectedTag(tag?.id);
+		if (tag !== undefined && focus) {
+			this.renderer?.focusTag(tag.id);
+		}
 	}
 
 	private changeDisplayFilters(filters: RenderFilterState): void {
@@ -555,6 +567,9 @@ export class SphericalGraphView extends ItemView {
 					renderNodeKind(node) === 'note' &&
 					isRenderNodeVisible(node, this.displayFilters),
 			),
+		);
+		this.toolbar?.setTags(
+			this.displayFilters.showTags ? (snapshot.tags ?? []) : [],
 		);
 	}
 

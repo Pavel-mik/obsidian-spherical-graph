@@ -320,6 +320,18 @@ export class SphericalGraphRenderer {
 			nodeId,
 			new Vector3(),
 		);
+		return this.focusPosition(targetPosition);
+	}
+
+	focusTag(tagId: string): boolean {
+		const targetPosition = this.tagLayer.positionForTag(
+			tagId,
+			new Vector3(),
+		);
+		return this.focusPosition(targetPosition);
+	}
+
+	private focusPosition(targetPosition: Vector3 | undefined): boolean {
 		if (targetPosition === undefined) {
 			return false;
 		}

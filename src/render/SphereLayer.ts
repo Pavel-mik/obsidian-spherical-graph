@@ -8,6 +8,7 @@ import {
 	LineDashedMaterial,
 	LineSegments,
 	Mesh,
+	MeshBasicMaterial,
 	ShaderMaterial,
 	SphereGeometry,
 } from 'three';
@@ -120,6 +121,23 @@ export class SphereLayer {
 		`,
 	});
 	private readonly mesh = new Mesh(this.oceanGeometry, this.material);
+	/**
+	 * The textured ocean is inset slightly to keep roads and cities clear of
+	 * the water skin. In Solid mode this colorless shell restores the exact
+	 * logical globe silhouette in the depth buffer, including at the limb.
+	 */
+	private readonly depthMaskMaterial = new MeshBasicMaterial({
+		colorWrite: false,
+		depthTest: true,
+		depthWrite: true,
+		side: FrontSide,
+		toneMapped: false,
+		transparent: false,
+	});
+	private readonly depthMask = new Mesh(
+		this.rimGeometry,
+		this.depthMaskMaterial,
+	);
 	private readonly gridGeometry = createGridGeometry(
 		SPHERE_RADIUS + 0.008,
 	);
@@ -180,6 +198,9 @@ export class SphereLayer {
 	private landGeometry: BufferGeometry | undefined;
 	private landMaterial: ShaderMaterial | undefined;
 	private landMesh: Mesh | undefined;
+	private beachGeometry: BufferGeometry | undefined;
+	private beachMaterial: ShaderMaterial | undefined;
+	private beachMesh: Mesh | undefined;
 	private coastGeometry: BufferGeometry | undefined;
 	private coastMaterial: LineBasicMaterial | undefined;
 	private coastLines: LineSegments | undefined;
@@ -193,12 +214,14 @@ export class SphereLayer {
 		this.theme = theme;
 		this.mesh.name = 'spherical-graph-surface';
 		this.mesh.renderOrder = -2;
+		this.depthMask.name = 'spherical-graph-solid-depth-mask';
+		this.depthMask.renderOrder = -1;
 		this.grid.name = 'spherical-graph-surface-grid';
 		this.grid.renderOrder = 1;
 		this.grid.computeLineDistances();
 		this.rim.name = 'spherical-graph-surface-rim';
 		this.rim.renderOrder = 3;
-		this.group.add(this.mesh, this.grid, this.rim);
+		this.group.add(this.mesh, this.depthMask, this.grid, this.rim);
 		this.update(appearance, theme);
 	}
 
@@ -216,6 +239,7 @@ export class SphereLayer {
 		this.theme = theme;
 		const visible = appearance.surfaceMode !== 'hidden';
 		this.mesh.visible = visible;
+		this.depthMask.visible = appearance.surfaceMode === 'solid';
 		this.grid.visible = visible;
 		this.rim.visible = visible;
 		this.oceanColor.set(theme.sphere);
@@ -236,10 +260,11 @@ export class SphereLayer {
 				this.rimMaterial.uniforms.rimOpacity.value = 0.22;
 			}
 		} else {
-			this.material.transparent = appearance.surfaceOpacity < 1;
+			// "Solid" is an actual opaque surface. surfaceOpacity only
+			// controls the explicitly transparent presentation.
+			this.material.transparent = false;
 			if (this.material.uniforms.oceanOpacity !== undefined) {
-				this.material.uniforms.oceanOpacity.value =
-					appearance.surfaceOpacity;
+				this.material.uniforms.oceanOpacity.value = 1;
 			}
 			this.material.depthWrite = true;
 			this.gridMaterial.opacity = 0.13;
@@ -258,11 +283,12 @@ export class SphereLayer {
 
 	dispose(): void {
 		this.removeLand();
-		this.group.remove(this.mesh, this.grid, this.rim);
+		this.group.remove(this.mesh, this.depthMask, this.grid, this.rim);
 		this.oceanGeometry.dispose();
 		this.rimGeometry.dispose();
 		this.gridGeometry.dispose();
 		this.material.dispose();
+		this.depthMaskMaterial.dispose();
 		this.gridMaterial.dispose();
 		this.rimMaterial.dispose();
 		this.snapshot = undefined;
@@ -287,6 +313,62 @@ export class SphereLayer {
 			snapshot.edges,
 		);
 		this.landData = data;
+		const beachGeometry = new BufferGeometry();
+		beachGeometry.setAttribute(
+			'position',
+			new BufferAttribute(data.beachPositions, 3),
+		);
+		beachGeometry.computeBoundingSphere();
+		const beachMaterial = new ShaderMaterial({
+			depthTest: true,
+			depthWrite: true,
+			fragmentShader: `
+				uniform vec3 beachColor;
+				uniform float beachOpacity;
+				varying vec3 sphereDirection;
+				${PROCEDURAL_NOISE_GLSL}
+
+				void main() {
+					vec3 direction = normalize(sphereDirection);
+					float dunes = atlasFbm(direction * 24.0 + vec3(3.1, 8.7, 1.9));
+					float grains = atlasHash(direction * 421.0 + vec3(6.7, 2.3, 9.1));
+					float wetEdge = atlasNoise(direction * 67.0 + vec3(1.2, 7.4, 4.6));
+					float tone =
+						0.78 +
+						dunes * 0.2 +
+						(grains - 0.5) * 0.12 +
+						(wetEdge - 0.5) * 0.06;
+					gl_FragColor = vec4(beachColor * tone, beachOpacity);
+					#include <colorspace_fragment>
+				}
+			`,
+			side: FrontSide,
+			toneMapped: false,
+			transparent: false,
+			uniforms: {
+				beachColor: { value: new Color(this.theme.coast) },
+				beachOpacity: { value: 1 },
+			},
+			vertexShader: `
+				varying vec3 sphereDirection;
+
+				void main() {
+					sphereDirection = normalize(position);
+					gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+				}
+			`,
+			polygonOffset: true,
+			polygonOffsetFactor: -0.5,
+			polygonOffsetUnits: -0.5,
+		});
+		const beachMesh = new Mesh(beachGeometry, beachMaterial);
+		beachMesh.name = 'spherical-graph-beaches';
+		beachMesh.renderOrder = -0.5;
+		this.group.add(beachMesh);
+		this.beachGeometry = beachGeometry;
+		this.beachMaterial = beachMaterial;
+		this.beachMesh = beachMesh;
+
 		const geometry = new BufferGeometry();
 		geometry.setAttribute(
 			'position',
@@ -410,6 +492,14 @@ export class SphereLayer {
 		if (this.coastMaterial !== undefined) {
 			this.coastMaterial.needsUpdate = true;
 		}
+		if (
+			this.beachMaterial?.uniforms.beachColor !== undefined
+		) {
+			(
+				this.beachMaterial.uniforms.beachColor.value as Color
+			).set(this.theme.coast);
+			this.beachMaterial.needsUpdate = true;
+		}
 	}
 
 	private updateLandVisibility(): void {
@@ -422,11 +512,26 @@ export class SphereLayer {
 				this.appearance.surfaceMode === 'transparent';
 			if (this.landMaterial.uniforms.landOpacity !== undefined) {
 				this.landMaterial.uniforms.landOpacity.value =
-					this.appearance.surfaceMode === 'transparent' ? 0.58 : 0.96;
+					this.appearance.surfaceMode === 'transparent' ? 0.58 : 1;
 			}
 			this.landMaterial.depthWrite =
 				this.appearance.surfaceMode !== 'transparent';
 			this.landMaterial.needsUpdate = true;
+		}
+		if (
+			this.beachMesh !== undefined &&
+			this.beachMaterial !== undefined
+		) {
+			this.beachMesh.visible = visible;
+			this.beachMaterial.transparent =
+				this.appearance.surfaceMode === 'transparent';
+			if (this.beachMaterial.uniforms.beachOpacity !== undefined) {
+				this.beachMaterial.uniforms.beachOpacity.value =
+					this.appearance.surfaceMode === 'transparent' ? 0.52 : 1;
+			}
+			this.beachMaterial.depthWrite =
+				this.appearance.surfaceMode !== 'transparent';
+			this.beachMaterial.needsUpdate = true;
 		}
 		if (
 			this.coastLines !== undefined &&
@@ -446,14 +551,22 @@ export class SphereLayer {
 		if (this.coastLines !== undefined) {
 			this.group.remove(this.coastLines);
 		}
+		if (this.beachMesh !== undefined) {
+			this.group.remove(this.beachMesh);
+		}
 		this.landGeometry?.dispose();
 		this.landMaterial?.dispose();
+		this.beachGeometry?.dispose();
+		this.beachMaterial?.dispose();
 		this.coastGeometry?.dispose();
 		this.coastMaterial?.dispose();
 		this.landData = undefined;
 		this.landGeometry = undefined;
 		this.landMaterial = undefined;
 		this.landMesh = undefined;
+		this.beachGeometry = undefined;
+		this.beachMaterial = undefined;
+		this.beachMesh = undefined;
 		this.coastGeometry = undefined;
 		this.coastMaterial = undefined;
 		this.coastLines = undefined;

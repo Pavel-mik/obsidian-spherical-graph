@@ -1,15 +1,22 @@
 import { UI_STRINGS } from '../i18n';
-import { RenderNode } from '../render/renderTypes';
+import { RenderNode, RenderTag } from '../render/renderTypes';
 
 export interface SearchControllerCallbacks {
 	onSelect(node: RenderNode): void;
+	onSelectTag(tag: RenderTag): void;
 	onOpen(node: RenderNode, openInNewLeaf: boolean): void;
 	onDismiss?(): void;
 }
 
-interface ScoredNode {
-	node: RenderNode;
+export type SearchResult =
+	| { kind: 'node'; node: RenderNode }
+	| { kind: 'tag'; tag: RenderTag };
+
+interface ScoredResult {
+	result: SearchResult;
 	score: number;
+	degree: number;
+	sortKey: string;
 }
 
 export function findSearchResults(
@@ -17,12 +24,26 @@ export function findSearchResults(
 	query: string,
 	limit = 20,
 ): RenderNode[] {
+	return findGraphSearchResults(nodes, [], query, limit)
+		.filter(
+			(result): result is Extract<SearchResult, { kind: 'node' }> =>
+				result.kind === 'node',
+		)
+		.map((result) => result.node);
+}
+
+export function findGraphSearchResults(
+	nodes: readonly RenderNode[],
+	tags: readonly RenderTag[],
+	query: string,
+	limit = 20,
+): SearchResult[] {
 	const normalized = query.trim().toLocaleLowerCase();
 	if (normalized.length === 0 || limit <= 0) {
 		return [];
 	}
-	return nodes
-		.map((node): ScoredNode | undefined => {
+	const nodeResults = nodes
+		.map((node): ScoredResult | undefined => {
 			const basename = node.basename.toLocaleLowerCase();
 			const path = node.path.toLocaleLowerCase();
 			const nameScore = fuzzyScore(normalized, basename);
@@ -31,17 +52,50 @@ export function findSearchResults(
 				nameScore < 0 ? -1 : nameScore + 30,
 				pathScore,
 			);
-			return score < 0 ? undefined : { node, score };
+			return score < 0
+				? undefined
+				: {
+						result: { kind: 'node', node },
+						score,
+						degree: node.degree,
+						sortKey: node.path,
+					};
 		})
-		.filter((entry): entry is ScoredNode => entry !== undefined)
+		.filter((entry): entry is ScoredResult => entry !== undefined);
+	const tagResults = tags
+		.map((tag): ScoredResult | undefined => {
+			const label = tag.label.toLocaleLowerCase();
+			const name = label.startsWith('#') ? label.slice(1) : label;
+			const labelScore = fuzzyScore(normalized, label);
+			const nameScore = fuzzyScore(
+				normalized.startsWith('#') ? normalized.slice(1) : normalized,
+				name,
+			);
+			const hashIntentBoost = normalized.startsWith('#') ? 80 : 0;
+			const score = Math.max(
+				labelScore,
+				nameScore < 0 ? -1 : nameScore + 20 + hashIntentBoost,
+			);
+			return score < 0
+				? undefined
+				: {
+						result: { kind: 'tag', tag },
+						score,
+						degree: tag.nodeIndices.length,
+						sortKey: tag.label,
+					};
+		})
+		.filter((entry): entry is ScoredResult => entry !== undefined);
+
+	return [...nodeResults, ...tagResults]
 		.sort(
 			(left, right) =>
 				right.score - left.score ||
-				right.node.degree - left.node.degree ||
-				left.node.path.localeCompare(right.node.path),
+				right.degree - left.degree ||
+				left.sortKey.localeCompare(right.sortKey),
 		)
 		.slice(0, limit)
-		.map((entry) => entry.node);
+		.map((entry) => entry.result);
 }
 
 export class SearchController {
@@ -49,9 +103,10 @@ export class SearchController {
 	readonly input: HTMLInputElement;
 	private readonly resultsElement: HTMLElement;
 	private nodes: readonly RenderNode[] = [];
-	private results: readonly RenderNode[] = [];
+	private tags: readonly RenderTag[] = [];
+	private results: readonly SearchResult[] = [];
 	private activeIndex = -1;
-	private selectedResultId: string | undefined;
+	private selectedResultKey: string | undefined;
 	private disposed = false;
 
 	constructor(
@@ -89,6 +144,11 @@ export class SearchController {
 		this.refreshResults();
 	}
 
+	setTags(tags: readonly RenderTag[]): void {
+		this.tags = tags;
+		this.refreshResults();
+	}
+
 	focus(): void {
 		this.input.focus();
 		this.input.select();
@@ -98,7 +158,7 @@ export class SearchController {
 		this.input.value = '';
 		this.results = [];
 		this.activeIndex = -1;
-		this.selectedResultId = undefined;
+		this.selectedResultKey = undefined;
 		this.renderResults();
 	}
 
@@ -114,7 +174,7 @@ export class SearchController {
 	}
 
 	private readonly onInput = (): void => {
-		this.selectedResultId = undefined;
+		this.selectedResultKey = undefined;
 		this.refreshResults();
 	};
 
@@ -155,22 +215,25 @@ export class SearchController {
 	};
 
 	private activateCurrent(event: KeyboardEvent): void {
-		const node = this.results[this.activeIndex];
-		if (node === undefined) {
+		const result = this.results[this.activeIndex];
+		if (result === undefined) {
 			return;
 		}
 		event.preventDefault();
 		event.stopPropagation();
 		if (
-			this.selectedResultId === node.id ||
-			event.ctrlKey ||
-			event.metaKey
+			result.kind === 'node' &&
+			(this.selectedResultKey === searchResultKey(result) ||
+				event.ctrlKey ||
+				event.metaKey)
 		) {
-			this.callbacks.onOpen(node, event.ctrlKey || event.metaKey);
+			this.callbacks.onOpen(
+				result.node,
+				event.ctrlKey || event.metaKey,
+			);
 			return;
 		}
-		this.selectedResultId = node.id;
-		this.callbacks.onSelect(node);
+		this.selectResult(result);
 		this.renderResults();
 	}
 
@@ -186,7 +249,11 @@ export class SearchController {
 	}
 
 	private refreshResults(): void {
-		this.results = findSearchResults(this.nodes, this.input.value);
+		this.results = findGraphSearchResults(
+			this.nodes,
+			this.tags,
+			this.input.value,
+		);
 		this.activeIndex = this.results.length > 0 ? 0 : -1;
 		this.renderResults();
 	}
@@ -199,8 +266,8 @@ export class SearchController {
 		this.input.removeAttribute('aria-activedescendant');
 
 		for (let index = 0; index < this.results.length; index += 1) {
-			const node = this.results[index];
-			if (node === undefined) {
+			const result = this.results[index];
+			if (result === undefined) {
 				continue;
 			}
 			const option = this.resultsElement.createEl('button');
@@ -208,16 +275,28 @@ export class SearchController {
 			option.id = `${this.resultsElement.id}-option-${index}`;
 			option.className = 'spherical-graph-search-result';
 			option.setAttribute('role', 'option');
-			const selected = node.id === this.selectedResultId;
+			option.dataset.kind = result.kind;
+			const selected =
+				searchResultKey(result) === this.selectedResultKey;
 			option.setAttribute('aria-selected', String(selected));
 			option.dataset.active = String(index === this.activeIndex);
 
 			const name = option.createSpan();
 			name.className = 'spherical-graph-search-result-name';
-			name.textContent = node.basename;
+			name.textContent =
+				result.kind === 'node'
+					? result.node.basename
+					: result.tag.label;
 			const path = option.createSpan();
 			path.className = 'spherical-graph-search-result-path';
-			path.textContent = node.path;
+			path.textContent =
+				result.kind === 'node'
+					? result.node.path
+					: `Tag · ${result.tag.nodeIndices.length} ${
+							result.tag.nodeIndices.length === 1
+								? 'note'
+								: 'notes'
+						}`;
 			option.append(name, path);
 			option.addEventListener('pointerenter', () => {
 				this.activeIndex = index;
@@ -225,15 +304,18 @@ export class SearchController {
 			});
 			option.addEventListener('click', () => {
 				this.activeIndex = index;
-				this.selectedResultId = node.id;
-				this.callbacks.onSelect(node);
+				this.selectResult(result);
 				this.renderResults();
 			});
 			option.addEventListener('dblclick', (event) => {
-				this.callbacks.onOpen(
-					node,
-					event.ctrlKey || event.metaKey,
-				);
+				if (result.kind === 'node') {
+					this.callbacks.onOpen(
+						result.node,
+						event.ctrlKey || event.metaKey,
+					);
+				} else {
+					this.selectResult(result);
+				}
 			});
 			this.resultsElement.append(option);
 		}
@@ -264,7 +346,22 @@ export class SearchController {
 		}
 	}
 
+	private selectResult(result: SearchResult): void {
+		this.selectedResultKey = searchResultKey(result);
+		if (result.kind === 'node') {
+			this.callbacks.onSelect(result.node);
+		} else {
+			this.callbacks.onSelectTag(result.tag);
+		}
+	}
+
 	private static nextId = 1;
+}
+
+function searchResultKey(result: SearchResult): string {
+	return result.kind === 'node'
+		? `node:${result.node.id}`
+		: `tag:${result.tag.id}`;
 }
 
 function fuzzyScore(query: string, candidate: string): number {
