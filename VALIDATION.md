@@ -369,6 +369,45 @@ The detector runs only during a layout operation. Version 1.2.2 deliberately
 does not invalidate or move an existing committed map; **Renew layout** applies
 the revised classification to an unchanged vault.
 
+### Topology-supported coastline regression
+
+The reported version 1.2.2 failure was traced to a mismatch between semantic
+membership and rendering. Although each continent persisted its complete
+`nodeIndices`, the old land owner test ignored them and classified the surface
+only by distance from the continent center versus a noisy radial cap. It
+therefore filled unsupported gaps, crossed visually empty boundaries, and
+could exclude a legitimate outer member where a procedural cove shortened the
+radius.
+
+Version 1.2.3 replaces that render-only test with density-aware support from
+member cities and short internal roads. Foreign continent/island sites carve
+sea, competing support retains a water margin, and long graph edges do not
+create land corridors.
+
+Automated regressions verify that:
+
+- the complete version 1.2.3 release gate passes with 40 test files / 191
+  tests, lint, type checking, production build, and artifact validation;
+- every continent member classifies as its semantic land owner;
+- a foreign node inside the old radial cap remains outside that continent;
+- an unsupported point inside the old cap remains sea;
+- a short internal road joins nearby city kernels; and
+- a long internal road leaves its midpoint as open water.
+
+A disposable browser scene imported the production
+`SphericalGraphRenderer` and release stylesheet directly. Its deterministic
+636-note, 525-link world contained one irregular three-lobed 80-note continent,
+100 densely packed foreign nodes next to it, and 456 other free notes. Browser
+inspection reported `members on land: 80/80`, `foreign covered: 0/100`, and
+`empty gulf: sea`. The visible coast followed the three member/road lobes
+without filling the neighboring dense region. **Map → Continents** removed and
+restored the land and label, and a fresh browser run produced no console
+warnings or errors.
+
+This correction changes only derived render geometry. It preserves committed
+node vectors and persisted continent membership, and therefore applies
+immediately without **Renew layout**.
+
 ## Not manually exercised
 
 These remain covered only partially by automated tests or by the manual plan:

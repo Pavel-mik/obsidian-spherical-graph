@@ -83,6 +83,11 @@
 - Initialize and Renew allocate disjoint intrinsic spherical caps before the
   ordinary force solve. Refresh matches communities to persisted geography and
   retains prior centers wherever possible.
+- A persisted cap constrains layout but does not define the rendered coast.
+  Each member city and nearby short internal road now supports land, while
+  foreign semantic nodes carve sea and long links cannot bridge an ocean. The
+  former single radial envelope was rejected because it filled unsupported
+  gaps, crossed sparse boundaries, and could omit genuine outer members.
 - Surface ownership is exclusive. A dominance margin creates explicit sea
   rather than allowing overlapping translucent landmasses. Mixed surface
   triangles are clipped at the ownership boundary; centroid-only triangle

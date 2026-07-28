@@ -2,15 +2,21 @@ import { describe, expect, it } from 'vitest';
 import {
 	buildLandSurfaceData,
 	classifyLandOwner,
-	continentCoastRadius,
 	MAX_RENDERED_ISLANDS,
 	renderedIslandRadius,
 	selectRenderedIslandNodeIndices,
 	SEA_OWNER,
 } from '../../src/render/landGeometry';
 import { fibonacciSpherePoint } from '../../src/layout/initialization';
-import { geodesicDistance } from '../../src/geometry/sphericalGeometry';
-import { readVec3 } from '../../src/geometry/vector3';
+import {
+	exponentialMap,
+	geodesicDistance,
+} from '../../src/geometry/sphericalGeometry';
+import {
+	readVec3,
+	scaleVec3,
+	type Vec3,
+} from '../../src/geometry/vector3';
 import type { RenderGeography } from '../../src/render/renderTypes';
 
 const geography: RenderGeography = {
@@ -86,59 +92,56 @@ describe('land surface geometry', () => {
 		expect([...first.coastPositions]).toEqual([...second.coastPositions]);
 	});
 
-	it('creates a detailed but single-valued radial coastline', () => {
-		const continentOnly = {
-			geography: {
-				continents: geography.continents.slice(0, 1),
-				islandNodeIndices: [],
-			},
-			positions,
-			seed: 42,
+	it('covers every member while leaving unsupported parts of the old radial cap at sea', () => {
+		const center: Vec3 = [1, 0, 0];
+		const members = [
+			center,
+			exponentialMap(center, [0, 0.24, 0]),
+			exponentialMap(center, [0, -0.24, 0]),
+			exponentialMap(center, [0, 0, 0.24]),
+		];
+		const outsider = exponentialMap(center, [0, 0, -0.2]);
+		const supportedPositions = new Float32Array([
+			...members.flat(),
+			...outsider,
+		]);
+		const supportedGeography: RenderGeography = {
+			continents: [
+				{
+					id: 'supported',
+					label: 'Supported',
+					nodeIndices: [0, 1, 2, 3],
+					center,
+					capRadius: 0.62,
+					colorIndex: 0,
+				},
+			],
+			islandNodeIndices: [4],
 		};
-		const sampledRadii = Array.from({ length: 96 }, (_, index) => {
-			const azimuth = (index / 96) * Math.PI * 2;
-			const sampleDistance = 0.5;
-			const direction: [number, number, number] = [
-				Math.cos(sampleDistance),
-				Math.sin(sampleDistance) * Math.cos(azimuth),
-				Math.sin(sampleDistance) * Math.sin(azimuth),
-			];
-			return continentCoastRadius(direction, 0, continentOnly);
-		});
-		expect(Math.max(...sampledRadii) - Math.min(...sampledRadii)).toBeGreaterThan(
-			0.045,
-		);
+		const model = {
+			geography: supportedGeography,
+			positions: supportedPositions,
+			seed: 42,
+			edges: [
+				{ source: 0, target: 1, weight: 1 },
+				{ source: 0, target: 2, weight: 1 },
+				{ source: 0, target: 3, weight: 1 },
+			],
+		};
 
-		for (let azimuthIndex = 0; azimuthIndex < 24; azimuthIndex += 1) {
-			const azimuth = (azimuthIndex / 24) * Math.PI * 2;
-			const outerMemberDistance = 0.43;
-			expect(
-				classifyLandOwner(
-					[
-						Math.cos(outerMemberDistance),
-						Math.sin(outerMemberDistance) * Math.cos(azimuth),
-						Math.sin(outerMemberDistance) * Math.sin(azimuth),
-					],
-					continentOnly,
-				),
-			).toBe(0);
-			let reachedSea = false;
-			for (let radialIndex = 0; radialIndex <= 48; radialIndex += 1) {
-				const distance = (radialIndex / 48) * 0.82;
-				const direction: [number, number, number] = [
-					Math.cos(distance),
-					Math.sin(distance) * Math.cos(azimuth),
-					Math.sin(distance) * Math.sin(azimuth),
-				];
-				const isLand =
-					classifyLandOwner(direction, continentOnly) === 0;
-				if (!isLand) {
-					reachedSea = true;
-				} else {
-					expect(reachedSea).toBe(false);
-				}
-			}
+		for (const member of members) {
+			expect(classifyLandOwner(member, model)).toBe(0);
 		}
+		expect(classifyLandOwner(outsider, model)).toBe(1);
+		const unsupported = exponentialMap(
+			center,
+			scaleVec3(
+				[0, 1 / Math.sqrt(2), 1 / Math.sqrt(2)],
+				0.5,
+			),
+		);
+		expect(geodesicDistance(center, unsupported)).toBeLessThan(0.62);
+		expect(classifyLandOwner(unsupported, model)).toBe(SEA_OWNER);
 	});
 
 	it('limits and shrinks island land on a 636-note vault', () => {

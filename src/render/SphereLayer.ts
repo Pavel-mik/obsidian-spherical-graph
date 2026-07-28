@@ -283,6 +283,8 @@ export class SphereLayer {
 			snapshot.positions,
 			LAND_SURFACE_RADIUS,
 			hashString(snapshot.snapshotId.split(':')[0] ?? snapshot.snapshotId),
+			48,
+			snapshot.edges,
 		);
 		this.landData = data;
 		const geometry = new BufferGeometry();

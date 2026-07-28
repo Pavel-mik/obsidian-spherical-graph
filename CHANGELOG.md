@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-07-28
+
+### Fixed
+
+- Continent coastlines now follow the actual member cities and their short
+  internal roads instead of filling one broad radial cap around the persisted
+  continent center.
+- Empty gaps and neighboring foreign or island cities carve visible sea from a
+  landmass, while every accepted member city seeds its own land support.
+- Long internal links no longer create implausible land bridges across open
+  water. The new render-only territory calculation preserves all committed
+  node positions and applies immediately without **Renew layout**.
+
 ## [1.2.2] - 2026-07-27
 
 ### Fixed

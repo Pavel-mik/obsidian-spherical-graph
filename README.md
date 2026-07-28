@@ -94,10 +94,11 @@ and a reliable rename keeps the old position under the new path. Select
 - Short-lived inline Web Worker with final-only position transfer plus a
   yielding main-thread compatibility fallback.
 - Three.js rendering with a matte ocean, batched topology-derived land,
-  deterministic organic coastlines, islands, cartographic region labels,
-  instanced tangent city markers, batched geodesic roads, a restrained dashed
-  graticule, smoothly fading labels, responsive narrow-pane framing, and
-  invalidation-based frames.
+  deterministic organic coastlines supported by actual member cities and
+  short internal roads, sea carved by neighboring regions, islands,
+  cartographic region labels, instanced tangent city markers, batched geodesic
+  roads, a restrained dashed graticule, smoothly fading labels, responsive
+  narrow-pane framing, and invalidation-based frames.
 - Hover details, selection and neighbor emphasis, active-note emphasis,
   search/focus, open-note actions, camera reset, keyboard controls, and a
   translucent selection panel with clickable direct neighbors.

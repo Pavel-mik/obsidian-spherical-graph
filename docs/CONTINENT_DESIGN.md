@@ -64,13 +64,17 @@ corners, or decorative grid overlays are part of this system.
 - Initialize/Renew reserve separated spherical caps for continents. Refresh
   reuses persisted continent centers and only places new geography when
   necessary.
-- A surface cell has at most one land owner. An explicit dominance margin
-  leaves sea between competing continents.
-- Coast variation is deterministic and multi-scale: broad anisotropy gives each
-  landmass a distinct silhouette, angular harmonics add regional variation, and
-  localized coves/headlands break the remaining oval profile. The coast remains
-  a single-valued radial envelope, so detail cannot create self-intersections or
-  inland holes.
+- Spherical caps are layout constraints, not coastlines. Every continent city
+  supports a local land kernel and short internal roads support narrow
+  corridors. Unsupported parts of a cap remain sea; links longer than the
+  corridor limit cannot manufacture a trans-oceanic land bridge.
+- Continent, island, and free-note positions act as semantic territory sites.
+  A closer foreign site carves sea from another region, and a dominance margin
+  leaves sea where two continent support fields compete. A surface cell
+  therefore has at most one land owner.
+- Coast variation is deterministic and multi-scale. It perturbs the union of
+  city and short-road support rather than a center-radius silhouette, allowing
+  concave shores, gulfs, and separated lobes while retaining organic edges.
 - Mixed surface triangles are clipped at the coast rather than admitted by
   their centroid. This preserves a smooth irregular outline independent of the
   icosphere triangulation.
@@ -78,13 +82,13 @@ corners, or decorative grid overlays are part of this system.
   contour traces. Ocean uses its own lower-contrast procedural depth texture.
   Both are derived from sphere direction and the snapshot seed; the plugin
   ships no raster texture and makes no runtime request.
-- Every continent node remains inside the coast safety envelope. Unassigned
-  nodes remain semantic islands, but large vaults render land only beneath a
-  bounded, spatially dispersed representative sample. Island footprints shrink
-  with vault density and avoid continent coasts; every other unassigned node
-  remains visible as an interactive city over the ocean. A small deterministic
-  number of shelf islets adds geographic scale without changing semantic
-  membership.
+- Every continent node seeds its own land support. Unassigned nodes remain
+  semantic islands, but large vaults render land only beneath a bounded,
+  spatially dispersed representative sample. Island footprints shrink with
+  vault density and avoid supported continent territory; every other
+  unassigned node remains visible as an interactive city over the ocean. A
+  small deterministic number of shelf islets adds geographic scale without
+  changing semantic membership.
 
 ## Core interaction
 

@@ -17,7 +17,16 @@ import {
 	scaleVec3,
 	type Vec3,
 } from '../geometry/vector3';
-import type { RenderGeography } from './renderTypes';
+import {
+	classifySupportedContinent,
+	continentSupportClearance,
+	createLandSupportModel,
+	type LandSupportModel,
+} from './landSupport';
+import type {
+	RenderEdge,
+	RenderGeography,
+} from './renderTypes';
 
 export const SEA_OWNER = -1;
 const COAST_SURFACE_OFFSET = 0.004;
@@ -47,7 +56,9 @@ interface LandModel {
 	readonly geography: RenderGeography;
 	readonly positions: Float32Array;
 	readonly seed: number;
+	readonly edges?: readonly RenderEdge[];
 	readonly coastProfiles?: readonly CoastProfile[];
+	readonly support?: LandSupportModel;
 }
 
 function terrainNoise(direction: Vec3, seed: number): number {
@@ -98,13 +109,25 @@ function createLandModel(
 	geography: RenderGeography,
 	positions: Float32Array,
 	seed: number,
+	edges: readonly RenderEdge[] = [],
 ): LandModel {
-	const model: LandModel = { geography, positions, seed };
+	const model: LandModel = {
+		geography,
+		positions,
+		seed,
+		edges,
+	};
 	return {
 		...model,
 		coastProfiles: geography.continents.map((_, index) =>
 			createCoastProfile(index, model),
 		).filter((profile): profile is CoastProfile => profile !== undefined),
+		support: createLandSupportModel(
+			geography,
+			positions,
+			edges,
+			seed,
+		),
 	};
 }
 
@@ -152,9 +175,9 @@ function coastRadius(
 }
 
 /**
- * Samples the deterministic radial coast envelope used by a continent. This
- * remains a single-valued function around the continent center, so detailed
- * bays and peninsulas cannot create self-intersections or detached land holes.
+ * Samples the legacy broad radial envelope. It remains useful for decorative
+ * shelf-island placement, while actual continent ownership is derived from
+ * member nodes and short internal roads.
  */
 export function continentCoastRadius(
 	direction: Vec3,
@@ -178,29 +201,9 @@ export function classifyLandOwner(
 	model: LandModel,
 ): number {
 	const point = normalizeVec3(direction);
-	let bestIndex = SEA_OWNER;
-	let bestScore = Number.NEGATIVE_INFINITY;
-	let secondScore = Number.NEGATIVE_INFINITY;
-	for (let index = 0; index < model.geography.continents.length; index += 1) {
-		const continent = model.geography.continents[index];
-		if (continent === undefined) {
-			continue;
-		}
-		const coastlineRadius = continentCoastRadius(point, index, model);
-		const score =
-			(coastlineRadius -
-				geodesicDistance(point, continent.center)) /
-			0.11;
-		if (score > bestScore) {
-			secondScore = bestScore;
-			bestScore = score;
-			bestIndex = index;
-		} else if (score > secondScore) {
-			secondScore = score;
-		}
-	}
-	if (bestScore > 0 && bestScore - secondScore >= 0.12) {
-		return bestIndex;
+	const continentOwner = classifyContinentOwner(point, model);
+	if (continentOwner !== SEA_OWNER) {
+		return continentOwner;
 	}
 
 	for (
@@ -223,6 +226,24 @@ export function classifyLandOwner(
 		}
 	}
 	return SEA_OWNER;
+}
+
+function classifyContinentOwner(
+	direction: Vec3,
+	model: LandModel,
+): number {
+	const support =
+		model.support ??
+		createLandSupportModel(
+			model.geography,
+			model.positions,
+			model.edges ?? [],
+			model.seed,
+		);
+	return classifySupportedContinent(
+		normalizeVec3(direction),
+		support,
+	);
 }
 
 function vertexKey(vector: Vector3): string {
@@ -361,6 +382,7 @@ export function selectRenderedIslandNodeIndices(
 	geography: RenderGeography,
 	positions: Float32Array,
 	seed: number,
+	edges: readonly RenderEdge[] = [],
 ): readonly number[] {
 	const nodeCount = positions.length / 3;
 	const budget = islandLandBudget(
@@ -371,12 +393,10 @@ export function selectRenderedIslandNodeIndices(
 		return [];
 	}
 	const continentModel = createLandModel(
-		{
-			continents: geography.continents,
-			islandNodeIndices: [],
-		},
+		geography,
 		positions,
 		seed,
+		edges,
 	);
 	const candidates: IslandLandCandidate[] = [];
 	for (const nodeIndex of geography.islandNodeIndices) {
@@ -388,18 +408,19 @@ export function selectRenderedIslandNodeIndices(
 			continentIndex < geography.continents.length;
 			continentIndex += 1
 		) {
-			const continent = geography.continents[continentIndex];
-			if (continent === undefined) {
-				continue;
-			}
 			seaClearance = Math.min(
 				seaClearance,
-				geodesicDistance(center, continent.center) -
-					continentCoastRadius(
-						center,
-						continentIndex,
-						continentModel,
-					),
+				continentSupportClearance(
+					center,
+					continentIndex,
+					continentModel.support ??
+						createLandSupportModel(
+							geography,
+							positions,
+							edges,
+							seed,
+						),
+				),
 			);
 		}
 		if (seaClearance <= islandRadius * 1.4) {
@@ -547,6 +568,7 @@ export function buildLandSurfaceData(
 	radius: number,
 	seed: number,
 	detail = 48,
+	edges: readonly RenderEdge[] = [],
 ): LandSurfaceData {
 	if (
 		positions.length % 3 !== 0 ||
@@ -575,6 +597,7 @@ export function buildLandSurfaceData(
 		geography,
 		positions,
 		seed,
+		edges,
 	);
 	const rawGeometry = new IcosahedronGeometry(1, detail);
 	const source =
@@ -591,22 +614,20 @@ export function buildLandSurfaceData(
 	const c = new Vector3();
 	const centroid = new Vector3();
 	const ownerCache = new Map<string, number>();
-	const model = createLandModel(geography, positions, seed);
-	const continentModel = createLandModel(
-		{
-			continents: geography.continents,
-			islandNodeIndices: [],
-		},
+	const model = createLandModel(
+		geography,
 		positions,
 		seed,
+		edges,
 	);
+	const continentModel = model;
 	const classifyVector = (point: Vector3): number => {
 		const key = vertexKey(point);
 		const cached = ownerCache.get(key);
 		if (cached !== undefined) {
 			return cached;
 		}
-		const owner = classifyLandOwner(
+		const owner = classifyContinentOwner(
 			[point.x, point.y, point.z],
 			continentModel,
 		);
@@ -723,8 +744,8 @@ export function buildLandSurfaceData(
 				),
 			);
 			if (
-				classifyLandOwner(shelfCenter, continentModel) !==
-				SEA_OWNER
+				classifyContinentOwner(shelfCenter, continentModel) !==
+					SEA_OWNER
 			) {
 				continue;
 			}

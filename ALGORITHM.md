@@ -229,20 +229,31 @@ sphere. Segment count adapts to angular length.
 ### Land and sea
 
 The saved geography is rendered on a finely subdivided icosphere. Every
-continent has a deterministic single-valued radial coast envelope composed of
-anisotropy, several angular harmonics, spherical noise, and localized coves and
-headlands. The lower envelope remains inside the cap's layout safety margin,
-so the more detailed outline does not move notes or strand an outer city.
+continent member seeds a density-aware support kernel at its committed
+position. Samples along short internal edges add narrow road corridors between
+nearby kernels. Edges longer than a bounded angular distance do not add
+support, so a single graph link cannot pull a land bridge across open water.
+All semantic continent, island, and free-note positions are also indexed as
+territory sites: a closer foreign site carves sea out of another continent's
+support. Cartesian spatial buckets keep these local queries bounded for large
+vaults.
 
-A dominance margin assigns at most one owner and deliberately leaves sea where
-two land potentials compete. Mixed land/sea triangles are clipped by bisection
-at the ownership boundary instead of being accepted wholesale from their
-centroid. The same intersections form the coastline batch, eliminating regular
-mesh teeth while retaining a deterministic irregular silhouette. Semantic
-island membership remains complete, but the land mesh applies a render-only
-level of detail: small vaults can show every isolated island, whereas larger
-vaults receive a deterministic density-aware budget capped at 24 spatially
-separated representatives. Candidates too close to a continent coast are
+The persisted spherical cap is a placement constraint and stable geographic
+identity, not a coastline primitive. Coast ownership is instead the positive
+union of node and short-road support with deterministic multi-scale boundary
+variation. A dominance margin assigns at most one owner and deliberately
+leaves sea where two continent potentials compete. This lets one landmass be
+concave or split around an unsupported gulf while guaranteeing land beneath
+its member cities.
+
+Mixed land/sea triangles are clipped by bisection at the ownership boundary
+instead of being accepted wholesale from their centroid. The same
+intersections form the coastline batch, eliminating regular mesh teeth while
+retaining a deterministic irregular silhouette. Semantic island membership
+remains complete, but the land mesh applies a render-only level of detail:
+small vaults can show every isolated island, whereas larger vaults receive a
+deterministic density-aware budget capped at 24 spatially separated
+representatives. Candidates too close to supported continent territory are
 omitted, and island radius decreases with note count. Notes without a rendered
 land patch remain ordinary interactive cities over open water, so layout,
 links, routes, labels, and persistence are unchanged. Representative and
