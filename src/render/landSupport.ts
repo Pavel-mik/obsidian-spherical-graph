@@ -23,6 +23,7 @@ const MAX_BRIDGED_EDGE_ANGLE = 0.36;
 const OWNER_DOMINANCE_MARGIN = 0.055;
 const FOREIGN_NODE_ADVANTAGE = 0.018;
 const COAST_VARIATION = 0.075;
+const COHERENT_FREE_EDGE_MAX_ANGLE = 0.22;
 
 interface SupportAnchor {
 	readonly direction: Vec3;
@@ -33,6 +34,7 @@ interface SupportAnchor {
 interface TerritoryNode {
 	readonly direction: Vec3;
 	readonly owner: number;
+	readonly carvesLand: boolean;
 }
 
 interface SpatialBuckets<T> {
@@ -203,6 +205,10 @@ function edgeAnchorKey(
 	return `${owner}|${Math.round(direction[0] / resolution)}|${Math.round(direction[1] / resolution)}|${Math.round(direction[2] / resolution)}`;
 }
 
+function territoryEdgeWeight(weight: number): number {
+	return Math.min(4, 0.75 + Math.log1p(Math.max(0, weight)));
+}
+
 export function createLandSupportModel(
 	geography: RenderGeography,
 	positions: Float32Array,
@@ -232,6 +238,46 @@ export function createLandSupportModel(
 		),
 	);
 	let maximumSupportRadius = MIN_NODE_SUPPORT_RADIUS;
+	const freeNeighborCounts = new Uint16Array(nodeCount);
+	const freeNeighborWeights = new Float64Array(nodeCount);
+	const continentNeighborWeights = new Float64Array(nodeCount);
+	for (const edge of edges) {
+		if (
+			edge.source < 0 ||
+			edge.target < 0 ||
+			edge.source >= nodeCount ||
+			edge.target >= nodeCount
+		) {
+			continue;
+		}
+		const sourceOwner = assignments[edge.source] ?? -2;
+		const targetOwner = assignments[edge.target] ?? -2;
+		const weight = territoryEdgeWeight(edge.weight);
+		if (sourceOwner === -1 && targetOwner === -1) {
+			const source = normalizeVec3(readVec3(positions, edge.source));
+			const target = normalizeVec3(readVec3(positions, edge.target));
+			if (
+				geodesicDistance(source, target) >
+				COHERENT_FREE_EDGE_MAX_ANGLE
+			) {
+				continue;
+			}
+			freeNeighborCounts[edge.source] =
+				(freeNeighborCounts[edge.source] ?? 0) + 1;
+			freeNeighborCounts[edge.target] =
+				(freeNeighborCounts[edge.target] ?? 0) + 1;
+			freeNeighborWeights[edge.source] =
+				(freeNeighborWeights[edge.source] ?? 0) + weight;
+			freeNeighborWeights[edge.target] =
+				(freeNeighborWeights[edge.target] ?? 0) + weight;
+		} else if (sourceOwner === -1 && targetOwner >= 0) {
+			continentNeighborWeights[edge.source] =
+				(continentNeighborWeights[edge.source] ?? 0) + weight;
+		} else if (targetOwner === -1 && sourceOwner >= 0) {
+			continentNeighborWeights[edge.target] =
+				(continentNeighborWeights[edge.target] ?? 0) + weight;
+		}
+	}
 
 	for (let nodeIndex = 0; nodeIndex < nodeCount; nodeIndex += 1) {
 		const owner = assignments[nodeIndex] ?? -2;
@@ -239,7 +285,16 @@ export function createLandSupportModel(
 			continue;
 		}
 		const direction = normalizeVec3(readVec3(positions, nodeIndex));
-		addToBuckets(territoryNodes, { direction, owner });
+		const carvesLand =
+			owner >= 0 ||
+			((freeNeighborCounts[nodeIndex] ?? 0) >= 2 &&
+				(freeNeighborWeights[nodeIndex] ?? 0) >=
+					(continentNeighborWeights[nodeIndex] ?? 0));
+		addToBuckets(territoryNodes, {
+			direction,
+			owner,
+			carvesLand,
+		});
 		if (owner < 0) {
 			continue;
 		}
@@ -378,6 +433,9 @@ function foreignNodeWins(
 		point,
 		searchRadius,
 		(node) => {
+			if (!node.carvesLand) {
+				return;
+			}
 			const distance = geodesicDistance(point, node.direction);
 			if (node.owner === owner) {
 				nearestOwn = Math.min(nearestOwn, distance);

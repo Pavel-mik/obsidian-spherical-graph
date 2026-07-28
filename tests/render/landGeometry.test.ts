@@ -115,8 +115,16 @@ describe('land surface geometry', () => {
 					capRadius: 0.62,
 					colorIndex: 0,
 				},
+				{
+					id: 'neighbor',
+					label: 'Neighbor',
+					nodeIndices: [4],
+					center: outsider,
+					capRadius: 0.3,
+					colorIndex: 1,
+				},
 			],
-			islandNodeIndices: [4],
+			islandNodeIndices: [],
 		};
 		const model = {
 			geography: supportedGeography,

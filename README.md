@@ -80,10 +80,11 @@ and a reliable rename keeps the old position under the new path. Select
 - Intrinsic, seam-free spherical layout with deterministic exact and sampled
   repulsion modes.
 - Multiresolution CPM community detection with consensus stability,
-  conductance filtering, sublinear automatic size thresholds, guarded rescue
-  of exceptionally clear smaller regions, disjoint continent selection, and
-  explicit island nodes. Continent membership is derived locally and never
-  sent off-device.
+  per-resolution candidate recovery, conductance and topology-cohesion
+  filtering, conservative boundary completion, sublinear automatic size
+  thresholds, guarded rescue of exceptionally clear smaller regions, disjoint
+  continent selection, and explicit island nodes. Continent membership is
+  derived locally and never sent off-device.
 - Continent-aware Initialize/Renew placement in separated intrinsic caps;
   Refresh reuses persisted continent identity, color, center, and cap where the
   topology still matches.

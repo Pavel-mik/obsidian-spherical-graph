@@ -1,18 +1,15 @@
 import {
 	deterministicPermutation,
 	deriveSeed,
-	hashString,
 } from '../geometry/deterministicHash';
 import type { GraphData } from '../graph/graphTypes';
-import type {
-	CommunityDetectionResult,
-	DetectedContinent,
-} from './geographyTypes';
-
-interface WeightedNeighbor {
-	readonly index: number;
-	readonly weight: number;
-}
+import { selectContinentalCandidates } from './communityCandidates';
+import {
+	buildWeightedAdjacency,
+	type PartitionFamily,
+	type WeightedNeighbor,
+} from './communityMetrics';
+import type { CommunityDetectionResult } from './geographyTypes';
 
 export interface CommunityDetectionOptions {
 	readonly resolutions?: readonly number[];
@@ -24,41 +21,12 @@ export interface CommunityDetectionOptions {
 }
 
 export const DEFAULT_COMMUNITY_DETECTION_OPTIONS = Object.freeze({
-	resolutions: Object.freeze([0.11, 0.18, 0.28]),
+	resolutions: Object.freeze([0.04, 0.085, 0.16, 0.28]),
 	runsPerResolution: 3,
 	consensusThreshold: 0.56,
 	maxContinents: 7,
 	maximumConductance: 0.66,
 });
-
-const STRONG_REGION_MAXIMUM_CONDUCTANCE = 0.28;
-const STRONG_REGION_MINIMUM_STABILITY = 0.72;
-
-function boundedEdgeWeight(value: number): number {
-	return Math.min(4, 0.75 + Math.log1p(Math.max(0, value)));
-}
-
-function buildAdjacency(graph: GraphData): WeightedNeighbor[][] {
-	const adjacency = Array.from(
-		{ length: graph.nodes.length },
-		(): WeightedNeighbor[] => [],
-	);
-	for (const edge of graph.edges) {
-		if (
-			edge.source === edge.target ||
-			edge.source < 0 ||
-			edge.target < 0 ||
-			edge.source >= graph.nodes.length ||
-			edge.target >= graph.nodes.length
-		) {
-			continue;
-		}
-		const weight = boundedEdgeWeight(edge.weight);
-		adjacency[edge.source]?.push({ index: edge.target, weight });
-		adjacency[edge.target]?.push({ index: edge.source, weight });
-	}
-	return adjacency;
-}
 
 function compactPartition(labels: Int32Array): Int32Array {
 	const membersByLabel = new Map<number, number[]>();
@@ -157,102 +125,6 @@ export function localMovingCpmPartition(
 	return compactPartition(labels);
 }
 
-function connectedComponents(
-	nodeCount: number,
-	edges: readonly (readonly [number, number])[],
-): number[][] {
-	const neighbors = Array.from({ length: nodeCount }, (): number[] => []);
-	for (const [source, target] of edges) {
-		neighbors[source]?.push(target);
-		neighbors[target]?.push(source);
-	}
-	const seen = new Uint8Array(nodeCount);
-	const components: number[][] = [];
-	for (let start = 0; start < nodeCount; start += 1) {
-		if (seen[start] === 1) {
-			continue;
-		}
-		const component: number[] = [];
-		const queue = [start];
-		seen[start] = 1;
-		for (let cursor = 0; cursor < queue.length; cursor += 1) {
-			const node = queue[cursor];
-			if (node === undefined) {
-				continue;
-			}
-			component.push(node);
-			for (const neighbor of neighbors[node] ?? []) {
-				if (seen[neighbor] === 0) {
-					seen[neighbor] = 1;
-					queue.push(neighbor);
-				}
-			}
-		}
-		components.push(component.sort((left, right) => left - right));
-	}
-	return components;
-}
-
-function candidateMetrics(
-	graph: GraphData,
-	members: readonly number[],
-	partitions: readonly Int32Array[],
-): {
-	readonly stability: number;
-	readonly conductance: number;
-	readonly score: number;
-} {
-	const memberSet = new Set(members);
-	let internalWeight = 0;
-	let boundaryWeight = 0;
-	let incidentWeight = 0;
-	let stableEdgeTotal = 0;
-	let internalEdgeCount = 0;
-	for (const edge of graph.edges) {
-		const sourceInside = memberSet.has(edge.source);
-		const targetInside = memberSet.has(edge.target);
-		const weight = boundedEdgeWeight(edge.weight);
-		if (sourceInside || targetInside) {
-			incidentWeight += weight;
-		}
-		if (sourceInside && targetInside) {
-			internalWeight += weight;
-			internalEdgeCount += 1;
-			for (const partition of partitions) {
-				stableEdgeTotal +=
-					partition[edge.source] === partition[edge.target] ? 1 : 0;
-			}
-		} else if (sourceInside !== targetInside) {
-			boundaryWeight += weight;
-		}
-	}
-	const conductance =
-		incidentWeight <= 1e-12
-			? 1
-			: boundaryWeight / Math.max(1e-12, 2 * internalWeight + boundaryWeight);
-	const stability =
-		internalEdgeCount === 0 || partitions.length === 0
-			? 0
-			: stableEdgeTotal / (internalEdgeCount * partitions.length);
-	const sizeSignal = Math.min(
-		1,
-		members.length / Math.max(8, graph.nodes.length * 0.18),
-	);
-	return {
-		stability,
-		conductance,
-		score:
-			stability * 0.5 +
-			(1 - conductance) * 0.35 +
-			sizeSignal * 0.15,
-	};
-}
-
-function continentId(nodeIds: readonly string[]): string {
-	const signature = [...nodeIds].sort().join('\u0000');
-	return `continent-${hashString(signature).toString(16).padStart(8, '0')}`;
-}
-
 function automaticMinimum(nodeCount: number): number {
 	return Math.max(
 		6,
@@ -309,6 +181,10 @@ export function detectContinentalCommunities(
 		DEFAULT_COMMUNITY_DETECTION_OPTIONS.maximumConductance;
 	if (
 		resolutions.length === 0 ||
+		resolutions.some(
+			(resolution) =>
+				!Number.isFinite(resolution) || resolution <= 0,
+		) ||
 		!Number.isSafeInteger(runsPerResolution) ||
 		runsPerResolution <= 0 ||
 		threshold < 0 ||
@@ -319,85 +195,56 @@ export function detectContinentalCommunities(
 		throw new RangeError('Invalid continental community detection options.');
 	}
 
-	const adjacency = buildAdjacency(graph);
-	const partitions: Int32Array[] = [];
-	for (let resolutionIndex = 0; resolutionIndex < resolutions.length; resolutionIndex += 1) {
+	const adjacency = buildWeightedAdjacency(graph);
+	const partitionFamilies: PartitionFamily[] = [];
+	for (
+		let resolutionIndex = 0;
+		resolutionIndex < resolutions.length;
+		resolutionIndex += 1
+	) {
 		const resolution = resolutions[resolutionIndex];
 		if (resolution === undefined) {
 			continue;
 		}
+		const partitions: Int32Array[] = [];
 		for (let run = 0; run < runsPerResolution; run += 1) {
 			partitions.push(
 				localMovingCpmPartition(
 					adjacency,
 					resolution,
-					deriveSeed(seed, resolutionIndex, run, graph.signature),
+					deriveSeed(
+						seed,
+						resolutionIndex,
+						run,
+						graph.signature,
+					),
 				),
 			);
 		}
+		partitionFamilies.push({ partitions });
 	}
 
-	const consensusEdges: Array<readonly [number, number]> = [];
-	for (const edge of graph.edges) {
-		let sameCount = 0;
-		for (const partition of partitions) {
-			sameCount +=
-				partition[edge.source] === partition[edge.target] ? 1 : 0;
-		}
-		if (sameCount / partitions.length >= threshold) {
-			consensusEdges.push([edge.source, edge.target]);
-		}
-	}
-
-	const candidates = connectedComponents(nodeCount, consensusEdges)
-		.filter((members) => members.length >= strongRegionMinimum)
-		.map((members) => {
-			const nodeIds = members
-				.map((index) => graph.nodes[index]?.id)
-				.filter((id): id is string => id !== undefined)
-				.sort();
-			const metrics = candidateMetrics(graph, members, partitions);
-			return {
-				id: continentId(nodeIds),
-				memberIndices: members,
-				memberNodeIds: nodeIds,
-				...metrics,
-			} satisfies DetectedContinent;
-		})
-		.filter(
-			(candidate) => {
-				const standardContinent =
-					candidate.memberIndices.length >= minimum &&
-					candidate.conductance <= maximumConductance &&
-					candidate.stability >= 0.5;
-				const exceptionallyClearRegion =
-					explicitMinimum === undefined &&
-					candidate.memberIndices.length >= strongRegionMinimum &&
-					candidate.conductance <=
-						Math.min(
-							maximumConductance,
-							STRONG_REGION_MAXIMUM_CONDUCTANCE,
-						) &&
-					candidate.stability >=
-						STRONG_REGION_MINIMUM_STABILITY;
-				return standardContinent || exceptionallyClearRegion;
-			},
-		)
-		.sort(
-			(left, right) =>
-				right.score - left.score ||
-				right.memberIndices.length - left.memberIndices.length ||
-				left.id.localeCompare(right.id),
-		)
-		.slice(0, maxContinents)
-		.sort(
-			(left, right) =>
-				(right.memberIndices.length - left.memberIndices.length) ||
-				left.id.localeCompare(right.id),
-		);
-
-	for (let continentIndex = 0; continentIndex < candidates.length; continentIndex += 1) {
-		for (const nodeIndex of candidates[continentIndex]?.memberIndices ?? []) {
+	const candidates = selectContinentalCandidates(
+		graph,
+		partitionFamilies,
+		threshold,
+		{
+			minimum,
+			strongRegionMinimum,
+			maxContinents,
+			maximumConductance,
+			explicitMinimum,
+		},
+	);
+	for (
+		let continentIndex = 0;
+		continentIndex < candidates.length;
+		continentIndex += 1
+	) {
+		for (
+			const nodeIndex of
+			candidates[continentIndex]?.memberIndices ?? []
+		) {
 			assignmentByNode[nodeIndex] = continentIndex;
 		}
 	}

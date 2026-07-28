@@ -54,11 +54,18 @@ corners, or decorative grid overlays are part of this system.
 
 - Topology determines continents before geography is rendered.
 - Communities are detected at multiple CPM resolutions and retained only when
-  they are sufficiently large, cohesive, and stable.
+  they are sufficiently large, cohesive, and stable. Consensus is evaluated
+  per resolution before the candidate hierarchy is reconciled, so a prominent
+  hub region can survive at its natural coarse scale even when a fine scale
+  subdivides it.
 - The ordinary automatic size threshold grows sublinearly. A lower
   large-vault threshold is reserved for exceptionally stable,
   low-conductance regions, so a compact smaller book can become a continent
   while a similarly sized sparse chain remains an archipelago.
+- Cohesion combines two-hop reachability and redundant internal edges. After
+  disjoint selection, a boundary note joins a continent only when at least two
+  member neighbors give that continent a dominant majority of local link
+  weight.
 - Selected continents are a disjoint partition subset; rejected nodes remain
   islands rather than being forced into landmasses.
 - Initialize/Renew reserve separated spherical caps for continents. Refresh
@@ -68,10 +75,11 @@ corners, or decorative grid overlays are part of this system.
   supports a local land kernel and short internal roads support narrow
   corridors. Unsupported parts of a cap remain sea; links longer than the
   corridor limit cannot manufacture a trans-oceanic land bridge.
-- Continent, island, and free-note positions act as semantic territory sites.
-  A closer foreign site carves sea from another region, and a dominance margin
-  leaves sea where two continent support fields compete. A surface cell
-  therefore has at most one land owner.
+- Continent positions act as semantic territory sites. A closer competing
+  continent site carves sea from another region, and a dominance margin leaves
+  sea where two continent support fields compete. A lone free note cannot
+  create a lake; free notes carve only as a locally linked, spatially coherent
+  group. A surface cell therefore has at most one land owner.
 - Coast variation is deterministic and multi-scale. It perturbs the union of
   city and short-road support rather than a center-radius silhouette, allowing
   concave shores, gulfs, and separated lobes while retaining organic edges.

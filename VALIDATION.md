@@ -408,6 +408,52 @@ This correction changes only derived render geometry. It preserves committed
 node vectors and persisted continent membership, and therefore applies
 immediately without **Renew layout**.
 
+### Multiscale community recovery and lake suppression
+
+The five reported version 1.2.3 screenshots exposed two independent failures.
+The detector previously built one consensus across all CPM resolutions. A
+hub-and-spoke region that was stable at a coarse scale but subdivided at a fine
+scale therefore lost too many consensus edges to become a candidate. The same
+mechanism could strand a legitimate boundary note. Separately, every
+unassigned note was treated as a foreign territory site by the renderer, so
+one stranded note could cut a circular lake from otherwise continuous land.
+
+Version 1.2.4 forms candidates inside each resolution, reconciles nested and
+partial variants, and measures stability at the candidate's best scale. A
+two-hop/redundant-edge cohesion gate distinguishes compact stars from sparse
+paths. After disjoint selection, a bounded affinity pass adds an unassigned
+node only when at least two member neighbors give one continent a dominant
+majority of its incident link weight. The renderer now reserves sea influence
+for accepted competing continents or locally linked and spatially coherent
+free-node groups; one isolated free note no longer punches a lake.
+
+Automated regressions cover:
+
+- the complete version 1.2.4 release gate with 40 test files / 196 tests,
+  lint, strict type checking, production build, and artifact validation;
+- a 24-note hub community inside a 636-note vault;
+- simultaneous 24- and 18-note stars plus a 20-note dense region;
+- rejection of a similarly sized sparse chain;
+- a boundary note excluded at high CPM resolution and recovered from two
+  unambiguous internal neighbors;
+- complete land ownership for every semantic continent member;
+- no lake around one isolated free note; and
+- preserved sea around an accepted competing continent and a coherent
+  three-note free community.
+
+A disposable browser scene imported the production detector, geography
+planner, renderer, and release stylesheet. Its deterministic 636-note,
+249-link graph contained two stars, one dense core with a recovered boundary
+node, a sparse chain, and unrelated free notes. The production UI reported
+three continents of sizes `24/21/18`, `members 63/63`, the boundary node
+assigned, and `isolated free no lake`. All three landmasses were continuous
+and visually separated; the sparse chain remained ocean. **Map → Continents**
+removed and restored all three landmasses and labels, with no browser console
+warnings or errors.
+
+The detector change is applied by **Renew layout**. The isolated-lake rendering
+correction applies immediately to an existing committed map.
+
 ## Not manually exercised
 
 These remain covered only partially by automated tests or by the manual plan:

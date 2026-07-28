@@ -143,6 +143,48 @@ function graphWithSparseChain(
 	};
 }
 
+function graphWithCustomEdges(
+	nodeCount: number,
+	edges: readonly GraphEdge[],
+): GraphData {
+	const graph = graphWithGroups([], false, nodeCount);
+	const degrees = new Uint32Array(nodeCount);
+	for (const edge of edges) {
+		degrees[edge.source] = (degrees[edge.source] ?? 0) + 1;
+		degrees[edge.target] = (degrees[edge.target] ?? 0) + 1;
+	}
+	const nodes = graph.nodes.map((node) => ({
+		...node,
+		degree: degrees[node.index] ?? 0,
+		weightedDegree: degrees[node.index] ?? 0,
+	}));
+	return {
+		...graph,
+		nodes,
+		edges,
+		descriptor: {
+			...graph.descriptor,
+			edges: edges.map((edge) => ({
+				sourceId: nodes[edge.source]?.id ?? '',
+				targetId: nodes[edge.target]?.id ?? '',
+				weight: edge.weight,
+				forwardWeight: edge.forwardWeight,
+				backwardWeight: edge.backwardWeight,
+			})),
+		},
+	};
+}
+
+function edge(source: number, target: number): GraphEdge {
+	return {
+		source,
+		target,
+		weight: 1,
+		forwardWeight: 1,
+		backwardWeight: 0,
+	};
+}
+
 describe('continental community detection', () => {
 	it('separates dense regions joined by only a few outgoing roads', () => {
 		const graph = graphWithGroups([10, 11, 9]);
@@ -220,6 +262,70 @@ describe('continental community detection', () => {
 						continent.conductance <= 0.28,
 				),
 		).toBe(true);
+	});
+
+	it('recovers a visually prominent hub community at an appropriate coarse scale', () => {
+		const edges = Array.from(
+			{ length: 23 },
+			(_, index) => edge(0, index + 1),
+		);
+		const graph = graphWithCustomEdges(636, edges);
+		const result = detectContinentalCommunities(graph, 42);
+
+		expect(
+			result.continents.map((continent) => continent.memberIndices.length),
+		).toContain(24);
+		expect(result.continents[0]?.memberIndices).toEqual(
+			Array.from({ length: 24 }, (_, index) => index),
+		);
+	});
+
+	it('keeps several prominent community shapes without promoting a sparse chain', () => {
+		const edges: GraphEdge[] = [];
+		for (let member = 1; member < 24; member += 1) {
+			edges.push(edge(0, member));
+		}
+		for (let member = 25; member < 42; member += 1) {
+			edges.push(edge(24, member));
+		}
+		for (let left = 42; left < 62; left += 1) {
+			for (let right = left + 1; right < 62; right += 1) {
+				edges.push(edge(left, right));
+			}
+		}
+		for (let member = 62; member + 1 < 77; member += 1) {
+			edges.push(edge(member, member + 1));
+		}
+		edges.push(edge(0, 42), edge(24, 43), edge(62, 44));
+		const graph = graphWithCustomEdges(636, edges);
+		const result = detectContinentalCommunities(graph, 114);
+		const sizes = result.continents.map(
+			(continent) => continent.memberIndices.length,
+		);
+
+		expect(sizes).toEqual([24, 20, 18]);
+		expect(result.assignmentByNode[76]).toBe(-1);
+	});
+
+	it('completes a high-resolution boundary node with two clear internal neighbors', () => {
+		const firstCore = graphWithGroups([14], false);
+		const edges = [
+			...firstCore.edges,
+			edge(0, 14),
+			edge(1, 14),
+		];
+		const graph = graphWithCustomEdges(15, edges);
+		const result = detectContinentalCommunities(graph, 73, {
+			minContinentNodes: 6,
+			resolutions: [0.55],
+		});
+		const owner = result.assignmentByNode[14] ?? -1;
+
+		expect(owner).toBeGreaterThanOrEqual(0);
+		expect(
+			result.continents[owner]?.memberIndices.slice(0, 14),
+		).toEqual(Array.from({ length: 14 }, (_, index) => index));
+		expect(result.continents[owner]?.memberIndices).toContain(14);
 	});
 
 	it('does not promote a sparse large-vault chain through the strong-region path', () => {

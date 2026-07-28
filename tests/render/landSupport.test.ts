@@ -27,7 +27,7 @@ function twoMemberGeography(): RenderGeography {
 }
 
 describe('node- and edge-supported continent territory', () => {
-	it('guarantees member land while a foreign node carves sea', () => {
+	it('guarantees member land without cutting a lake around one isolated free node', () => {
 		const member = center;
 		const foreign = exponentialMap(center, [0, 0.08, 0]);
 		const geography: RenderGeography = {
@@ -52,7 +52,78 @@ describe('node- and edge-supported continent territory', () => {
 
 		expect(classifySupportedContinent(member, model)).toBe(0);
 		expect(continentSupportClearance(member, 0, model)).toBeLessThan(0);
-		expect(classifySupportedContinent(foreign, model)).toBe(-1);
+		expect(classifySupportedContinent(foreign, model)).toBe(0);
+	});
+
+	it('lets a competing accepted continent carve a sea boundary', () => {
+		const first = center;
+		const second = exponentialMap(center, [0, 0.08, 0]);
+		const geography: RenderGeography = {
+			continents: [
+				{
+					id: 'first',
+					label: 'First',
+					nodeIndices: [0],
+					center,
+					capRadius: 0.6,
+					colorIndex: 0,
+				},
+				{
+					id: 'second',
+					label: 'Second',
+					nodeIndices: [1],
+					center: second,
+					capRadius: 0.6,
+					colorIndex: 1,
+				},
+			],
+			islandNodeIndices: [],
+		};
+		const model = createLandSupportModel(
+			geography,
+			new Float32Array([...first, ...second]),
+			[],
+			42,
+		);
+
+		expect(classifySupportedContinent(first, model)).toBe(0);
+		expect(classifySupportedContinent(second, model)).toBe(1);
+	});
+
+	it('lets a coherent free-node community preserve open water', () => {
+		const member = center;
+		const freeNodes = [
+			exponentialMap(center, [0, 0.08, 0]),
+			exponentialMap(center, [0, 0.095, 0.02]),
+			exponentialMap(center, [0, 0.095, -0.02]),
+		];
+		const geography: RenderGeography = {
+			continents: [
+				{
+					id: 'member',
+					label: 'Member',
+					nodeIndices: [0],
+					center,
+					capRadius: 0.6,
+					colorIndex: 0,
+				},
+			],
+			islandNodeIndices: [1, 2, 3],
+		};
+		const model = createLandSupportModel(
+			geography,
+			new Float32Array([...member, ...freeNodes.flat()]),
+			[
+				{ source: 1, target: 2, weight: 1 },
+				{ source: 2, target: 3, weight: 1 },
+				{ source: 3, target: 1, weight: 1 },
+			],
+			42,
+		);
+
+		for (const freeNode of freeNodes) {
+			expect(classifySupportedContinent(freeNode, model)).toBe(-1);
+		}
 	});
 
 	it('uses a short internal road as a narrow bridge without filling the cap', () => {

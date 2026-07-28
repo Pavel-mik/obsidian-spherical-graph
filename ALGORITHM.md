@@ -76,23 +76,35 @@ the exponential map, and then applies any Refresh anchor cone.
 
 The note graph is partitioned before Initialize or Renew by a deterministic
 multiresolution Constant Potts Model (CPM) local-moving optimizer. It runs
-several seeded orders at three resolutions. A real graph edge becomes part of
-the consensus graph only when its endpoints share a community in a majority of
-runs. Connected consensus components are then scored by:
+several seeded orders at four resolutions, including a coarse scale that can
+retain hub-and-spoke and core/periphery regions. Consensus components are
+formed separately within each resolution before a cross-resolution candidate
+set is reconciled. This avoids requiring one edge to remain co-assigned at
+incompatible coarse and fine scales. Candidates are scored by:
 
 - an automatic sublinear ordinary node-count threshold;
-- mean co-assignment stability of internal edges;
+- best-scale co-assignment stability of internal edges;
 - conductance (boundary weight divided by incident volume); and
-- a bounded size signal.
+- bounded size and topology-cohesion signals.
 
 Ordinary candidates must pass the size, stability, and conductance gates.
 Large vaults also have a lower bounded rescue threshold, but it applies only
 when a smaller region is exceptionally stable across resolutions and has very
 low conductance. This recovers compact book- or project-like regions without
-promoting sparse chains or loose archipelagos. An explicitly supplied minimum
-is always absolute and disables rescue below it. Selection is disjoint by
-construction and capped to seven landmasses. Rejected nodes remain islands;
-the algorithm never forces total coverage.
+promoting sparse chains or loose archipelagos. Topology cohesion combines
+two-hop reachability with redundant-edge surplus, so a visually strong star
+can pass while a path of the same size remains an island. Near-identical
+partial candidates are suppressed, and a broad parent is removed when stable
+disjoint children explain most of it. An explicitly supplied minimum is always
+absolute and disables rescue below it. Selection is disjoint by construction
+and capped to seven landmasses.
+
+After selection, a bounded local completion pass considers still-unassigned
+nodes. A node joins one continent only when at least two of its neighbors are
+already members, that continent receives a majority of all incident weight,
+and its weight clearly dominates every competing continent. This recovers
+unstable boundary notes without growing across a weak bridge. Remaining nodes
+stay islands; the algorithm never forces total coverage.
 
 Each accepted community receives a deterministic center from a
 Fibonacci-sphere packing and an intrinsic angular cap sized by membership.
@@ -233,10 +245,13 @@ continent member seeds a density-aware support kernel at its committed
 position. Samples along short internal edges add narrow road corridors between
 nearby kernels. Edges longer than a bounded angular distance do not add
 support, so a single graph link cannot pull a land bridge across open water.
-All semantic continent, island, and free-note positions are also indexed as
-territory sites: a closer foreign site carves sea out of another continent's
-support. Cartesian spatial buckets keep these local queries bounded for large
-vaults.
+All semantic continent positions are also indexed as territory sites: a closer
+competing continent site carves sea out of another continent's support. A
+single free note does not punch a lake into otherwise supported land. Free
+notes acquire sea-carving influence only when at least two nearby graph-linked
+free neighbors form a spatially coherent group whose internal weight is not
+weaker than its continent-facing weight. Cartesian spatial buckets keep these
+local queries bounded for large vaults.
 
 The persisted spherical cap is a placement constraint and stable geographic
 identity, not a coastline primitive. Coast ownership is instead the positive

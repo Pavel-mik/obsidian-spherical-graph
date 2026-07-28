@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-07-28
+
+### Fixed
+
+- Prominent hub-and-spoke and core/periphery communities are no longer lost
+  because one global consensus mixed coarse and fine CPM resolutions. Candidate
+  regions are now formed per resolution before hierarchical reconciliation.
+- Clearly affiliated boundary notes are added to a selected continent when at
+  least two internal neighbors provide a dominant majority of their local link
+  weight. This prevents otherwise coherent communities from being represented
+  only partially.
+- A single unassigned note embedded in supported land no longer cuts an
+  isolated lake or bay. Competing accepted continents still carve sea, while
+  free notes must form a locally connected, spatially coherent group before
+  they can exclude land.
+- A topology-cohesion gate continues to reject long sparse chains even at the
+  new coarse detection scale.
+
+### Notes
+
+- Existing committed layouts remain fixed after updating. Use **Renew layout**
+  to apply the revised continent detection and membership. The isolated-lake
+  rendering correction applies immediately.
+
 ## [1.2.3] - 2026-07-28
 
 ### Fixed

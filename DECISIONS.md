@@ -74,6 +74,15 @@
   deterministic multiresolution CPM consensus plus conductance/stability
   filters chooses only sufficiently large, cohesive regions. Unassigned notes
   remain islands.
+- Consensus is constructed within each CPM resolution before candidates are
+  reconciled across scales. One global edge consensus was rejected because it
+  erased hub-and-spoke communities that are stable only at a coarse scale and
+  stranded legitimate boundary notes at finer scales.
+- Candidate topology combines two-hop compactness and redundant-edge surplus;
+  this admits compact stars and dense regions without promoting a long sparse
+  chain. A conservative local affinity pass then completes boundary membership
+  only when one selected continent has at least two neighbors and a dominant
+  share of the node's incident link weight.
 - Automatic continent size scales with the square root of vault size instead
   of a fixed percentage. A smaller component can bypass the ordinary size
   threshold only when its stability is at least 0.72 and conductance is at
@@ -85,7 +94,9 @@
   retains prior centers wherever possible.
 - A persisted cap constrains layout but does not define the rendered coast.
   Each member city and nearby short internal road now supports land, while
-  foreign semantic nodes carve sea and long links cannot bridge an ocean. The
+  competing continent nodes carve sea and long links cannot bridge an ocean.
+  An isolated free node no longer carves land; free nodes need a locally
+  connected, spatially coherent group before receiving sea influence. The
   former single radial envelope was rejected because it filled unsupported
   gaps, crossed sparse boundaries, and could omit genuine outer members.
 - Surface ownership is exclusive. A dominance margin creates explicit sea
