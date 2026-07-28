@@ -3,9 +3,18 @@ import {
 	classifySupportedContinent,
 	continentSupportClearance,
 	createLandSupportModel,
+	landSupportDiagnostics,
 } from '../../src/render/landSupport';
 import { exponentialMap } from '../../src/geometry/sphericalGeometry';
-import type { Vec3 } from '../../src/geometry/vector3';
+import {
+	addVec3,
+	crossVec3,
+	normalizeVec3,
+	orthogonalUnitVec3,
+	scaleVec3,
+	type Vec3,
+} from '../../src/geometry/vector3';
+import { fibonacciSpherePoint } from '../../src/layout/initialization';
 import type { RenderGeography } from '../../src/render/renderTypes';
 
 const center: Vec3 = [1, 0, 0];
@@ -24,6 +33,28 @@ function twoMemberGeography(): RenderGeography {
 		],
 		islandNodeIndices: [],
 	};
+}
+
+function clusterAround(
+	clusterCenter: Vec3,
+	count: number,
+	seed: number,
+): Vec3[] {
+	const tangentX = orthogonalUnitVec3(clusterCenter, seed);
+	const tangentY = normalizeVec3(crossVec3(clusterCenter, tangentX));
+	return Array.from({ length: count }, (_, index) => {
+		if (index === 0) {
+			return clusterCenter;
+		}
+		const phase = ((index - 1) / Math.max(1, count - 1)) * Math.PI * 2;
+		return exponentialMap(
+			clusterCenter,
+			addVec3(
+				scaleVec3(tangentX, Math.cos(phase) * 0.07),
+				scaleVec3(tangentY, Math.sin(phase) * 0.07),
+			),
+		);
+	});
 }
 
 describe('node- and edge-supported continent territory', () => {
@@ -163,6 +194,72 @@ describe('node- and edge-supported continent territory', () => {
 		expect(classifySupportedContinent(center, model)).toBe(-1);
 	});
 
+	it('keeps connected ocean between dense clusters joined by one long bridge edge', () => {
+		const secondCenter = exponentialMap(center, [0, 0.82, 0]);
+		const firstCluster = clusterAround(center, 8, 17);
+		const secondCluster = clusterAround(secondCenter, 8, 29);
+		const members = [...firstCluster, ...secondCluster];
+		const clusterEdges = (
+			offset: number,
+		amount: number,
+		): Array<{ source: number; target: number; weight: number }> => {
+			const result: Array<{
+				source: number;
+				target: number;
+				weight: number;
+			}> = [];
+			for (let index = 1; index < amount; index += 1) {
+				result.push(
+					{ source: offset, target: offset + index, weight: 1 },
+					{
+						source: offset + index,
+						target: offset + 1 + (index % (amount - 1)),
+						weight: 1,
+					},
+				);
+			}
+			return result;
+		};
+		const edges = [
+			...clusterEdges(0, firstCluster.length),
+			...clusterEdges(firstCluster.length, secondCluster.length),
+			{
+				source: 0,
+				target: firstCluster.length,
+				weight: 1,
+			},
+		];
+		const model = createLandSupportModel(
+			{
+				continents: [
+					{
+						id: 'archipelago',
+						label: 'Archipelago',
+						nodeIndices: members.map((_, index) => index),
+						center: normalizeVec3(
+							addVec3(center, secondCenter),
+						),
+						capRadius: 1,
+						colorIndex: 0,
+					},
+				],
+				islandNodeIndices: [],
+			},
+			new Float32Array(members.flat()),
+			edges,
+			73,
+		);
+
+		for (const member of members) {
+			expect(classifySupportedContinent(member, model)).toBe(0);
+		}
+		const midpoint = exponentialMap(center, [0, 0.41, 0]);
+		expect(classifySupportedContinent(midpoint, model)).toBe(-1);
+		expect(
+			landSupportDiagnostics(model).connectedOceanCellCount,
+		).toBeGreaterThan(0);
+	});
+
 	it('loosens a dense circular community into a deterministic organic coast without interior lakes', () => {
 		const ringCount = 24;
 		const members: Vec3[] = [center];
@@ -249,4 +346,48 @@ describe('node- and edge-supported continent territory', () => {
 			expect(classifySupportedContinent(sample, repeat)).toBe(0);
 		}
 	});
+
+	it(
+		'bounds raster and anchor work for a 636-node committed layout',
+		() => {
+			const nodeCount = 636;
+			const largePositions = new Float32Array(nodeCount * 3);
+			for (let index = 0; index < nodeCount; index += 1) {
+				largePositions.set(
+					fibonacciSpherePoint(index, nodeCount),
+					index * 3,
+				);
+			}
+			const startedAt = performance.now();
+			const model = createLandSupportModel(
+				{
+					continents: [
+						{
+							id: 'global-sample',
+							label: 'Global sample',
+							nodeIndices: Array.from(
+								{ length: nodeCount },
+								(_, index) => index,
+							),
+							center,
+							capRadius: Math.PI,
+							colorIndex: 0,
+						},
+					],
+					islandNodeIndices: [],
+				},
+				largePositions,
+				[],
+				101,
+			);
+			const elapsed = performance.now() - startedAt;
+			const diagnostics = landSupportDiagnostics(model);
+
+			expect(diagnostics.rasterCellCount).toBeLessThanOrEqual(10_242);
+			expect(diagnostics.densityAnchorCount).toBe(nodeCount);
+			expect(diagnostics.connectedOceanCellCount).toBeGreaterThan(0);
+			expect(elapsed).toBeLessThan(3_500);
+		},
+		7_000,
+	);
 });

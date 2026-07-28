@@ -52,6 +52,24 @@ describe('layout worker protocol', () => {
 		expect(getRunRequestTransferables(request)).toHaveLength(3);
 	});
 
+	it('rejects obsolete geography-constrained run payloads', () => {
+		const request = createRunRequest(input());
+		expect(
+			isLayoutWorkerRequest({
+				...request,
+				payload: {
+					...request.payload,
+					geography: {
+						assignmentByNode: new Int32Array([0, 0]),
+						centers: new Float32Array([1, 0, 0]),
+						capRadii: new Float32Array([0.42]),
+						boundaryStrength: 0.82,
+					},
+				},
+			}),
+		).toBe(false);
+	});
+
 	it('accepts final-only completed messages', () => {
 		const message = {
 			type: 'completed',

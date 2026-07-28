@@ -9,6 +9,7 @@ import type { PersistedLayoutSnapshot } from '../../src/persistence/layoutState'
 import { DEFAULT_SPHERICAL_GRAPH_SETTINGS } from '../../src/settings/settings';
 import { SphericalLayoutPlanner } from '../../src/layout/SphericalLayoutPlanner';
 import { readVec3 } from '../../src/geometry/vector3';
+import { initializeFullLayout } from '../../src/layout/initialization';
 
 function graph(paths: readonly string[], edges: readonly GraphEdge[]): GraphData {
 	const descriptor: GraphDescriptor = {
@@ -103,8 +104,23 @@ describe('SphericalLayoutPlanner integration', () => {
 		});
 		expect(first.positions).toEqual(repeated.positions);
 		expect(first.positions).not.toEqual(nextGeneration.positions);
+		expect(first.positions).toEqual(
+			initializeFullLayout(current.nodes.length, 7),
+		);
 		expect(first.edgeEndpoints).toEqual(new Uint32Array([0, 1]));
 		expect(first.refresh).toBeUndefined();
+		expect('geography' in first).toBe(false);
+
+		const initialized = planner.createPayload({
+			operationId: 'initialize-1',
+			mode: 'initialize',
+			graph: current,
+			effectiveSeed: 7,
+		});
+		expect(initialized.positions).toEqual(
+			initializeFullLayout(current.nodes.length, 7),
+		);
+		expect('geography' in initialized).toBe(false);
 	});
 
 	it('starts old nodes at committed positions and new nodes near neighbors', () => {
@@ -152,6 +168,7 @@ describe('SphericalLayoutPlanner integration', () => {
 		expect(payload.refresh?.anchorPositions).not.toBe(
 			payload.positions,
 		);
+		expect('geography' in payload).toBe(false);
 	});
 
 	it('carries a reliable renamed node position through a topology refresh', () => {

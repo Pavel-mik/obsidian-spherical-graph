@@ -70,42 +70,44 @@
 
 ## Continents and atlas direction
 
-- Community detection and geographic rendering are separate stages. A
-  deterministic multiresolution CPM consensus plus conductance/stability
-  filters chooses only sufficiently large, cohesive regions. Unassigned notes
-  remain islands.
-- Consensus is constructed within each CPM resolution before candidates are
-  reconciled across scales. One global edge consensus was rejected because it
-  erased hub-and-spoke communities that are stable only at a coarse scale and
-  stranded legitimate boundary notes at finer scales.
-- Candidate topology combines two-hop compactness and redundant-edge surplus;
-  this admits compact stars and dense regions without promoting a long sparse
-  chain. A conservative local affinity pass then completes boundary membership
-  only when one selected continent has at least two neighbors and a dominant
-  share of the node's incident link weight.
-- Automatic continent size scales with the square root of vault size instead
-  of a fixed percentage. A smaller component can bypass the ordinary size
-  threshold only when its stability is at least 0.72 and conductance is at
-  most 0.28. This two-tier rule replaced the former 24-node large-vault floor:
-  the old floor erased obvious compact regions, while lowering one global
-  threshold would also promote sparse structures.
-- Initialize and Renew allocate disjoint intrinsic spherical caps before the
-  ordinary force solve. Refresh matches communities to persisted geography and
-  retains prior centers wherever possible.
-- A persisted cap constrains layout but does not define the rendered coast.
-  Each member city and nearby short internal road now supports land, while
-  competing continent nodes carve sea and long links cannot bridge an ocean.
-  An isolated free node no longer carves land; free nodes need a locally
-  connected, spatially coherent group before receiving sea influence. The
-  former single radial envelope was rejected because it filled unsupported
-  gaps, crossed sparse boundaries, and could omit genuine outer members.
-- Surface ownership is exclusive. A dominance margin creates explicit sea
-  rather than allowing overlapping translucent landmasses. Mixed surface
-  triangles are clipped at the ownership boundary; centroid-only triangle
-  acceptance was rejected because it exposes a regular sawtooth coastline.
+- Geography has a strict one-way dependency on the committed layout. Initialize
+  and Renew first run the ordinary deterministic full-sphere solver; Refresh
+  first completes its bounded positional update. Only after the final position
+  buffer is validated and fixed may the atlas pipeline inspect it.
+- Geographic state never enters initialization, the worker payload, force
+  evaluation, integration, or displacement constraints. Pre-layout continent
+  caps were rejected because they produced circular, self-confirming regions
+  and could pull semantically related but spatially distant notes into the
+  wrong landmass.
+- Post-layout analysis samples the fixed note positions on an intrinsic
+  subdivided-icosahedron grid. Grid resolution and compact fine/coarse density
+  kernels adapt to measured global and local note spacing instead of assuming
+  one continent radius.
+- Deterministic multiresolution CPM consensus, conductance, compactness, and
+  stability remain useful as a **soft prior**. The prior can support a spatial
+  basin or make a watershed merge slightly more permissive, but it can never
+  move a note, override final surface ownership, or turn a geographically
+  disconnected footprint into one continent.
+- Density-gradient watershed basins are reconciled at their saddles. Final
+  surface ownership is exclusive, neighboring continent owners are separated
+  by explicit sea cells, and ocean reconciliation preserves one connected
+  ocean component rather than overlapping translucent landmasses.
+- Continent acceptance combines spatial size and prominence with optional graph
+  support. Final membership comes from the owning grid cell at each fixed note
+  position; notes outside accepted land remain islands. This makes coastline
+  and membership agree with the visible city distribution.
+- Refresh continuity preserves matched continent identity, label, and color
+  through deterministic overlap matching. Centers and diagnostic extents are
+  always rederived from the current fixed positions; a persisted extent is
+  descriptive metadata, never a layout or rendering constraint.
+- Mixed surface triangles are clipped at the ownership boundary; centroid-only
+  triangle acceptance was rejected because it exposes a regular sawtooth
+  coastline. Land uses a variably inset ownership mask while a wider,
+  independently perturbed sand mask forms an irregular beach around it.
 - Land triangles are derived and batched at render time; persistence stores
   semantic geography only. This keeps snapshots compact and lets themes recolor
-  the atlas without moving notes.
+  the atlas without moving notes. Density, watershed, and cell-ownership arrays
+  are temporary analytical data and are not persisted.
 - A free note is semantically an island but does not necessarily receive its
   own land polygon. Large-vault rendering selects at most 24 deterministic,
   well-separated representatives and scales their footprint with density.

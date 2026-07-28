@@ -31,6 +31,10 @@ vault.
    - Confirm no intermediate node positions are shown.
    - When complete, confirm a coherent full-sphere map appears and status is
      fixed/up to date.
+   - Inspect diagnostics or an instrumented run and confirm the worker payload
+     contains no continent assignments, centers, extents, or geographic force
+     parameters. Confirm geographic analysis begins only after the final
+     position buffer has passed validation.
    - Inspect diagnostics or instrumented state and confirm the worker has
      terminated.
 
@@ -93,8 +97,10 @@ vault.
    - Confirm progress changes in DOM only; nodes do not drift.
    - On completion, confirm one atomic geometry update includes the new note,
      camera orientation is retained, and the worker terminates.
-   - Record maximum and mean old-node displacement; verify the configured cap
-     and that remote unaffected nodes are fixed.
+   - Record maximum and mean old-node displacement; verify the configured
+     **Refresh displacement cap** and that remote unaffected nodes are fixed.
+   - Compare the committed positions captured immediately before and after
+     post-layout geography derivation. They must remain bitwise unchanged.
 
 9. **Link change Refresh**
 
@@ -178,12 +184,27 @@ vault.
     - Toggle **Map → Continents**. Confirm land, coastlines, islands, and
       cartographic labels disappear/reappear without changing the committed
       position buffer.
-    - In a clustered synthetic vault, confirm large dense regions form
-      non-overlapping landmasses with visible sea between them. Confirm small
-      disconnected groups remain islands.
-    - Run Refresh after adding a note inside an existing cluster. Confirm the
-      matched continent keeps its name, color, and approximate geographic
-      center. Run Renew and confirm a new world arrangement is allowed.
+    - In a clustered synthetic vault, confirm large spatially dense regions
+      form non-overlapping landmasses around their visible nodes, with sea
+      between neighboring owners. Confirm small disconnected groups and notes
+      outside accepted land remain islands.
+    - Use an instrumented geography run to confirm every land cell has exactly
+      one owner and all ocean cells form one connected component.
+    - Use a fixture where one graph community occupies two distant spatial
+      clusters. Confirm the community can support both candidates but does not
+      force them into one footprint or move their nodes. Conversely, confirm a
+      prominent spatial basin is not rejected solely because graph-community
+      support is weak.
+    - Inspect several coasts at close zoom. Confirm the shoreline has
+      deterministic fine-scale irregularity, avoids a repeated circular
+      “cloud” outline, and is bordered by a variably wide sand-beach band.
+    - Run Refresh after adding a note inside an existing spatial cluster.
+      Confirm the matched continent keeps its name and color while its center
+      and diagnostic extent are rederived from the fixed positions. Confirm the
+      geography update itself does not alter any position.
+    - Run Renew and confirm a new full-sphere arrangement is allowed; then
+      confirm geography is derived from that completed arrangement rather than
+      constraining it during the solve.
 
 20. **Large synthetic vault**
 

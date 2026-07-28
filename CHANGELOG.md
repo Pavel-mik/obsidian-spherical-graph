@@ -6,6 +6,68 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-28
+
+### Added
+
+- Post-layout cartography on an intrinsic icosphere: locally adaptive
+  fine/coarse density, deterministic watershed basins, exclusive spatial
+  ownership, and one explicit connected ocean.
+- Spatial continent recovery that can recognize a visually coherent dense
+  region without graph-community support, split one graph community across
+  distant landmasses, and retain unrelated notes as islands.
+- Regression coverage for multi-cluster large vaults, conflicting soft priors,
+  uniform backgrounds, connected ocean, deterministic ownership, and
+  bit-for-bit preservation of completed node positions.
+
+### Changed
+
+- Initialize and Renew once again use the ordinary deterministic full-sphere
+  layout. Continents no longer choose initial positions, apply forces, reserve
+  circular caps, or clamp solver output.
+- Graph communities are now only a soft marker prior over the finished map.
+  Spatial density and visible separation decide final geography.
+- Land rendering uses bounded adaptive density over fixed note positions,
+  ignores long or structurally suspicious bridge roads, and derives the beach
+  inset from signed distance to the connected external ocean.
+- Artificial shelf islands were removed. Small irregularity is confined to the
+  coastline band so interiors remain continuous.
+
+### Fixed
+
+- Dense but visually separate communities can no longer be transitively merged
+  through a chain of small unsupported watershed basins.
+- A wide watershed basin no longer claims every note in it. Only a supported
+  core seeds land; dispersed notes join a continent only when they actually lie
+  in its connected spatial mask.
+- Conflicting graph priors no longer split one obvious spatial landmass, while
+  distant clusters remain separated by ocean.
+- Circular, self-confirming continents, unsupported cross-ocean land bridges,
+  and accidental inland beach/lake holes are removed.
+
+### Notes
+
+- The layout algorithm version is now 3. A version-2 committed snapshot is
+  treated as obsolete and is replaced by one automatic Initialize when the
+  plugin first opens after updating. Later browsing remains fixed as before.
+- The analytical grid, density field, watershed, and cell ownership are
+  temporary; persisted snapshots retain only fixed positions and compact
+  semantic geography.
+
+## [1.2.5] - 2026-07-28
+
+### Added
+
+- Search now finds tags as well as notes, and Selection details lists linked
+  tags alongside linked notes.
+- Continents receive a textured sand-beach underlay and detailed coastline.
+
+### Changed
+
+- **Solid** now writes a fully opaque globe depth surface so cities and tags on
+  the far side cannot show through.
+- Tag labels and links respect solid-globe occlusion.
+
 ## [1.2.4] - 2026-07-28
 
 ### Fixed

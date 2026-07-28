@@ -68,6 +68,8 @@ interface LandModel {
 	readonly support?: LandSupportModel;
 }
 
+const landSupportCache = new WeakMap<object, LandSupportModel>();
+
 function terrainNoise(direction: Vec3, seed: number): number {
 	const phase = hashToSignedUnitFloat(seed, 0x71) * Math.PI;
 	const first = Math.sin(
@@ -275,14 +277,16 @@ function classifyContinentOwner(
 	direction: Vec3,
 	model: LandModel,
 ): number {
-	const support =
-		model.support ??
-		createLandSupportModel(
+	let support = model.support ?? landSupportCache.get(model);
+	if (support === undefined) {
+		support = createLandSupportModel(
 			model.geography,
 			model.positions,
 			model.edges ?? [],
 			model.seed,
 		);
+		landSupportCache.set(model, support);
+	}
 	return classifySupportedContinent(
 		normalizeVec3(direction),
 		support,
@@ -888,64 +892,6 @@ export function buildLandSurfaceData(
 					radius + COAST_SURFACE_OFFSET,
 				);
 			}
-		}
-	}
-
-	// A few small, deterministic shelf islands make the generated geography
-	// read like an atlas without changing graph ownership or node positions.
-	for (
-		let continentIndex = 0;
-		continentIndex < geography.continents.length;
-		continentIndex += 1
-	) {
-		const continent = geography.continents[continentIndex];
-		const profile = model.coastProfiles?.[continentIndex];
-		if (continent === undefined || profile === undefined) {
-			continue;
-		}
-		const shelfSeed = hashNumbers(seed, continentIndex, 0xa7c41);
-		const shelfCount = 1 + (shelfSeed % 2);
-		for (let shelfIndex = 0; shelfIndex < shelfCount; shelfIndex += 1) {
-			const phase =
-				((hashNumbers(shelfSeed, shelfIndex) % 10_000) / 10_000) *
-				Math.PI *
-				2;
-			const tangent = normalizeVec3(
-				addVec3(
-					scaleVec3(profile.tangentX, Math.cos(phase)),
-					scaleVec3(profile.tangentY, Math.sin(phase)),
-				),
-			);
-			const shelfCenter = exponentialMap(
-				continent.center,
-				scaleVec3(
-					tangent,
-					continent.capRadius *
-						(1.12 + shelfIndex * 0.075),
-				),
-			);
-			if (
-				classifyContinentOwner(shelfCenter, continentModel) !==
-					SEA_OWNER
-			) {
-				continue;
-			}
-			const patchSeed = hashNumbers(shelfSeed, shelfIndex, 0x151a);
-			const patchTriangleCount = appendIslandPatch(
-				landPositions,
-				colorIndices,
-				shades,
-				beachPositions,
-				coastPositions,
-				shelfCenter,
-				0.018 +
-					(hashNumbers(patchSeed, 0x51) % 1000) / 1000 * 0.018,
-				continent.colorIndex,
-				patchSeed,
-				radius,
-			);
-			triangleCount += patchTriangleCount;
-			beachTriangleCount += patchTriangleCount;
 		}
 	}
 

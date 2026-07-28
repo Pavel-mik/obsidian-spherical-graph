@@ -3,56 +3,73 @@ import {
 	hashToSignedUnitFloat,
 } from '../geometry/deterministicHash';
 import { sampleGeodesicArc } from '../geometry/geodesicArc';
+import { geodesicDistance } from '../geometry/sphericalGeometry';
 import {
-	geodesicDistance,
-	tangentDirection,
-} from '../geometry/sphericalGeometry';
-import {
-	addVec3,
-	crossVec3,
 	dotVec3,
-	lengthVec3,
 	normalizeVec3,
-	orthogonalUnitVec3,
-	projectTangentVec3,
 	readVec3,
-	scaleVec3,
 	type Vec3,
 } from '../geometry/vector3';
+import {
+	createIntrinsicSphericalGrid,
+	gridSubdivisionForSpacing,
+	mapPositionsToGrid,
+	type IntrinsicSphericalGrid,
+} from '../geography/sphericalGrid';
 import type {
 	RenderEdge,
 	RenderGeography,
 } from './renderTypes';
 
-const SUPPORT_CELL_SIZE = 0.11;
-const MIN_NODE_SUPPORT_RADIUS = 0.055;
-const MAX_NODE_SUPPORT_RADIUS = 0.15;
-const MIN_EDGE_SUPPORT_RADIUS = 0.038;
-const MAX_EDGE_SUPPORT_RADIUS = 0.09;
-const MAX_BRIDGED_EDGE_ANGLE = 0.36;
-const OWNER_DOMINANCE_MARGIN = 0.055;
-const FOREIGN_NODE_ADVANTAGE = 0.018;
-const COHERENT_FREE_EDGE_MAX_ANGLE = 0.22;
-const MIN_COAST_SCALE = 0.58;
-const MAX_COAST_SCALE = 1.34;
-const SMOOTH_UNION_SHARPNESS = 400;
+const DENSITY_BUCKET_CELL_SIZE = 0.12;
+const RASTER_BUCKET_CELL_SIZE = 0.08;
+const BOUNDARY_BUCKET_CELL_SIZE = 0.09;
+const MIN_NODE_BANDWIDTH = 0.052;
+const MAX_NODE_BANDWIDTH = 0.118;
+const SINGLE_NODE_BANDWIDTH = 0.08;
+const MIN_EDGE_SUPPORT = 0.042;
+const MAX_EDGE_SUPPORT = 0.072;
+const MAX_TRUSTED_EDGE_ANGLE = 0.36;
+const SUSPICIOUS_BRIDGE_ANGLE = 0.22;
+const LOW_LAND_DENSITY = 0.34;
+const HIGH_LAND_DENSITY = 0.62;
+const OWNER_DOMINANCE_FLOOR = 0.045;
+const OWNER_DOMINANCE_RATIO = 0.08;
+const WATER_SEED_RADIUS = 0.052;
+const MEMBER_GUARANTEE_MAX_RADIUS = 0.024;
+const BOUNDARY_NOISE_BAND = 0.052;
+const BOUNDARY_SEARCH_RADIUS = 0.14;
+const SUPPORT_DISTANCE_CAP = 0.2;
 
-interface SupportAnchor {
+interface DensityAnchor {
 	readonly direction: Vec3;
 	readonly owner: number;
-	readonly radius: number;
-	readonly tangentX: Vec3;
-	readonly tangentY: Vec3;
-	readonly majorScale: number;
-	readonly minorScale: number;
-	readonly outerInfluence: number;
-	readonly maximumGrowth: number;
+	readonly fineSupport: number;
+	readonly coarseSupport: number;
+	readonly fineWeight: number;
+	readonly coarseWeight: number;
 }
 
-interface TerritoryNode {
+interface MemberNode {
 	readonly direction: Vec3;
 	readonly owner: number;
-	readonly carvesLand: boolean;
+	readonly nodeIndex: number;
+	readonly bandwidth: number;
+	readonly guaranteeRadius: number;
+}
+
+interface WaterSeed {
+	readonly direction: Vec3;
+}
+
+interface RasterPoint {
+	readonly direction: Vec3;
+	readonly index: number;
+}
+
+interface BoundarySample {
+	readonly direction: Vec3;
+	readonly owner: number;
 }
 
 interface SpatialBuckets<T> {
@@ -60,64 +77,60 @@ interface SpatialBuckets<T> {
 	readonly cells: ReadonlyMap<string, readonly T[]>;
 }
 
-interface OwnerCoastProfile {
-	readonly center: Vec3;
-	readonly tangentX: Vec3;
-	readonly tangentY: Vec3;
-	readonly phases: readonly [
-		number,
-		number,
-		number,
-		number,
-		number,
-		number,
-	];
+interface MutableBuckets<T> {
+	readonly cellSize: number;
+	readonly cells: Map<string, T[]>;
+}
+
+interface LandRaster {
+	readonly grid: IntrinsicSphericalGrid;
+	readonly ownerByCell: Int32Array;
+	readonly connectedOcean: Uint8Array;
+	readonly boundaryBand: Uint8Array;
+	readonly bestDensity: Float32Array;
+	readonly rasterPoints: SpatialBuckets<RasterPoint>;
+	readonly boundaries: readonly BoundarySample[];
+	readonly boundaryBuckets: SpatialBuckets<BoundarySample>;
 }
 
 export interface LandSupportModel {
-	readonly anchors: SpatialBuckets<SupportAnchor>;
-	readonly territoryNodes: SpatialBuckets<TerritoryNode>;
+	readonly raster: LandRaster;
+	readonly anchors: SpatialBuckets<DensityAnchor>;
+	readonly members: SpatialBuckets<MemberNode>;
 	readonly maximumSupportRadius: number;
-	readonly maximumEffectiveSupportRadius: number;
-	readonly ownerCoastProfiles: readonly OwnerCoastProfile[];
 	readonly seed: number;
 }
 
 export interface ContinentSupportSample {
 	readonly normalizedScore: number;
 	/**
-	 * Positive inside the support envelope, zero on the coast, negative at
-	 * unsupported samples that were still within the spatial query radius.
+	 * Signed geodesic distance to the connected external ocean. Positive
+	 * values are land, zero is the coast, and negative values are water.
 	 */
 	readonly margin: number;
 }
 
-interface MutableBuckets<T> {
-	readonly cellSize: number;
-	readonly cells: Map<string, T[]>;
+export interface LandSupportDiagnostics {
+	readonly rasterCellCount: number;
+	readonly densityAnchorCount: number;
+	readonly boundarySampleCount: number;
+	readonly connectedOceanCellCount: number;
+}
+
+interface SeaComponent {
+	readonly cells: number[];
+	readonly boundaryOwners: Set<number>;
+	readonly containsWaterSeed: boolean;
+}
+
+interface QuerySample {
+	readonly owner: number;
+	readonly margin: number;
+	readonly boundaryOwner: number;
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
 	return Math.min(maximum, Math.max(minimum, value));
-}
-
-function smoothstep(edge0: number, edge1: number, value: number): number {
-	const unit = clamp((value - edge0) / (edge1 - edge0), 0, 1);
-	return unit * unit * (3 - 2 * unit);
-}
-
-function maximumSupportGrowth(radius: number): number {
-	const density =
-		(MAX_NODE_SUPPORT_RADIUS - radius) /
-		(MAX_NODE_SUPPORT_RADIUS - MIN_NODE_SUPPORT_RADIUS);
-	return clamp(0.022 + density * 0.1, 0.022, 0.122);
-}
-
-function supportGrowthEnvelope(scale: number): number {
-	return (
-		0.12 +
-		smoothstep(MIN_COAST_SCALE, MAX_COAST_SCALE, scale) * 0.88
-	);
 }
 
 function coordinate(value: number, cellSize: number): number {
@@ -128,11 +141,8 @@ function cellKey(x: number, y: number, z: number): string {
 	return `${x}|${y}|${z}`;
 }
 
-function createBuckets<T>(): MutableBuckets<T> {
-	return {
-		cellSize: SUPPORT_CELL_SIZE,
-		cells: new Map<string, T[]>(),
-	};
+function createBuckets<T>(cellSize: number): MutableBuckets<T> {
+	return { cellSize, cells: new Map<string, T[]>() };
 }
 
 function addToBuckets<T extends { readonly direction: Vec3 }>(
@@ -150,6 +160,14 @@ function addToBuckets<T extends { readonly direction: Vec3 }>(
 	} else {
 		cell.push(value);
 	}
+}
+
+function bucketValueCount<T>(buckets: SpatialBuckets<T>): number {
+	let count = 0;
+	for (const values of buckets.cells.values()) {
+		count += values.length;
+	}
+	return count;
 }
 
 function forEachNearby<T>(
@@ -183,177 +201,6 @@ function forEachNearby<T>(
 	}
 }
 
-function continentNodeRadius(
-	nodeCount: number,
-	memberCount: number,
-	capRadius: number,
-): number {
-	const globalSpacing = Math.sqrt(
-		(4 * Math.PI) / Math.max(1, nodeCount),
-	);
-	const capArea =
-		2 * Math.PI * (1 - Math.cos(Math.min(Math.PI, capRadius)));
-	const localSpacing = Math.sqrt(
-		capArea / Math.max(1, memberCount),
-	);
-	return clamp(
-		Math.max(globalSpacing * 0.4, localSpacing * 0.72),
-		MIN_NODE_SUPPORT_RADIUS,
-		MAX_NODE_SUPPORT_RADIUS,
-	);
-}
-
-function continentMemberExtent(
-	geography: RenderGeography,
-	positions: Float32Array,
-	continentIndex: number,
-): number {
-	const continent = geography.continents[continentIndex];
-	if (continent === undefined) {
-		return MIN_NODE_SUPPORT_RADIUS;
-	}
-	const distances = continent.nodeIndices
-		.filter(
-			(nodeIndex) =>
-				Number.isSafeInteger(nodeIndex) &&
-				nodeIndex >= 0 &&
-				nodeIndex * 3 + 2 < positions.length,
-		)
-		.map((nodeIndex) =>
-			geodesicDistance(
-				continent.center,
-				normalizeVec3(readVec3(positions, nodeIndex)),
-			),
-		)
-		.sort((left, right) => left - right);
-	if (distances.length === 0) {
-		return Math.max(MIN_NODE_SUPPORT_RADIUS, continent.capRadius);
-	}
-	const percentileIndex = Math.min(
-		distances.length - 1,
-		Math.floor((distances.length - 1) * 0.92),
-	);
-	return Math.max(
-		MIN_NODE_SUPPORT_RADIUS,
-		distances[percentileIndex] ?? continent.capRadius,
-	);
-}
-
-function anchorOuterInfluence(
-	direction: Vec3,
-	owner: number,
-	memberExtents: readonly number[],
-	geography: RenderGeography,
-): number {
-	const continent = geography.continents[owner];
-	const extent = memberExtents[owner];
-	if (continent === undefined || extent === undefined || extent <= 0) {
-		return 0;
-	}
-	return smoothstep(
-		0.44,
-		0.88,
-		geodesicDistance(direction, continent.center) / extent,
-	);
-}
-
-function createOwnerCoastProfile(
-	center: Vec3,
-	owner: number,
-	seed: number,
-): OwnerCoastProfile {
-	const profileSeed = hashNumbers(seed, owner, 0xc0457);
-	const tangentX = orthogonalUnitVec3(center, profileSeed);
-	return {
-		center: normalizeVec3(center),
-		tangentX,
-		tangentY: normalizeVec3(crossVec3(center, tangentX)),
-		phases: [
-			hashToSignedUnitFloat(profileSeed, 1) * Math.PI,
-			hashToSignedUnitFloat(profileSeed, 2) * Math.PI,
-			hashToSignedUnitFloat(profileSeed, 3) * Math.PI,
-			hashToSignedUnitFloat(profileSeed, 5) * Math.PI,
-			hashToSignedUnitFloat(profileSeed, 8) * Math.PI,
-			hashToSignedUnitFloat(profileSeed, 13) * Math.PI,
-		],
-	};
-}
-
-/**
- * One continuous field deforms every support kernel belonging to an owner.
- * Low harmonics make the whole landmass asymmetric; successively smaller
- * harmonics add capes, bays, and fine inlets without moving graph nodes.
- */
-function coastScale(
-	point: Vec3,
-	anchor: SupportAnchor,
-	model: LandSupportModel,
-): number {
-	const profile = model.ownerCoastProfiles[anchor.owner];
-	if (profile === undefined) {
-		return 1;
-	}
-	const azimuth = Math.atan2(
-		dotVec3(point, profile.tangentY),
-		dotVec3(point, profile.tangentX),
-	);
-	const [phase1, phase2, phase3, phase5, phase11, phase23] =
-		profile.phases;
-	const broad =
-		Math.sin(azimuth + phase1) * 0.14 +
-		Math.sin(azimuth * 2 + phase2) * 0.145 +
-		Math.sin(azimuth * 3 + phase3) * 0.075;
-	const detail =
-		Math.sin(azimuth * 5 + phase5) * 0.052 +
-		Math.sin(azimuth * 11 + phase11) * 0.034 +
-		Math.sin(azimuth * 23 + phase23) * 0.021 +
-		Math.sin(azimuth * 47 + phase1 * 1.7 - phase11) * 0.012 +
-		Math.sin(azimuth * 89 - phase2 * 0.6 + phase23) * 0.006;
-	const micro =
-		Math.sin(
-			point[0] * 47.3 -
-				point[1] * 61.7 +
-				point[2] * 53.9 +
-				phase11,
-		) *
-			0.017 +
-		Math.sin(
-			point[0] * 91.1 +
-				point[1] * 73.3 -
-				point[2] * 87.7 -
-				phase23,
-		) *
-			0.009;
-	return clamp(
-		1 + anchor.outerInfluence * (0.035 + broad + detail + micro),
-		MIN_COAST_SCALE,
-		MAX_COAST_SCALE,
-	);
-}
-
-function anchorDirectionalScale(
-	point: Vec3,
-	anchor: SupportAnchor,
-): number {
-	const projected = projectTangentVec3(anchor.direction, point);
-	const magnitude = lengthVec3(projected);
-	if (magnitude <= 1e-9) {
-		return 1;
-	}
-	const inverseMagnitude = 1 / magnitude;
-	const cosine =
-		dotVec3(projected, anchor.tangentX) * inverseMagnitude;
-	const sine =
-		dotVec3(projected, anchor.tangentY) * inverseMagnitude;
-	return 1 /
-		Math.sqrt(
-			(cosine * cosine) /
-				(anchor.majorScale * anchor.majorScale) +
-			(sine * sine) /
-				(anchor.minorScale * anchor.minorScale),
-		);
-}
-
 function semanticAssignments(
 	geography: RenderGeography,
 	nodeCount: number,
@@ -361,21 +208,18 @@ function semanticAssignments(
 	const assignments = new Int32Array(nodeCount);
 	assignments.fill(-2);
 	for (
-		let continentIndex = 0;
-		continentIndex < geography.continents.length;
-		continentIndex += 1
+		let owner = 0;
+		owner < geography.continents.length;
+		owner += 1
 	) {
-		for (
-			const nodeIndex of
-			geography.continents[continentIndex]?.nodeIndices ?? []
-		) {
+		for (const nodeIndex of geography.continents[owner]?.nodeIndices ?? []) {
 			if (
 				Number.isSafeInteger(nodeIndex) &&
 				nodeIndex >= 0 &&
 				nodeIndex < nodeCount &&
 				assignments[nodeIndex] === -2
 			) {
-				assignments[nodeIndex] = continentIndex;
+				assignments[nodeIndex] = owner;
 			}
 		}
 	}
@@ -392,16 +236,845 @@ function semanticAssignments(
 	return assignments;
 }
 
-function edgeAnchorKey(
-	direction: Vec3,
-	owner: number,
-): string {
-	const resolution = SUPPORT_CELL_SIZE * 0.55;
-	return `${owner}|${Math.round(direction[0] / resolution)}|${Math.round(direction[1] / resolution)}|${Math.round(direction[2] / resolution)}`;
+function median(values: readonly number[]): number {
+	if (values.length === 0) {
+		return 0;
+	}
+	const sorted = [...values].sort((left, right) => left - right);
+	const middle = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 0
+		? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
+		: (sorted[middle] ?? 0);
 }
 
-function territoryEdgeWeight(weight: number): number {
-	return Math.min(4, 0.75 + Math.log1p(Math.max(0, weight)));
+function ownerMemberDirections(
+	geography: RenderGeography,
+	positions: Float32Array,
+): readonly (readonly {
+	readonly nodeIndex: number;
+	readonly direction: Vec3;
+}[])[] {
+	return geography.continents.map((continent) =>
+		continent.nodeIndices
+			.filter(
+				(nodeIndex) =>
+					Number.isSafeInteger(nodeIndex) &&
+					nodeIndex >= 0 &&
+					nodeIndex * 3 + 2 < positions.length,
+			)
+			.map((nodeIndex) => ({
+				nodeIndex,
+				direction: normalizeVec3(readVec3(positions, nodeIndex)),
+			})),
+	);
+}
+
+function adaptiveBandwidth(
+	direction: Vec3,
+	ownerMembers: readonly { readonly direction: Vec3 }[],
+): number {
+	if (ownerMembers.length <= 1) {
+		return SINGLE_NODE_BANDWIDTH;
+	}
+	const distances = ownerMembers
+		.map((member) => geodesicDistance(direction, member.direction))
+		.filter((distance) => distance > 1e-7)
+		.sort((left, right) => left - right);
+	if (distances.length === 0) {
+		return SINGLE_NODE_BANDWIDTH;
+	}
+	if (ownerMembers.length === 2) {
+		return clamp(
+			(distances[0] ?? 0.35) * 0.22,
+			0.068,
+			0.085,
+		);
+	}
+	const retained = distances.slice(0, Math.min(4, distances.length));
+	return clamp(
+		median(retained) * 0.62,
+		MIN_NODE_BANDWIDTH,
+		MAX_NODE_BANDWIDTH,
+	);
+}
+
+function createMemberAnchors(
+	geography: RenderGeography,
+	positions: Float32Array,
+	seed: number,
+): {
+	readonly members: MutableBuckets<MemberNode>;
+	readonly anchors: MutableBuckets<DensityAnchor>;
+	readonly bandwidthByNode: Float64Array;
+} {
+	const ownerMembers = ownerMemberDirections(geography, positions);
+	const members = createBuckets<MemberNode>(DENSITY_BUCKET_CELL_SIZE);
+	const anchors = createBuckets<DensityAnchor>(DENSITY_BUCKET_CELL_SIZE);
+	const bandwidthByNode = new Float64Array(positions.length / 3);
+	for (let owner = 0; owner < ownerMembers.length; owner += 1) {
+		const entries = ownerMembers[owner] ?? [];
+		for (const entry of entries) {
+			const baseBandwidth = adaptiveBandwidth(entry.direction, entries);
+			const variation =
+				0.99 +
+				hashToSignedUnitFloat(seed, owner, entry.nodeIndex, 0xb4ad) *
+					0.11;
+			const bandwidth = clamp(
+				baseBandwidth * variation,
+				MIN_NODE_BANDWIDTH,
+				MAX_NODE_BANDWIDTH,
+			);
+			bandwidthByNode[entry.nodeIndex] = bandwidth;
+			const guaranteeRadius = Math.min(
+				MEMBER_GUARANTEE_MAX_RADIUS,
+				bandwidth * 0.3,
+			);
+			addToBuckets(members, {
+				direction: entry.direction,
+				owner,
+				nodeIndex: entry.nodeIndex,
+				bandwidth,
+				guaranteeRadius,
+			});
+			addToBuckets(anchors, {
+				direction: entry.direction,
+				owner,
+				fineSupport: bandwidth * 2.2,
+				coarseSupport: bandwidth * 4.15,
+				fineWeight:
+					1 +
+					hashToSignedUnitFloat(
+						seed,
+						owner,
+						entry.nodeIndex,
+						0xf17e,
+					) *
+						0.08,
+				coarseWeight: entries.length >= 5 ? 0.04 : 0,
+			});
+		}
+	}
+	return { members, anchors, bandwidthByNode };
+}
+
+function sameOwnerNeighborSets(
+	nodeCount: number,
+	assignments: Int32Array,
+	edges: readonly RenderEdge[],
+): readonly ReadonlySet<number>[] {
+	const neighbors = Array.from(
+		{ length: nodeCount },
+		() => new Set<number>(),
+	);
+	for (const edge of edges) {
+		const owner = assignments[edge.source] ?? -2;
+		if (
+			owner < 0 ||
+			edge.source < 0 ||
+			edge.target < 0 ||
+			edge.source >= nodeCount ||
+			edge.target >= nodeCount ||
+			(assignments[edge.target] ?? -2) !== owner
+		) {
+			continue;
+		}
+		neighbors[edge.source]?.add(edge.target);
+		neighbors[edge.target]?.add(edge.source);
+	}
+	return neighbors;
+}
+
+function commonNeighborCount(
+	left: ReadonlySet<number>,
+	right: ReadonlySet<number>,
+): number {
+	const smaller = left.size <= right.size ? left : right;
+	const larger = left.size <= right.size ? right : left;
+	let count = 0;
+	for (const value of smaller) {
+		if (larger.has(value)) {
+			count += 1;
+		}
+	}
+	return count;
+}
+
+function addTrustedEdgeAnchors(
+	anchors: MutableBuckets<DensityAnchor>,
+	positions: Float32Array,
+	edges: readonly RenderEdge[],
+	assignments: Int32Array,
+	bandwidthByNode: Float64Array,
+	seed: number,
+): void {
+	const nodeCount = positions.length / 3;
+	const neighbors = sameOwnerNeighborSets(nodeCount, assignments, edges);
+	const deduplicated = new Set<string>();
+	for (const edge of edges) {
+		const owner = assignments[edge.source] ?? -2;
+		if (
+			owner < 0 ||
+			edge.source < 0 ||
+			edge.target < 0 ||
+			edge.source >= nodeCount ||
+			edge.target >= nodeCount ||
+			(assignments[edge.target] ?? -2) !== owner
+		) {
+			continue;
+		}
+		const start = normalizeVec3(readVec3(positions, edge.source));
+		const end = normalizeVec3(readVec3(positions, edge.target));
+		const angle = geodesicDistance(start, end);
+		if (angle <= 1e-7 || angle > MAX_TRUSTED_EDGE_ANGLE) {
+			continue;
+		}
+		const sourceNeighbors = neighbors[edge.source] ?? new Set<number>();
+		const targetNeighbors = neighbors[edge.target] ?? new Set<number>();
+		if (
+			angle > SUSPICIOUS_BRIDGE_ANGLE &&
+			sourceNeighbors.size > 1 &&
+			targetNeighbors.size > 1 &&
+			commonNeighborCount(sourceNeighbors, targetNeighbors) === 0
+		) {
+			continue;
+		}
+		const sourceBandwidth =
+			bandwidthByNode[edge.source] || MIN_NODE_BANDWIDTH;
+		const targetBandwidth =
+			bandwidthByNode[edge.target] || MIN_NODE_BANDWIDTH;
+		const support = clamp(
+			Math.min(sourceBandwidth, targetBandwidth) * 0.82,
+			MIN_EDGE_SUPPORT,
+			MAX_EDGE_SUPPORT,
+		);
+		const segmentCount = Math.max(
+			2,
+			Math.ceil(angle / Math.max(0.018, support * 0.45)),
+		);
+		const samples = sampleGeodesicArc(
+			start,
+			end,
+			segmentCount,
+			1,
+			String(edge.source),
+			String(edge.target),
+		);
+		for (let sampleIndex = 1; sampleIndex + 1 < samples.length; sampleIndex += 1) {
+			const direction = samples[sampleIndex];
+			if (direction === undefined) {
+				continue;
+			}
+			const key = `${owner}|${Math.round(direction[0] / 0.035)}|${Math.round(direction[1] / 0.035)}|${Math.round(direction[2] / 0.035)}`;
+			if (deduplicated.has(key)) {
+				continue;
+			}
+			deduplicated.add(key);
+			addToBuckets(anchors, {
+				direction,
+				owner,
+				fineSupport: support,
+				coarseSupport: support,
+				fineWeight: clamp(
+					0.82 + Math.log1p(Math.max(0, edge.weight)) * 0.08,
+					0.82,
+					1.05,
+				),
+				coarseWeight: 0,
+			});
+		}
+	}
+	void seed;
+}
+
+function createWaterSeeds(
+	positions: Float32Array,
+	edges: readonly RenderEdge[],
+	assignments: Int32Array,
+): MutableBuckets<WaterSeed> {
+	const nodeCount = positions.length / 3;
+	const freeNeighborCounts = new Uint16Array(nodeCount);
+	const freeWeights = new Float64Array(nodeCount);
+	const continentWeights = new Float64Array(nodeCount);
+	for (const edge of edges) {
+		if (
+			edge.source < 0 ||
+			edge.target < 0 ||
+			edge.source >= nodeCount ||
+			edge.target >= nodeCount
+		) {
+			continue;
+		}
+		const sourceOwner = assignments[edge.source] ?? -2;
+		const targetOwner = assignments[edge.target] ?? -2;
+		const weight = Math.min(
+			4,
+			0.75 + Math.log1p(Math.max(0, edge.weight)),
+		);
+		if (sourceOwner === -1 && targetOwner === -1) {
+			const angle = geodesicDistance(
+				normalizeVec3(readVec3(positions, edge.source)),
+				normalizeVec3(readVec3(positions, edge.target)),
+			);
+			if (angle > MAX_TRUSTED_EDGE_ANGLE) {
+				continue;
+			}
+			freeNeighborCounts[edge.source] =
+				(freeNeighborCounts[edge.source] ?? 0) + 1;
+			freeNeighborCounts[edge.target] =
+				(freeNeighborCounts[edge.target] ?? 0) + 1;
+			freeWeights[edge.source] =
+				(freeWeights[edge.source] ?? 0) + weight;
+			freeWeights[edge.target] =
+				(freeWeights[edge.target] ?? 0) + weight;
+		} else if (sourceOwner === -1 && targetOwner >= 0) {
+			continentWeights[edge.source] =
+				(continentWeights[edge.source] ?? 0) + weight;
+		} else if (targetOwner === -1 && sourceOwner >= 0) {
+			continentWeights[edge.target] =
+				(continentWeights[edge.target] ?? 0) + weight;
+		}
+	}
+	const seeds = createBuckets<WaterSeed>(DENSITY_BUCKET_CELL_SIZE);
+	for (let nodeIndex = 0; nodeIndex < nodeCount; nodeIndex += 1) {
+		if (
+			(assignments[nodeIndex] ?? -2) === -1 &&
+			(freeNeighborCounts[nodeIndex] ?? 0) >= 2 &&
+			(freeWeights[nodeIndex] ?? 0) >=
+				(continentWeights[nodeIndex] ?? 0)
+		) {
+			addToBuckets(seeds, {
+				direction: normalizeVec3(readVec3(positions, nodeIndex)),
+			});
+		}
+	}
+	return seeds;
+}
+
+function compactKernelFromChordSquared(
+	chordSquared: number,
+	supportChordSquared: number,
+): number {
+	if (
+		supportChordSquared <= 0 ||
+		chordSquared >= supportChordSquared
+	) {
+		return 0;
+	}
+	const ratio = chordSquared / supportChordSquared;
+	return (1 - ratio) ** 3;
+}
+
+function supportChordSquared(supportAngle: number): number {
+	const chord = 2 * Math.sin(Math.min(Math.PI, supportAngle) / 2);
+	return chord * chord;
+}
+
+function maximumAnchorSupport(
+	anchors: SpatialBuckets<DensityAnchor>,
+): number {
+	let maximum = MIN_NODE_BANDWIDTH * 2.2;
+	for (const values of anchors.cells.values()) {
+		for (const anchor of values) {
+			maximum = Math.max(
+				maximum,
+				anchor.fineSupport,
+				anchor.coarseSupport,
+			);
+		}
+	}
+	return maximum;
+}
+
+function densityFields(
+	grid: IntrinsicSphericalGrid,
+	ownerCount: number,
+	anchors: SpatialBuckets<DensityAnchor>,
+	maximumSupport: number,
+): {
+	readonly byOwner: readonly Float32Array[];
+	readonly best: Float32Array;
+	readonly second: Float32Array;
+	readonly bestOwner: Int32Array;
+	readonly rasterPoints: SpatialBuckets<RasterPoint>;
+} {
+	const byOwner = Array.from(
+		{ length: ownerCount },
+		() => new Float32Array(grid.vertices.length),
+	);
+	const best = new Float32Array(grid.vertices.length);
+	const second = new Float32Array(grid.vertices.length);
+	const bestOwner = new Int32Array(grid.vertices.length);
+	bestOwner.fill(-1);
+	const rasterPoints = createRasterPointBuckets(grid);
+	for (const values of anchors.cells.values()) {
+		for (const anchor of values) {
+			const field = byOwner[anchor.owner];
+			if (field === undefined) {
+				continue;
+			}
+			const fineChordSquared = supportChordSquared(
+				anchor.fineSupport,
+			);
+			const coarseChordSquared = supportChordSquared(
+				anchor.coarseSupport,
+			);
+			forEachNearby(
+				rasterPoints,
+				anchor.direction,
+				Math.min(maximumSupport, anchor.coarseSupport),
+				(candidate) => {
+					const chordSquared = Math.max(
+						0,
+						2 *
+							(1 -
+								clamp(
+									dotVec3(
+										anchor.direction,
+										candidate.direction,
+									),
+									-1,
+									1,
+								)),
+					);
+					const contribution =
+						compactKernelFromChordSquared(
+							chordSquared,
+							fineChordSquared,
+						) *
+							anchor.fineWeight +
+						compactKernelFromChordSquared(
+							chordSquared,
+							coarseChordSquared,
+						) *
+							anchor.coarseWeight;
+					if (contribution > 0) {
+						field[candidate.index] =
+							(field[candidate.index] ?? 0) + contribution;
+					}
+				},
+			);
+		}
+	}
+	for (let cell = 0; cell < grid.vertices.length; cell += 1) {
+		let winner = -1;
+		let winnerDensity = 0;
+		let runnerUp = 0;
+		for (let owner = 0; owner < byOwner.length; owner += 1) {
+			const value = byOwner[owner]?.[cell] ?? 0;
+			if (value > winnerDensity) {
+				runnerUp = winnerDensity;
+				winnerDensity = value;
+				winner = owner;
+			} else if (value > runnerUp) {
+				runnerUp = value;
+			}
+		}
+		best[cell] = winnerDensity;
+		second[cell] = runnerUp;
+		bestOwner[cell] = winner;
+	}
+	return {
+		byOwner,
+		best,
+		second,
+		bestOwner,
+		rasterPoints,
+	};
+}
+
+function hasNearbyWaterSeed(
+	point: Vec3,
+	seeds: SpatialBuckets<WaterSeed>,
+): boolean {
+	let found = false;
+	forEachNearby(seeds, point, WATER_SEED_RADIUS, (seed) => {
+		if (
+			!found &&
+			geodesicDistance(point, seed.direction) <= WATER_SEED_RADIUS
+		) {
+			found = true;
+		}
+	});
+	return found;
+}
+
+function forcedOwnersByCell(
+	grid: IntrinsicSphericalGrid,
+	positions: Float32Array,
+	assignments: Int32Array,
+	densities: readonly Float32Array[],
+): Int32Array {
+	const nodeCells = mapPositionsToGrid(grid, positions);
+	const forced = new Int32Array(grid.vertices.length);
+	forced.fill(-1);
+	for (let nodeIndex = 0; nodeIndex < nodeCells.length; nodeIndex += 1) {
+		const owner = assignments[nodeIndex] ?? -2;
+		const cell = nodeCells[nodeIndex] ?? -1;
+		if (owner < 0 || cell < 0) {
+			continue;
+		}
+		const previous = forced[cell] ?? -1;
+		if (
+			previous < 0 ||
+			(densities[owner]?.[cell] ?? 0) >
+				(densities[previous]?.[cell] ?? 0)
+		) {
+			forced[cell] = owner;
+		}
+	}
+	return forced;
+}
+
+function growLandOwners(
+	grid: IntrinsicSphericalGrid,
+	fields: ReturnType<typeof densityFields>,
+	forced: Int32Array,
+	waterSeeds: SpatialBuckets<WaterSeed>,
+): {
+	readonly owners: Int32Array;
+	readonly waterLocks: Uint8Array;
+} {
+	const candidates = new Int32Array(grid.vertices.length);
+	const owners = new Int32Array(grid.vertices.length);
+	const waterLocks = new Uint8Array(grid.vertices.length);
+	candidates.fill(-1);
+	owners.fill(-1);
+	const queue: number[] = [];
+	for (let cell = 0; cell < grid.vertices.length; cell += 1) {
+		const point = grid.vertices[cell];
+		const forcedOwner = forced[cell] ?? -1;
+		if (point === undefined) {
+			continue;
+		}
+		const locked =
+			forcedOwner < 0 && hasNearbyWaterSeed(point, waterSeeds);
+		if (locked) {
+			waterLocks[cell] = 1;
+			continue;
+		}
+		const bestOwner = fields.bestOwner[cell] ?? -1;
+		const best = fields.best[cell] ?? 0;
+		const second = fields.second[cell] ?? 0;
+		const dominance = Math.max(
+			OWNER_DOMINANCE_FLOOR,
+			best * OWNER_DOMINANCE_RATIO,
+		);
+		const candidate =
+			forcedOwner >= 0
+				? forcedOwner
+				: bestOwner >= 0 &&
+					  best >= LOW_LAND_DENSITY &&
+					  best - second >= dominance
+					? bestOwner
+					: -1;
+		candidates[cell] = candidate;
+		if (
+			candidate >= 0 &&
+			(forcedOwner >= 0 || best >= HIGH_LAND_DENSITY)
+		) {
+			owners[cell] = candidate;
+			queue.push(cell);
+		}
+	}
+	for (let cursor = 0; cursor < queue.length; cursor += 1) {
+		const cell = queue[cursor];
+		if (cell === undefined) {
+			continue;
+		}
+		const owner = owners[cell] ?? -1;
+		for (const neighbor of grid.neighbors[cell] ?? []) {
+			if (
+				(owners[neighbor] ?? -1) < 0 &&
+				(candidates[neighbor] ?? -1) === owner
+			) {
+				owners[neighbor] = owner;
+				queue.push(neighbor);
+			}
+		}
+	}
+	const separated = owners.slice();
+	for (let cell = 0; cell < owners.length; cell += 1) {
+		const owner = owners[cell] ?? -1;
+		if (owner < 0 || (forced[cell] ?? -1) >= 0) {
+			continue;
+		}
+		if (
+			(grid.neighbors[cell] ?? []).some((neighbor) => {
+				const neighborOwner = owners[neighbor] ?? -1;
+				return neighborOwner >= 0 && neighborOwner !== owner;
+			})
+		) {
+			separated[cell] = -1;
+		}
+	}
+	return { owners: separated, waterLocks };
+}
+
+function seaComponents(
+	grid: IntrinsicSphericalGrid,
+	owners: Int32Array,
+	waterLocks: Uint8Array,
+): SeaComponent[] {
+	const seen = new Uint8Array(grid.vertices.length);
+	const components: SeaComponent[] = [];
+	for (let start = 0; start < owners.length; start += 1) {
+		if (seen[start] === 1 || (owners[start] ?? -1) >= 0) {
+			continue;
+		}
+		const cells: number[] = [];
+		const boundaryOwners = new Set<number>();
+		let containsWaterSeed = false;
+		const queue = [start];
+		seen[start] = 1;
+		for (let cursor = 0; cursor < queue.length; cursor += 1) {
+			const cell = queue[cursor];
+			if (cell === undefined) {
+				continue;
+			}
+			cells.push(cell);
+			containsWaterSeed ||= waterLocks[cell] === 1;
+			for (const neighbor of grid.neighbors[cell] ?? []) {
+				const neighborOwner = owners[neighbor] ?? -1;
+				if (neighborOwner < 0) {
+					if (seen[neighbor] === 0) {
+						seen[neighbor] = 1;
+						queue.push(neighbor);
+					}
+				} else {
+					boundaryOwners.add(neighborOwner);
+				}
+			}
+		}
+		components.push({ cells, boundaryOwners, containsWaterSeed });
+	}
+	return components;
+}
+
+function deepestSeaCell(
+	components: readonly SeaComponent[],
+	bestDensity: Float32Array,
+): number {
+	let bestCell = -1;
+	let lowestDensity = Number.POSITIVE_INFINITY;
+	for (const component of components) {
+		for (const cell of component.cells) {
+			const density = bestDensity[cell] ?? 0;
+			if (
+				density < lowestDensity - 1e-12 ||
+				(Math.abs(density - lowestDensity) <= 1e-12 &&
+					cell < bestCell)
+			) {
+				lowestDensity = density;
+				bestCell = cell;
+			}
+		}
+	}
+	return bestCell;
+}
+
+function fillEnclosedHoles(
+	grid: IntrinsicSphericalGrid,
+	owners: Int32Array,
+	waterLocks: Uint8Array,
+	bestDensity: Float32Array,
+): Uint8Array {
+	let components = seaComponents(grid, owners, waterLocks);
+	if (components.length === 0) {
+		const deepest = [...bestDensity]
+			.map((density, cell) => ({ density, cell }))
+			.sort(
+				(left, right) =>
+					left.density - right.density || left.cell - right.cell,
+			)[0]?.cell;
+		if (deepest !== undefined) {
+			owners[deepest] = -1;
+		}
+		components = seaComponents(grid, owners, waterLocks);
+	}
+	const deepest = deepestSeaCell(components, bestDensity);
+	const global = components.find((component) =>
+		component.cells.includes(deepest),
+	);
+	for (const component of components) {
+		if (
+			component === global ||
+			component.containsWaterSeed ||
+			component.boundaryOwners.size !== 1
+		) {
+			continue;
+		}
+		const owner = component.boundaryOwners.values().next().value;
+		if (owner === undefined) {
+			continue;
+		}
+		for (const cell of component.cells) {
+			owners[cell] = owner;
+		}
+	}
+	components = seaComponents(grid, owners, waterLocks);
+	const connectedOcean = new Uint8Array(grid.vertices.length);
+	const finalDeepest = deepestSeaCell(components, bestDensity);
+	const finalGlobal =
+		components.find((component) =>
+			component.cells.includes(finalDeepest),
+		) ??
+		[...components].sort(
+			(left, right) =>
+				right.cells.length - left.cells.length ||
+				(left.cells[0] ?? 0) - (right.cells[0] ?? 0),
+		)[0];
+	for (const cell of finalGlobal?.cells ?? []) {
+		connectedOcean[cell] = 1;
+	}
+	return connectedOcean;
+}
+
+function createRasterPointBuckets(
+	grid: IntrinsicSphericalGrid,
+): MutableBuckets<RasterPoint> {
+	const buckets = createBuckets<RasterPoint>(RASTER_BUCKET_CELL_SIZE);
+	for (let index = 0; index < grid.vertices.length; index += 1) {
+		const direction = grid.vertices[index];
+		if (direction !== undefined) {
+			addToBuckets(buckets, { direction, index });
+		}
+	}
+	return buckets;
+}
+
+function boundarySamples(
+	grid: IntrinsicSphericalGrid,
+	owners: Int32Array,
+	connectedOcean: Uint8Array,
+): readonly BoundarySample[] {
+	const samples = new Map<string, BoundarySample>();
+	for (let cell = 0; cell < owners.length; cell += 1) {
+		const owner = owners[cell] ?? -1;
+		const direction = grid.vertices[cell];
+		if (owner < 0 || direction === undefined) {
+			continue;
+		}
+		for (const neighbor of grid.neighbors[cell] ?? []) {
+			const other = grid.vertices[neighbor];
+			if (connectedOcean[neighbor] !== 1 || other === undefined) {
+				continue;
+			}
+			const midpoint = normalizeVec3([
+				direction[0] + other[0],
+				direction[1] + other[1],
+				direction[2] + other[2],
+			]);
+			const key = `${owner}|${Math.round(midpoint[0] * 2000)}|${Math.round(midpoint[1] * 2000)}|${Math.round(midpoint[2] * 2000)}`;
+			samples.set(key, { direction: midpoint, owner });
+		}
+	}
+	return [...samples.values()].sort(
+		(left, right) =>
+			left.owner - right.owner ||
+			left.direction[0] - right.direction[0] ||
+			left.direction[1] - right.direction[1] ||
+			left.direction[2] - right.direction[2],
+	);
+}
+
+function connectedOceanBoundaryBand(
+	grid: IntrinsicSphericalGrid,
+	owners: Int32Array,
+	connectedOcean: Uint8Array,
+): Uint8Array {
+	let band = new Uint8Array(grid.vertices.length);
+	for (let cell = 0; cell < owners.length; cell += 1) {
+		const owner = owners[cell] ?? -1;
+		for (const neighbor of grid.neighbors[cell] ?? []) {
+			const neighborOwner = owners[neighbor] ?? -1;
+			if (
+				(owner >= 0 && connectedOcean[neighbor] === 1) ||
+				(connectedOcean[cell] === 1 && neighborOwner >= 0)
+			) {
+				band[cell] = 1;
+				band[neighbor] = 1;
+			}
+		}
+	}
+	for (let expansion = 0; expansion < 2; expansion += 1) {
+		const expanded = band.slice();
+		for (let cell = 0; cell < band.length; cell += 1) {
+			if (band[cell] !== 1) {
+				continue;
+			}
+			for (const neighbor of grid.neighbors[cell] ?? []) {
+				expanded[neighbor] = 1;
+			}
+		}
+		band = expanded;
+	}
+	return band;
+}
+
+function buildLandRaster(
+	geography: RenderGeography,
+	positions: Float32Array,
+	assignments: Int32Array,
+	anchors: SpatialBuckets<DensityAnchor>,
+	waterSeeds: SpatialBuckets<WaterSeed>,
+	maximumSupport: number,
+): LandRaster {
+	const memberCount = geography.continents.reduce(
+		(total, continent) => total + continent.nodeIndices.length,
+		0,
+	);
+	const effectiveSamples = Math.max(64, memberCount * 4);
+	const spacing = Math.sqrt((4 * Math.PI) / effectiveSamples);
+	const subdivision = Math.max(
+		4,
+		gridSubdivisionForSpacing(spacing * 0.65),
+	);
+	const grid = createIntrinsicSphericalGrid(subdivision);
+	const fields = densityFields(
+		grid,
+		geography.continents.length,
+		anchors,
+		maximumSupport,
+	);
+	const forced = forcedOwnersByCell(
+		grid,
+		positions,
+		assignments,
+		fields.byOwner,
+	);
+	const growth = growLandOwners(grid, fields, forced, waterSeeds);
+	const connectedOcean = fillEnclosedHoles(
+		grid,
+		growth.owners,
+		growth.waterLocks,
+		fields.best,
+	);
+	const boundaries = boundarySamples(
+		grid,
+		growth.owners,
+		connectedOcean,
+	);
+	const boundaryBand = connectedOceanBoundaryBand(
+		grid,
+		growth.owners,
+		connectedOcean,
+	);
+	const boundaryBuckets = createBuckets<BoundarySample>(
+		BOUNDARY_BUCKET_CELL_SIZE,
+	);
+	for (const boundary of boundaries) {
+		addToBuckets(boundaryBuckets, boundary);
+	}
+	return {
+		grid,
+		ownerByCell: growth.owners,
+		connectedOcean,
+		boundaryBand,
+		bestDensity: fields.best,
+		rasterPoints: fields.rasterPoints,
+		boundaries,
+		boundaryBuckets,
+	};
 }
 
 export function createLandSupportModel(
@@ -415,357 +1088,248 @@ export function createLandSupportModel(
 			'Land support positions must contain complete vectors.',
 		);
 	}
-	const nodeCount = positions.length / 3;
 	const modelSeed = hashNumbers(seed, 0x1a4d);
-	const assignments = semanticAssignments(geography, nodeCount);
-	const anchors = createBuckets<SupportAnchor>();
-	const territoryNodes = createBuckets<TerritoryNode>();
-	const memberExtents = geography.continents.map((_, continentIndex) =>
-		continentMemberExtent(geography, positions, continentIndex),
+	const assignments = semanticAssignments(
+		geography,
+		positions.length / 3,
 	);
-	const ownerCoastProfiles = geography.continents.map(
-		(continent, owner) =>
-			createOwnerCoastProfile(continent.center, owner, modelSeed),
+	const created = createMemberAnchors(
+		geography,
+		positions,
+		modelSeed,
 	);
-	const radiusByContinent = geography.continents.map((continent) =>
-		continentNodeRadius(
-			Math.max(
-				1,
-				geography.continents.reduce(
-					(total, entry) => total + entry.nodeIndices.length,
-					geography.islandNodeIndices.length,
-				),
-			),
-			continent.nodeIndices.length,
-			continent.capRadius,
-		),
+	addTrustedEdgeAnchors(
+		created.anchors,
+		positions,
+		edges,
+		assignments,
+		created.bandwidthByNode,
+		modelSeed,
 	);
-	let maximumSupportRadius = MIN_NODE_SUPPORT_RADIUS;
-	const freeNeighborCounts = new Uint16Array(nodeCount);
-	const freeNeighborWeights = new Float64Array(nodeCount);
-	const continentNeighborWeights = new Float64Array(nodeCount);
-	const preferredAxes = new Array<Vec3 | undefined>(nodeCount);
-	const preferredAxisScores = new Float64Array(nodeCount);
-	for (const edge of edges) {
-		if (
-			edge.source < 0 ||
-			edge.target < 0 ||
-			edge.source >= nodeCount ||
-			edge.target >= nodeCount
-		) {
-			continue;
-		}
-		const sourceOwner = assignments[edge.source] ?? -2;
-		const targetOwner = assignments[edge.target] ?? -2;
-		const weight = territoryEdgeWeight(edge.weight);
-		if (sourceOwner >= 0 && targetOwner === sourceOwner) {
-			const source = normalizeVec3(readVec3(positions, edge.source));
-			const target = normalizeVec3(readVec3(positions, edge.target));
-			const angle = geodesicDistance(source, target);
-			if (angle > 1e-7) {
-				const score = weight * Math.min(MAX_BRIDGED_EDGE_ANGLE, angle);
-				if (score > (preferredAxisScores[edge.source] ?? 0)) {
-					preferredAxisScores[edge.source] = score;
-					preferredAxes[edge.source] = tangentDirection(
-						source,
-						target,
-						edge.source,
-					);
-				}
-				if (score > (preferredAxisScores[edge.target] ?? 0)) {
-					preferredAxisScores[edge.target] = score;
-					preferredAxes[edge.target] = tangentDirection(
-						target,
-						source,
-						edge.target,
-					);
-				}
-			}
-		}
-		if (sourceOwner === -1 && targetOwner === -1) {
-			const source = normalizeVec3(readVec3(positions, edge.source));
-			const target = normalizeVec3(readVec3(positions, edge.target));
-			if (
-				geodesicDistance(source, target) >
-				COHERENT_FREE_EDGE_MAX_ANGLE
-			) {
-				continue;
-			}
-			freeNeighborCounts[edge.source] =
-				(freeNeighborCounts[edge.source] ?? 0) + 1;
-			freeNeighborCounts[edge.target] =
-				(freeNeighborCounts[edge.target] ?? 0) + 1;
-			freeNeighborWeights[edge.source] =
-				(freeNeighborWeights[edge.source] ?? 0) + weight;
-			freeNeighborWeights[edge.target] =
-				(freeNeighborWeights[edge.target] ?? 0) + weight;
-		} else if (sourceOwner === -1 && targetOwner >= 0) {
-			continentNeighborWeights[edge.source] =
-				(continentNeighborWeights[edge.source] ?? 0) + weight;
-		} else if (targetOwner === -1 && sourceOwner >= 0) {
-			continentNeighborWeights[edge.target] =
-				(continentNeighborWeights[edge.target] ?? 0) + weight;
-		}
-	}
-
-	for (let nodeIndex = 0; nodeIndex < nodeCount; nodeIndex += 1) {
-		const owner = assignments[nodeIndex] ?? -2;
-		if (owner < -1) {
-			continue;
-		}
-		const direction = normalizeVec3(readVec3(positions, nodeIndex));
-		const carvesLand =
-			owner >= 0 ||
-			((freeNeighborCounts[nodeIndex] ?? 0) >= 2 &&
-				(freeNeighborWeights[nodeIndex] ?? 0) >=
-					(continentNeighborWeights[nodeIndex] ?? 0));
-		addToBuckets(territoryNodes, {
-			direction,
-			owner,
-			carvesLand,
-		});
-		if (owner < 0) {
-			continue;
-		}
-		const radius =
-			radiusByContinent[owner] ?? MIN_NODE_SUPPORT_RADIUS;
-		const kernelSeed = hashNumbers(
-			modelSeed,
-			owner,
-			nodeIndex,
-			0xa11ce,
-		);
-		const outerInfluence = anchorOuterInfluence(
-			direction,
-			owner,
-			memberExtents,
-			geography,
-		);
-		const majorScale =
-			1 +
-			outerInfluence *
-				(0.18 +
-					(hashToSignedUnitFloat(kernelSeed, 1) + 1) * 0.1);
-		const minorScale =
-			1 -
-			outerInfluence *
-				(0.02 +
-					(hashToSignedUnitFloat(kernelSeed, 2) + 1) * 0.025);
-		const preferredAxis =
-			preferredAxes[nodeIndex] ??
-			orthogonalUnitVec3(direction, kernelSeed);
-		const preferredPerpendicular = normalizeVec3(
-			crossVec3(direction, preferredAxis),
-		);
-		const orientationOffset =
-			hashToSignedUnitFloat(kernelSeed, 3) * (Math.PI / 2);
-		const tangentX = normalizeVec3(
-			addVec3(
-				scaleVec3(preferredAxis, Math.cos(orientationOffset)),
-				scaleVec3(
-					preferredPerpendicular,
-					Math.sin(orientationOffset),
-				),
-			),
-		);
-		maximumSupportRadius = Math.max(maximumSupportRadius, radius);
-		addToBuckets(anchors, {
-			direction,
-			owner,
-			radius,
-			tangentX,
-			tangentY: normalizeVec3(crossVec3(direction, tangentX)),
-			majorScale,
-			minorScale,
-			outerInfluence,
-			maximumGrowth: maximumSupportGrowth(radius),
-		});
-	}
-
-	const edgeAnchors = new Map<string, SupportAnchor>();
-	for (const edge of edges) {
-		if (
-			edge.source < 0 ||
-			edge.target < 0 ||
-			edge.source >= nodeCount ||
-			edge.target >= nodeCount
-		) {
-			continue;
-		}
-		const owner = assignments[edge.source] ?? -2;
-		if (
-			owner < 0 ||
-			(assignments[edge.target] ?? -2) !== owner
-		) {
-			continue;
-		}
-		const start = normalizeVec3(readVec3(positions, edge.source));
-		const end = normalizeVec3(readVec3(positions, edge.target));
-		const angle = geodesicDistance(start, end);
-		if (angle <= 1e-7 || angle > MAX_BRIDGED_EDGE_ANGLE) {
-			continue;
-		}
-		const nodeRadius =
-			radiusByContinent[owner] ?? MIN_NODE_SUPPORT_RADIUS;
-		const radius = clamp(
-			nodeRadius * 0.64,
-			MIN_EDGE_SUPPORT_RADIUS,
-			MAX_EDGE_SUPPORT_RADIUS,
-		);
-		maximumSupportRadius = Math.max(maximumSupportRadius, radius);
-		const segments = Math.max(
-			2,
-			Math.ceil(angle / Math.max(0.025, radius * 0.78)),
-		);
-		const samples = sampleGeodesicArc(
-			start,
-			end,
-			segments,
-			1,
-			String(edge.source),
-			String(edge.target),
-		);
-		for (
-			let sampleIndex = 1;
-			sampleIndex + 1 < samples.length;
-			sampleIndex += 1
-		) {
-			const direction = samples[sampleIndex];
-			if (direction === undefined) {
-				continue;
-			}
-			const key = edgeAnchorKey(direction, owner);
-			const existing = edgeAnchors.get(key);
-			if (existing === undefined || radius > existing.radius) {
-				const kernelSeed = hashNumbers(
-					modelSeed,
-					owner,
-					edge.source,
-					edge.target,
-					sampleIndex,
-				);
-				const tangentX = tangentDirection(
-					direction,
-					end,
-					kernelSeed,
-				);
-				const outerInfluence = anchorOuterInfluence(
-					direction,
-					owner,
-					memberExtents,
-					geography,
-				);
-				edgeAnchors.set(key, {
-					direction,
-					owner,
-					radius,
-					tangentX,
-					tangentY: normalizeVec3(
-						crossVec3(direction, tangentX),
-					),
-					majorScale: 1.18 + outerInfluence * 0.1,
-					minorScale: 0.96,
-					outerInfluence,
-					maximumGrowth: 0.022,
-				});
-			}
-		}
-	}
-	for (const anchor of edgeAnchors.values()) {
-		addToBuckets(anchors, anchor);
-	}
-	let maximumEffectiveSupportRadius = MIN_NODE_SUPPORT_RADIUS;
-	for (const cell of anchors.cells.values()) {
-		for (const anchor of cell) {
-			maximumEffectiveSupportRadius = Math.max(
-				maximumEffectiveSupportRadius,
-				Math.min(
-					anchor.radius *
-						Math.max(anchor.majorScale, anchor.minorScale) *
-						MAX_COAST_SCALE,
-					anchor.radius + anchor.maximumGrowth,
-				),
-			);
-		}
-	}
-
+	const maximumSupportRadius = maximumAnchorSupport(created.anchors);
+	const waterSeeds = createWaterSeeds(positions, edges, assignments);
 	return {
-		anchors,
-		territoryNodes,
+		raster: buildLandRaster(
+			geography,
+			positions,
+			assignments,
+			created.anchors,
+			waterSeeds,
+			maximumSupportRadius,
+		),
+		anchors: created.anchors,
+		members: created.members,
 		maximumSupportRadius,
-		maximumEffectiveSupportRadius,
-		ownerCoastProfiles,
 		seed: modelSeed,
 	};
 }
 
-function supportByOwner(
+function nearestRasterCell(point: Vec3, raster: LandRaster): number {
+	let bestIndex = -1;
+	let bestDot = Number.NEGATIVE_INFINITY;
+	forEachNearby(raster.rasterPoints, point, 0.075, (candidate) => {
+		const similarity = dotVec3(point, candidate.direction);
+		if (
+			similarity > bestDot + 1e-12 ||
+			(Math.abs(similarity - bestDot) <= 1e-12 &&
+				candidate.index < bestIndex)
+		) {
+			bestDot = similarity;
+			bestIndex = candidate.index;
+		}
+	});
+	if (bestIndex >= 0) {
+		return bestIndex;
+	}
+	for (let index = 0; index < raster.grid.vertices.length; index += 1) {
+		const candidate = raster.grid.vertices[index];
+		if (candidate === undefined) {
+			continue;
+		}
+		const similarity = dotVec3(point, candidate);
+		if (similarity > bestDot) {
+			bestDot = similarity;
+			bestIndex = index;
+		}
+	}
+	return Math.max(0, bestIndex);
+}
+
+function nearestMember(
 	point: Vec3,
 	model: LandSupportModel,
-): ReadonlyMap<number, ContinentSupportSample> {
-	const accumulated = new Map<
-		number,
-		{
-			margin: number;
-			bestNormalizedScore: number;
-			normalizationRadius: number;
-		}
-	>();
+	owner?: number,
+): { readonly member: MemberNode; readonly distance: number } | undefined {
+	let nearest: MemberNode | undefined;
+	let nearestDistance = Number.POSITIVE_INFINITY;
 	forEachNearby(
-		model.anchors,
+		model.members,
 		point,
-		model.maximumEffectiveSupportRadius,
-		(anchor) => {
-			const coastDeformation = coastScale(point, anchor, model);
-			const rawRadius =
-				anchor.radius *
-				anchorDirectionalScale(point, anchor) *
-				coastDeformation;
-			const effectiveRadius = clamp(
-				rawRadius,
-				Math.max(0.018, anchor.radius * 0.34),
-				anchor.radius +
-					anchor.maximumGrowth *
-						supportGrowthEnvelope(coastDeformation),
-			);
-			const margin =
-				effectiveRadius -
-				geodesicDistance(point, anchor.direction);
-			const normalizedScore = margin / effectiveRadius;
-			const existing = accumulated.get(anchor.owner);
-			if (existing === undefined) {
-				accumulated.set(anchor.owner, {
-					margin,
-					bestNormalizedScore: normalizedScore,
-					normalizationRadius: effectiveRadius,
-				});
+		MEMBER_GUARANTEE_MAX_RADIUS,
+		(member) => {
+			if (owner !== undefined && member.owner !== owner) {
 				return;
 			}
-			const maximum = Math.max(existing.margin, margin);
-			existing.margin =
-				maximum +
-				Math.log1p(
-					Math.exp(
-						-Math.abs(existing.margin - margin) *
-							SMOOTH_UNION_SHARPNESS,
-					),
-				) /
-					SMOOTH_UNION_SHARPNESS;
-			if (normalizedScore > existing.bestNormalizedScore) {
-				existing.bestNormalizedScore = normalizedScore;
-				existing.normalizationRadius = effectiveRadius;
+			const distance = geodesicDistance(point, member.direction);
+			if (
+				distance <= member.guaranteeRadius &&
+				(distance < nearestDistance - 1e-12 ||
+					(Math.abs(distance - nearestDistance) <= 1e-12 &&
+						member.nodeIndex < (nearest?.nodeIndex ?? Infinity)))
+			) {
+				nearest = member;
+				nearestDistance = distance;
 			}
 		},
 	);
-	const support = new Map<number, ContinentSupportSample>();
-	for (const [owner, entry] of accumulated) {
-		support.set(owner, {
-			margin: entry.margin,
-			normalizedScore:
-				entry.margin / Math.max(1e-9, entry.normalizationRadius),
-		});
+	return nearest === undefined
+		? undefined
+		: { member: nearest, distance: nearestDistance };
+}
+
+function nearestBoundary(
+	point: Vec3,
+	raster: LandRaster,
+	owner?: number,
+): { readonly boundary: BoundarySample; readonly distance: number } | undefined {
+	let nearest: BoundarySample | undefined;
+	let nearestDistance = Number.POSITIVE_INFINITY;
+	forEachNearby(
+		raster.boundaryBuckets,
+		point,
+		BOUNDARY_SEARCH_RADIUS,
+		(boundary) => {
+			if (owner !== undefined && boundary.owner !== owner) {
+				return;
+			}
+			const distance = geodesicDistance(point, boundary.direction);
+			if (distance < nearestDistance) {
+				nearest = boundary;
+				nearestDistance = distance;
+			}
+		},
+	);
+	return nearest === undefined
+		? undefined
+		: { boundary: nearest, distance: nearestDistance };
+}
+
+function boundaryDisplacement(
+	point: Vec3,
+	owner: number,
+	seed: number,
+): number {
+	const phase = hashToSignedUnitFloat(seed, owner, 0xc0457) * Math.PI;
+	return (
+		Math.sin(
+			point[0] * 8.7 +
+				point[1] * 11.3 -
+				point[2] * 7.9 +
+				phase,
+		) *
+			0.011 +
+		Math.sin(
+			point[0] * 23.9 -
+				point[1] * 19.7 +
+				point[2] * 27.1 -
+				phase * 0.73,
+		) *
+			0.006 +
+		Math.sin(
+			point[0] * 61.1 +
+				point[1] * 53.3 -
+				point[2] * 67.7 +
+				phase * 1.31,
+		) *
+			0.003
+	);
+}
+
+function displacedMargin(
+	baseMargin: number,
+	point: Vec3,
+	owner: number,
+	seed: number,
+): number {
+	const distance = Math.abs(baseMargin);
+	if (distance >= BOUNDARY_NOISE_BAND) {
+		return baseMargin;
 	}
-	return support;
+	const fade = 1 - distance / BOUNDARY_NOISE_BAND;
+	return baseMargin + boundaryDisplacement(point, owner, seed) * fade;
+}
+
+function queryLand(pointValue: Vec3, model: LandSupportModel): QuerySample {
+	const point = normalizeVec3(pointValue);
+	const guaranteed = nearestMember(point, model);
+	if (guaranteed !== undefined) {
+		const margin =
+			guaranteed.member.guaranteeRadius -
+			guaranteed.distance +
+			MIN_NODE_BANDWIDTH;
+		return {
+			owner: guaranteed.member.owner,
+			margin,
+			boundaryOwner: guaranteed.member.owner,
+		};
+	}
+	const cell = nearestRasterCell(point, model.raster);
+	const cellOwner = model.raster.ownerByCell[cell] ?? -1;
+	if (cellOwner >= 0) {
+		if (model.raster.boundaryBand[cell] !== 1) {
+			return {
+				owner: cellOwner,
+				margin: SUPPORT_DISTANCE_CAP,
+				boundaryOwner: cellOwner,
+			};
+		}
+		const boundary = nearestBoundary(point, model.raster, cellOwner);
+		const baseMargin = boundary?.distance ?? SUPPORT_DISTANCE_CAP;
+		const margin = displacedMargin(
+			baseMargin,
+			point,
+			cellOwner,
+			model.seed,
+		);
+		return {
+			owner: margin > 0 ? cellOwner : -1,
+			margin,
+			boundaryOwner: cellOwner,
+		};
+	}
+	if (model.raster.connectedOcean[cell] !== 1) {
+		return {
+			owner: -1,
+			margin: -SUPPORT_DISTANCE_CAP,
+			boundaryOwner: -1,
+		};
+	}
+	if (model.raster.boundaryBand[cell] !== 1) {
+		return {
+			owner: -1,
+			margin: -SUPPORT_DISTANCE_CAP,
+			boundaryOwner: -1,
+		};
+	}
+	const boundary = nearestBoundary(point, model.raster);
+	if (boundary === undefined) {
+		return {
+			owner: -1,
+			margin: -SUPPORT_DISTANCE_CAP,
+			boundaryOwner: -1,
+		};
+	}
+	const margin = displacedMargin(
+		-boundary.distance,
+		point,
+		boundary.boundary.owner,
+		model.seed,
+	);
+	return {
+		owner: margin > 0 ? boundary.boundary.owner : -1,
+		margin,
+		boundaryOwner: boundary.boundary.owner,
+	};
 }
 
 export function sampleContinentSupport(
@@ -773,72 +1337,47 @@ export function sampleContinentSupport(
 	continentIndex: number,
 	model: LandSupportModel,
 ): ContinentSupportSample | undefined {
-	return supportByOwner(
-		normalizeVec3(direction),
-		model,
-	).get(continentIndex);
-}
-
-function foreignNodeWins(
-	point: Vec3,
-	owner: number,
-	model: LandSupportModel,
-): boolean {
-	let nearestOwn = Number.POSITIVE_INFINITY;
-	let nearestForeign = Number.POSITIVE_INFINITY;
-	const searchRadius = Math.max(
-		0.22,
-		model.maximumSupportRadius * 1.35,
-	);
-	forEachNearby(
-		model.territoryNodes,
-		point,
-		searchRadius,
-		(node) => {
-			if (!node.carvesLand) {
-				return;
-			}
-			const distance = geodesicDistance(point, node.direction);
-			if (node.owner === owner) {
-				nearestOwn = Math.min(nearestOwn, distance);
-			} else {
-				nearestForeign = Math.min(nearestForeign, distance);
-			}
-		},
-	);
-	return (
-		Number.isFinite(nearestForeign) &&
-		nearestForeign + FOREIGN_NODE_ADVANTAGE < nearestOwn
-	);
+	if (
+		continentIndex < 0 ||
+		!Number.isSafeInteger(continentIndex)
+	) {
+		return undefined;
+	}
+	const point = normalizeVec3(direction);
+	const guaranteed = nearestMember(point, model, continentIndex);
+	if (guaranteed !== undefined) {
+		const margin =
+			guaranteed.member.guaranteeRadius -
+			guaranteed.distance +
+			MIN_NODE_BANDWIDTH;
+		return {
+			margin,
+			normalizedScore: margin / MIN_NODE_BANDWIDTH,
+		};
+	}
+	const query = queryLand(point, model);
+	if (query.owner === continentIndex) {
+		return {
+			margin: query.margin,
+			normalizedScore: query.margin / MIN_NODE_BANDWIDTH,
+		};
+	}
+	const boundary = nearestBoundary(point, model.raster, continentIndex);
+	const margin =
+		boundary === undefined
+			? -SUPPORT_DISTANCE_CAP
+			: -Math.min(SUPPORT_DISTANCE_CAP, boundary.distance);
+	return {
+		margin,
+		normalizedScore: margin / MIN_NODE_BANDWIDTH,
+	};
 }
 
 export function classifySupportedContinent(
 	direction: Vec3,
 	model: LandSupportModel,
 ): number {
-	const point = normalizeVec3(direction);
-	const support = supportByOwner(point, model);
-	let bestOwner = -1;
-	let bestScore = Number.NEGATIVE_INFINITY;
-	let secondScore = Number.NEGATIVE_INFINITY;
-	for (const [owner, entry] of support) {
-		if (entry.normalizedScore > bestScore) {
-			secondScore = bestScore;
-			bestScore = entry.normalizedScore;
-			bestOwner = owner;
-		} else if (entry.normalizedScore > secondScore) {
-			secondScore = entry.normalizedScore;
-		}
-	}
-	if (
-		bestOwner < 0 ||
-		bestScore <= 0 ||
-		bestScore - secondScore < OWNER_DOMINANCE_MARGIN ||
-		foreignNodeWins(point, bestOwner, model)
-	) {
-		return -1;
-	}
-	return bestOwner;
+	return queryLand(direction, model).owner;
 }
 
 export function continentSupportClearance(
@@ -854,4 +1393,19 @@ export function continentSupportClearance(
 	return support === undefined
 		? Number.POSITIVE_INFINITY
 		: -support.margin;
+}
+
+export function landSupportDiagnostics(
+	model: LandSupportModel,
+): LandSupportDiagnostics {
+	let connectedOceanCellCount = 0;
+	for (const value of model.raster.connectedOcean) {
+		connectedOceanCellCount += value;
+	}
+	return {
+		rasterCellCount: model.raster.grid.vertices.length,
+		densityAnchorCount: bucketValueCount(model.anchors),
+		boundarySampleCount: model.raster.boundaries.length,
+		connectedOceanCellCount,
+	};
 }

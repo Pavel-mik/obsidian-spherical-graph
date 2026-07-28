@@ -10,13 +10,15 @@ flowchart LR
     O --> T["GraphChangeTracker"]
     T --> D["Graph diff + pending signature"]
     G --> D
-    D --> C["Continental geography<br/>CPM consensus + conductance"]
-    C --> L["LayoutLifecycleController"]
+    D --> L["LayoutLifecycleController"]
     P["PluginDataStore<br/>committed snapshot"] <--> L
     L --> W["Short-lived worker<br/>or yielding fallback"]
     W -->|"progress only"| L
     W -->|"one final buffer"| V["Final validation"]
-    V -->|"atomic save"| P
+    V --> F["Fixed positions on S²"]
+    G --> H["Post-layout geography<br/>grid → density → watershed → ocean"]
+    F --> H
+    H -->|"atomic positions + geography save"| P
     P --> R["SphericalGraphRenderer"]
     U["ItemView / toolbar / settings"] --> L
     U --> R
@@ -31,13 +33,15 @@ flowchart LR
   every unweighted shortest route. It has no dependency on the solver.
 - `src/geometry` contains pure vector, geodesic, exponential-map, SLERP,
   geodesic-arc, hash/PRNG, and proper-rotation alignment functions.
-- `src/geography` detects stable low-conductance communities, selects disjoint
-  continents, preserves matched geographic identity during Refresh, allocates
-  separated intrinsic caps, initializes land and island nodes, and creates the
-  persisted geography descriptor.
+- `src/geography` consumes only a completed fixed position buffer. It builds an
+  adaptive intrinsic spherical grid and density field, reconciles watershed
+  basins, enforces exclusive regions and one connected ocean, uses graph
+  communities only as soft priors, preserves compatible semantic identity
+  during Refresh, and creates the persisted geography descriptor.
 - `src/layout` owns initialization, force evaluation, exact and sampled
   repulsion, Refresh planning and anchoring, the batch solver, worker protocol,
-  worker entry point, and the lifecycle state machine.
+  worker entry point, and the lifecycle state machine. It has no dependency on
+  geographic assignments, centers, extents, or land ownership.
 - `src/persistence` validates untrusted stored data, migrates schema versions,
   reconciles current paths with a committed snapshot, and serializes atomic
   layout commits separately from debounced settings/camera writes.
@@ -93,8 +97,9 @@ have no active worker or solver.
 The renderer and data store reference only the last committed snapshot.
 Starting Initialize, Refresh, or Renew creates independent typed arrays:
 positions, velocities, forces, graph endpoints and weights, movable masks,
-geographic assignments/caps, and optional anchors. These working arrays are
-never written to persistence or passed to the renderer.
+and optional Refresh anchors. Geographic arrays do not exist in the solver
+payload. These working arrays are never written to persistence or passed to
+the renderer.
 
 Progress contains scalar diagnostics. A `completed` message contains the first
 and only position buffer transfer. The main thread validates:
@@ -148,6 +153,35 @@ If worker creation is unavailable, the same pure solver runs in bounded batches
 that yield to the owner window's event loop. It preserves final-only rendering,
 cancellation, and validation semantics.
 
+## Post-layout geography pipeline
+
+The layout/geography dependency is intentionally one-way. Initialize and Renew
+use the classic globally distributed deterministic initialization; Refresh
+starts from committed positions and preserves its local anchor rules. Once the
+final solver buffer passes validation, its vectors are fixed and geography may
+inspect them. Geography never submits forces, cap radii, assignments, or
+centers back to the solver.
+
+`postLayoutGeography` chooses a subdivided icosahedral grid from measured
+nearest-neighbor spacing. `sphericalDensity` evaluates fine and coarse compact
+kernels with locally adaptive bandwidths, then creates watershed basins by
+density ascent and deterministic saddle merging. Multiresolution CPM
+communities are passed only as basin marker priors: agreement can support a
+merge or candidate, but it cannot create a location or override spatial
+ownership.
+
+`sphericalRegions` selects sufficiently large graph-supported or
+spatially-prominent basins, grows exclusive low-density-bounded regions,
+inserts sea between competing owners, and reconciles sea components into one
+connected ocean. Note membership is read from the resulting cell ownership;
+unassigned notes remain islands. Previous geography is used only to retain a
+compatible ID, label, and color. Center and diagnostic angular extent are
+recomputed from the fixed positions.
+
+The analytical grid, density samples, watershed labels, and cell ownership are
+temporary. The atomic snapshot persists fixed note vectors and compact semantic
+geography, not the analytical surface.
+
 ## Renderer lifecycle
 
 The renderer is constructed lazily in `ItemView.onOpen`, using the view's
@@ -159,9 +193,11 @@ permanent 60 fps loop in a fixed state.
 The WebGL graticule is a low-contrast dashed `LineDashedMaterial`; document
 links remain continuous geodesic roads with a separate material. `SphereLayer`
 derives a single-owner land mesh and coastline batch from the committed
-geography. `landGeometry` evaluates deterministic multi-scale radial coast
-profiles and clips mixed icosphere triangles at the exact ownership transition,
-so detailed bays and headlands are smooth rather than aligned to mesh cells.
+geography. `landGeometry` evaluates deterministic anisotropic multi-scale
+support, clips mixed icosphere triangles at the exact ownership transition,
+draws the outer mask as sand, and overlays a variably inset land interior.
+Detailed bays, headlands, and the irregular beach band are therefore smooth
+rather than aligned to mesh cells.
 The land and ocean `ShaderMaterial`s generate their atlas texture from local
 sphere direction, requiring no texture files or runtime I/O. The ocean depth
 skin sits slightly inside the logical globe so land, graticule, roads, and
@@ -197,10 +233,11 @@ materials and WebGL state, terminates the worker, and revokes its URL.
 
 The stored envelope contains schema version, validated settings, one committed
 layout, and camera state. A committed layout contains its algorithm version,
-graph signature/descriptor, path-to-unit-vector map, topology-derived
-continents, island IDs, geographic centers/caps/colors, mode, completion time,
-effective seed, and committed Renew generation. It never stores velocity,
-temperature, land triangles, working buffers, or a resumable solver.
+graph signature/descriptor, path-to-unit-vector map, post-layout spatial
+continents, island IDs, geographic centers/diagnostic extents/colors, mode,
+completion time, effective seed, and committed Renew generation. It never
+stores velocity, temperature, analytical grid cells, watershed state, land
+triangles, working buffers, or a resumable solver.
 
 Settings and camera changes are debounced and merged independently. They cannot
 reconstruct or mutate the position map. A successful Renew increments

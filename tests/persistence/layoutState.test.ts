@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import { GraphDataService } from "../../src/graph/GraphDataService";
 import { GraphDataSource } from "../../src/graph/graphTypes";
 import {
+	CURRENT_ALGORITHM_VERSION,
 	CURRENT_SCHEMA_VERSION,
 	createCommittedLayoutSnapshot,
 	deriveEffectiveSeed,
+	isSnapshotUsable,
 	pruneSnapshotPaths,
 	reconcileCommittedLayout,
 	renameSnapshotPaths,
@@ -263,5 +265,32 @@ describe("snapshot reconciliation and migrations", () => {
 			positions: new Float32Array(),
 		});
 		expect(snapshot?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+	});
+
+	it("invalidates pre-geography-layout snapshots after the algorithm upgrade", () => {
+		const currentGraph = graph(["a.md"]);
+		const legacySnapshot = createCommittedLayoutSnapshot({
+			snapshotId: "algorithm-2",
+			graph: currentGraph,
+			mode: "initialize",
+			effectiveSeed: 42,
+			renewGeneration: 0,
+			completedAt: 10,
+			positions: new Float32Array([1, 0, 0]),
+			algorithmVersion: 2,
+		});
+		const currentSnapshot = createCommittedLayoutSnapshot({
+			snapshotId: "algorithm-current",
+			graph: currentGraph,
+			mode: "initialize",
+			effectiveSeed: 42,
+			renewGeneration: 0,
+			completedAt: 10,
+			positions: new Float32Array([1, 0, 0]),
+		});
+
+		expect(CURRENT_ALGORITHM_VERSION).toBe(3);
+		expect(isSnapshotUsable(legacySnapshot, currentGraph)).toBe(false);
+		expect(isSnapshotUsable(currentSnapshot, currentGraph)).toBe(true);
 	});
 });

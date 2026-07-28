@@ -1,5 +1,4 @@
 import { hashNumbers } from '../geometry/deterministicHash';
-import type { GeographySolverConstraints } from '../geography';
 import {
 	clamp,
 	orthogonalUnitVec3,
@@ -22,7 +21,6 @@ export interface ForceEvaluationInput {
 	readonly iteration: number;
 	readonly anchorPositions?: Float32Array;
 	readonly anchorStrengths?: Float32Array;
-	readonly geography?: GeographySolverConstraints;
 }
 
 export interface ForceEvaluation {
@@ -452,59 +450,6 @@ function accumulateAnchors(
 	}
 }
 
-function accumulateGeographyBoundary(
-	input: ForceEvaluationInput,
-	forces: Float64Array,
-): void {
-	const geography = input.geography;
-	if (geography === undefined || geography.boundaryStrength <= 0) {
-		return;
-	}
-	const nodeCount = input.positions.length / 3;
-	for (let index = 0; index < nodeCount; index += 1) {
-		const continentIndex = geography.assignmentByNode[index] ?? -1;
-		if (
-			input.movableMask[index] !== 1 ||
-			continentIndex < 0 ||
-			continentIndex >= geography.capRadii.length
-		) {
-			continue;
-		}
-		const offset = index * 3;
-		const centerOffset = continentIndex * 3;
-		const ax = input.positions[offset] ?? 0;
-		const ay = input.positions[offset + 1] ?? 0;
-		const az = input.positions[offset + 2] ?? 0;
-		const bx = geography.centers[centerOffset] ?? 0;
-		const by = geography.centers[centerOffset + 1] ?? 0;
-		const bz = geography.centers[centerOffset + 2] ?? 0;
-		const distance = angularDistanceComponents(
-			ax,
-			ay,
-			az,
-			bx,
-			by,
-			bz,
-		);
-		const softBoundary = (geography.capRadii[continentIndex] ?? 0) * 0.72;
-		if (distance <= softBoundary) {
-			continue;
-		}
-		addDirectedTangentForce(
-			forces,
-			index,
-			ax,
-			ay,
-			az,
-			bx,
-			by,
-			bz,
-			geography.boundaryStrength * (distance - softBoundary),
-			hashNumbers(input.effectiveSeed, index, continentIndex, 0xc07),
-		);
-	}
-}
-
 function projectAllForcesToTangents(
 	positions: Float32Array,
 	forces: Float64Array,
@@ -554,7 +499,6 @@ export function computeSphericalForces(
 			: accumulateSampledRepulsion(input, forces);
 	const coverageEnergy = accumulateCoverageRegularizers(input, forces);
 	accumulateAnchors(input, forces);
-	accumulateGeographyBoundary(input, forces);
 	projectAllForcesToTangents(
 		input.positions,
 		forces,

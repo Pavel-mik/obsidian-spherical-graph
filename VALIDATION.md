@@ -454,6 +454,72 @@ warnings or errors.
 The detector change is applied by **Renew layout**. The isolated-lake rendering
 correction applies immediately to an existing committed map.
 
+### Post-layout spatial-cartography regression
+
+The reported circular and semantically drifting continents were reproduced as
+an architectural feedback loop: graph communities selected circular caps
+before the solve, those caps constrained node positions, and the renderer then
+treated the same cap-derived result as geographic evidence. A second failure
+allowed small unsupported watershed basins to transitively merge otherwise
+distinct regions. Finally, every note in a selected basin was seeded as land,
+so a wide basin could absorb a dispersed background.
+
+Version 1.3.0 removes geography from initialization, worker messages, forces,
+integration, and displacement constraints. Geography now consumes only the
+validated final unit vectors. An intrinsic grid, adaptive fine/coarse density,
+watershed with aggregate component state, supported core seeds, exclusive
+ownership, and one connected ocean derive the semantic map afterward. CPM
+communities are marker priors only.
+
+Automated regressions verify that:
+
+- the complete suite passes with 41 test files / 216 tests, strict type
+  checking, ESLint, production build, and release validation;
+- dense clusters remain separated after the ordinary full-sphere solve without
+  an orientation- or absolute-radius-dependent assertion;
+- one graph prior can split across two distant spatial regions, conflicting
+  priors can merge across a shallow spatial saddle, a density-only region can
+  form without links, and one graph prior cannot cover a uniform globe;
+- ownership is exclusive, the ocean has exactly one component, completed
+  positions remain bit-for-bit unchanged, and algorithm-2 snapshots are
+  rejected in favor of algorithm version 3;
+- long or structurally suspicious graph bridges do not paint land;
+- one dense circular fixture receives a deterministic irregular coast while
+  its interior remains continuous; and
+- the 636-node render-support fixture completes in 861 ms after reversing the
+  hot loop from cell-to-global-support queries to anchor-to-nearby-cell
+  accumulation. The previous path measured 4,458 ms under the full suite.
+
+A separate deterministic 636-note, 2,944-link geography benchmark planted five
+large spatial communities among a uniform loose background. It produced
+exactly five landmasses, included all 490 planted community notes, retained 116
+islands, assigned only five to seven physically adjacent loose notes to each
+landmass, used 18.8% of analytical grid cells as land, completed in 781 ms, and
+left the fixed position buffer bitwise unchanged.
+
+A disposable desktop browser atlas imported the production
+`SphericalGraphRenderer`, release stylesheet, and post-layout geography
+directly. Its 153-city, 478-road scene reported three continents, 35 islands,
+and fixed positions preserved. The rendered landmasses were spatially
+separated, visibly non-circular, bordered by an irregular sand band, and free
+of accidental interior holes. The Continents control removed and restored
+land without changing the canvas; drag rotation and camera reset both worked.
+The browser console remained free of warnings and errors. This was a production
+renderer harness, not a full Obsidian-shell session.
+
+## Release artifacts (1.3.0)
+
+- `main.js`: 853,702 bytes
+- `manifest.json`: 356 bytes; plugin 1.3.0
+- `styles.css`: 45,676 bytes
+- no separate worker JavaScript file is required or present
+
+SHA-256 values from the final production build:
+
+- `main.js`: `B0E8EFE3D9E90B09706418D2A65CE0A3175DDD73D1AFD194046241FE3F725655`
+- `manifest.json`: `A7DD066A532F9E9202997ADA0B1E01D6243F90A0120509B0DD46774A5A2DCC78`
+- `styles.css`: `91F52E4A52064852993BBE71AB995CFC2C18C7DF9B6103144FEADAA552027D5B`
+
 ## Not manually exercised
 
 These remain covered only partially by automated tests or by the manual plan:

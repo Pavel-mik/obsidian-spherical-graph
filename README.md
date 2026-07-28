@@ -15,6 +15,14 @@ computes positions, validates and saves one complete snapshot, and then stops.
 Normal reading, search, filtering, selection, rotation, zoom, theme changes,
 and resizing do not move notes.
 
+Cartography is deliberately downstream from layout. The plugin first computes
+the ordinary deterministic graph layout on \(S^2\) and fixes every note
+position. It then evaluates adaptive density on an intrinsic spherical grid,
+builds a watershed with one explicit connected ocean, derives spatial
+continents, and finally renders coasts and beaches. Graph communities are a
+soft prior for interpreting the finished map; geography is never a force,
+initialization constraint, or reason to move a note.
+
 ## See your vault as a world
 
 ![Spherical Graph globe with note cities and tag satellites](docs/screenshots/spherical-graph-globe.png)
@@ -59,8 +67,9 @@ While Refresh or Renew runs, the last committed map remains visible and
 interactive. Progress messages contain diagnostics only. The renderer receives
 new coordinates once, after the complete result passes operation-ID, graph
 signature, length, finiteness, unit-norm, and Refresh-displacement checks. A
-cancelled, stale, invalid, or failed operation leaves the previous snapshot
-untouched.
+validated final buffer becomes immutable input to the post-layout geographic
+analysis before the complete snapshot is saved atomically. A cancelled, stale,
+invalid, or failed operation leaves the previous snapshot untouched.
 
 Vault changes never start a solver automatically. Instead the view reports a
 pending state such as:
@@ -79,15 +88,19 @@ and a reliable rename keeps the old position under the new path. Select
   commands.
 - Intrinsic, seam-free spherical layout with deterministic exact and sampled
   repulsion modes.
-- Multiresolution CPM community detection with consensus stability,
-  per-resolution candidate recovery, conductance and topology-cohesion
-  filtering, conservative boundary completion, sublinear automatic size
-  thresholds, guarded rescue of exceptionally clear smaller regions, disjoint
-  continent selection, and explicit island nodes. Continent membership is
-  derived locally and never sent off-device.
-- Continent-aware Initialize/Renew placement in separated intrinsic caps;
-  Refresh reuses persisted continent identity, color, center, and cap where the
-  topology still matches.
+- Classic deterministic Initialize/Renew placement over the full sphere,
+  followed by the ordinary intrinsic spring, repulsion, and coverage solve.
+  No community assignment, geographic center, or continent radius enters the
+  worker protocol.
+- Post-layout cartography over fixed positions: an adaptive subdivided
+  icosahedral grid, local-spacing density kernels, watershed basins, exclusive
+  spatial regions, and an explicit connected ocean. Multiresolution CPM
+  community detection supplies only a soft graph prior for basin reconciliation
+  and naming; spatial evidence decides the final continents and leaves
+  unassigned notes as islands.
+- Jaccard matching preserves stable continent identity, label, and color across
+  compatible Refreshes. Centers and diagnostic extents are always re-derived
+  from the fixed positions and never constrain layout.
 - Incremental Refresh with a new-node warm-up, graph-neighborhood affected set,
   hard-fixed remote nodes, anchors, and a displacement cap.
 - Transactional committed snapshot, schema migrations, stable camera state,
@@ -96,10 +109,10 @@ and a reliable rename keeps the old position under the new path. Select
   yielding main-thread compatibility fallback.
 - Three.js rendering with a matte ocean, batched topology-derived land,
   deterministic organic coastlines supported by actual member cities and
-  short internal roads, sea carved by neighboring regions, islands,
-  cartographic region labels, instanced tangent city markers, batched geodesic
-  roads, a restrained dashed graticule, smoothly fading labels, responsive
-  narrow-pane framing, and invalidation-based frames.
+  short internal roads, an irregular sand beach band, sea carved by neighboring
+  regions, islands, cartographic region labels, instanced tangent city markers,
+  batched geodesic roads, a restrained dashed graticule, smoothly fading
+  labels, responsive narrow-pane framing, and invalidation-based frames.
 - Hover details, selection and neighbor emphasis, active-note emphasis,
   search/focus, open-note actions, camera reset, keyboard controls, and a
   translucent selection panel with clickable direct neighbors.
@@ -253,9 +266,10 @@ Spherical Graph is designed for private, offline vault use:
 - It reads Markdown file metadata, tags, and Obsidian's resolved-link index.
 - It never modifies note contents and never accesses files outside the vault.
 - It stores plugin settings, vault-relative note paths, normalized layout
-  positions, graph descriptors, continent membership/centers, and camera state
-  through Obsidian's plugin-data API. Tag satellites are derived at render time
-  and are not persisted.
+  positions, graph descriptors, post-layout continent membership, diagnostic
+  centers/extents, and camera state through Obsidian's plugin-data API. Tag
+  satellites and analytical spherical-grid cells are derived at runtime and
+  are not persisted.
 - It performs no runtime network requests, telemetry, remote-code loading,
   advertising, or automatic plugin updates.
 - It requires no account, payment, external key, or remote service.

@@ -1,7 +1,6 @@
 import { hashNumbers } from '../geometry/deterministicHash';
 import {
 	computeSphericalCoverage,
-	geodesicClamp,
 	geodesicDistance,
 } from '../geometry/sphericalGeometry';
 import {
@@ -134,7 +133,6 @@ export class SphericalSolver {
 	private readonly edgeWeights: Float32Array;
 	private readonly baseMovableMask: Uint8Array;
 	private readonly refresh: LayoutSolverInput['refresh'];
-	private readonly geography: LayoutSolverInput['geography'];
 	private readonly cappedNodes: Uint8Array;
 	private readonly startedAt: number;
 
@@ -172,21 +170,6 @@ export class SphericalSolver {
 		this.edgeWeights = input.edgeWeights.slice();
 		this.velocities = new Float64Array(this.positions.length);
 		this.cappedNodes = new Uint8Array(nodeCount);
-		if (input.geography !== undefined) {
-			this.validateGeographyConstraints(input.geography, nodeCount);
-			const centers = validateAndNormalizePositions(
-				input.geography.centers,
-			);
-			this.geography = {
-				assignmentByNode:
-					input.geography.assignmentByNode.slice(),
-				centers,
-				capRadii: input.geography.capRadii.slice(),
-				boundaryStrength: input.geography.boundaryStrength,
-			};
-		} else {
-			this.geography = undefined;
-		}
 
 		if (this.mode === 'refresh') {
 			if (input.refresh === undefined) {
@@ -221,35 +204,6 @@ export class SphericalSolver {
 			);
 		}
 		this.startedAt = defaultNow();
-	}
-
-	private validateGeographyConstraints(
-		geography: NonNullable<LayoutSolverInput['geography']>,
-		nodeCount: number,
-	): void {
-		if (
-			geography.assignmentByNode.length !== nodeCount ||
-			geography.centers.length % 3 !== 0 ||
-			geography.capRadii.length !== geography.centers.length / 3 ||
-			!Number.isFinite(geography.boundaryStrength) ||
-			geography.boundaryStrength < 0
-		) {
-			throw new RangeError('Geography constraints have inconsistent lengths.');
-		}
-		for (let index = 0; index < nodeCount; index += 1) {
-			const assignment = geography.assignmentByNode[index] ?? -1;
-			if (
-				assignment < -1 ||
-				assignment >= geography.capRadii.length
-			) {
-				throw new RangeError('A geography assignment references an invalid continent.');
-			}
-		}
-		for (const radius of geography.capRadii) {
-			if (!Number.isFinite(radius) || radius <= 0 || radius >= Math.PI) {
-				throw new RangeError('Continent cap radii must be finite and intrinsic.');
-			}
-		}
 	}
 
 	private validateRefreshConstraints(
@@ -413,30 +367,6 @@ export class SphericalSolver {
 			nextY *= inverseNorm;
 			nextZ *= inverseNorm;
 
-			const continentIndex =
-				this.geography?.assignmentByNode[index] ?? -1;
-			const constrainToGeography =
-				continentIndex >= 0 &&
-				(this.refresh === undefined ||
-					this.refresh.existingNodeMask[index] !== 1);
-			if (constrainToGeography && this.geography !== undefined) {
-				const maximumDistance =
-					this.geography.capRadii[continentIndex] ?? 0;
-				const center = readVec3(
-					this.geography.centers,
-					continentIndex,
-				);
-				const clamped = geodesicClamp(
-					[nextX, nextY, nextZ],
-					center,
-					maximumDistance,
-					hashNumbers(this.effectiveSeed, index, 0xc4f),
-				);
-				nextX = clamped[0];
-				nextY = clamped[1];
-				nextZ = clamped[2];
-			}
-
 			if (
 				this.refresh !== undefined &&
 				this.phase === 'anchored-relaxation' &&
@@ -553,7 +483,6 @@ export class SphericalSolver {
 					this.phase === 'anchored-relaxation'
 						? this.refresh?.anchorStrengths
 						: undefined,
-				geography: this.geography,
 			});
 			this.repulsionMode = forceEvaluation.repulsionMode;
 			this.totalRepulsionPairs +=

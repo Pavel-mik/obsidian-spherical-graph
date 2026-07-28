@@ -72,61 +72,85 @@ is normalized and velocity is reprojected into the new tangent plane. The
 integrator sums tangent forces, applies damping, caps angular velocity, applies
 the exponential map, and then applies any Refresh anchor cone.
 
-## Topology-derived continents
+## Post-layout spatial geography
 
-The note graph is partitioned before Initialize or Renew by a deterministic
-multiresolution Constant Potts Model (CPM) local-moving optimizer. It runs
-several seeded orders at four resolutions, including a coarse scale that can
-retain hub-and-spoke and core/periphery regions. Consensus components are
-formed separately within each resolution before a cross-resolution candidate
-set is reconciled. This avoids requiring one edge to remain co-assigned at
-incompatible coarse and fine scales. Candidates are scored by:
+Geography is derived only after the solver has produced and validated the
+final unit-vector buffer. The dependency order is strict:
 
-- an automatic sublinear ordinary node-count threshold;
-- best-scale co-assignment stability of internal edges;
-- conductance (boundary weight divided by incident volume); and
-- bounded size and topology-cohesion signals.
+1. compute the classic deterministic graph layout on \(S^2\);
+2. fix the completed note positions;
+3. choose an intrinsic spherical-grid resolution from observed note spacing;
+4. evaluate an adaptive multi-scale density field;
+5. construct and reconcile watershed basins;
+6. select exclusive spatial continents and one connected ocean;
+7. derive the render-only coast and beach geometry.
 
-Ordinary candidates must pass the size, stability, and conductance gates.
-Large vaults also have a lower bounded rescue threshold, but it applies only
-when a smaller region is exceptionally stable across resolutions and has very
-low conductance. This recovers compact book- or project-like regions without
-promoting sparse chains or loose archipelagos. Topology cohesion combines
-two-hop reachability with redundant-edge surplus, so a visually strong star
-can pass while a path of the same size remains an island. Near-identical
-partial candidates are suppressed, and a broad parent is removed when stable
-disjoint children explain most of it. An explicitly supplied minimum is always
-absolute and disables rescue below it. Selection is disjoint by construction
-and capped to seven landmasses.
+No value produced by steps 3–7 is present in `LayoutSolverInput`, the worker
+protocol, force evaluation, or integration. In particular, there is no
+geographic boundary force and no continent cap. This one-way dependency keeps
+the map from becoming a self-fulfilling collection of circular regions.
 
-After selection, a bounded local completion pass considers still-unassigned
-nodes. A node joins one continent only when at least two of its neighbors are
-already members, that continent receives a majority of all incident weight,
-and its weight clearly dominates every competing continent. This recovers
-unstable boundary notes without growing across a weak bridge. Remaining nodes
-stay islands; the algorithm never forces total coverage.
+### Soft graph-community prior
 
-Each accepted community receives a deterministic center from a
-Fibonacci-sphere packing and an intrinsic angular cap sized by membership.
-During Refresh, Jaccard matching against the committed geography preserves a
-continent's ID, label, color, center, and cap when membership remains
-substantially the same.
+After positions are fixed, the note graph is also partitioned by a
+deterministic multiresolution Constant Potts Model (CPM) local-moving
+optimizer. It runs seeded orders at four resolutions, forms consensus
+components within each resolution, and reconciles candidates using stability,
+conductance, topology cohesion, and sublinear size signals. The existing
+bounded affinity completion can recover uncertain graph-boundary notes.
 
-The solver receives only compact `Int32Array` assignments, center vectors, and
-cap radii. A soft tangent boundary force acts near a cap edge, and Initialize /
-Renew hard-clamp members to their intrinsic cap after each exponential-map
-step. Existing Refresh nodes remain governed by the stricter mental-map anchor
-and displacement cap; new nodes use the geographic cap.
+These graph communities are marker priors, not continents by themselves.
+They may lower or raise a watershed merge threshold, support a spatial basin,
+contribute stability and conductance diagnostics, and help preserve a region's
+semantic identity. They cannot choose an initial position, pull a node toward
+a center, reserve surface area, or override the final spatial ownership.
+
+### Intrinsic grid and adaptive density
+
+The analytical surface is a deterministically subdivided icosahedron. Grid
+resolution is selected from the characteristic sixth-neighbor angular spacing,
+so a large dense vault receives finer cells without imposing one fixed global
+map resolution. Every committed note is mapped to its nearest grid vertex.
+
+Each note's sixth-neighbor distance supplies a locally adaptive bandwidth,
+clamped around the global characteristic spacing. The density field combines a
+fine compact kernel and a broader compact kernel with weights 0.82 and 0.18.
+Dense local structures therefore retain detail while sparse but coherent areas
+receive enough support to remain connected.
+
+### Watershed and connected ocean
+
+Every grid cell ascends deterministically to a neighboring density maximum,
+forming initial watershed basins. Adjacent basins record their highest saddle.
+Shallow saddles are merged by a deterministic union process. A shared CPM
+prior can make a merge easier, conflicting priors make it harder, and small
+unsupported basins use a conservative threshold; density remains the geometric
+evidence in every case.
+
+Candidate land basins must be sufficiently large and have either graph support
+or spatial prominence above the local density background. At most seven are
+retained. Ownership grows only through sufficiently dense cells in the
+candidate's watershed basin, with actual node cells protected as seeds.
+Neighboring owners are separated by an explicit sea cell. The remaining sea
+components are reconciled so the analytical map contains exactly one connected
+ocean rather than accidental enclosed holes. Cells and notes without a selected
+owner remain ocean or islands.
+
+The final note assignments come from this exclusive spatial ownership, not
+from the CPM assignment. Jaccard matching against the previous committed
+geography may preserve a compatible continent's ID, label, and color. Its
+center and diagnostic angular extent are always re-derived from the fixed
+positions. That extent is metadata for labeling and rendering, never a layout
+constraint.
 
 ## Deterministic initialization
 
-Initialize and Renew place accepted communities as deterministic tangent-disc
-packings inside their separated spherical caps. Islands choose low-occupancy
-Fibonacci candidates that maximize sea distance from continents and nearby
-islands. When no continent is detected, the original globally distributed
-permuted Fibonacci initialization is used. Changing a Renew generation changes
-center assignment, tangent packing, island candidates, and jitter, not merely
-a global rotation.
+Initialize and Renew always begin with a globally distributed, deterministically
+permuted Fibonacci sphere plus small seeded tangent jitter. Community detection
+is not consulted. The ordinary intrinsic springs, repulsion, and coverage
+regularizers are then free to reveal topology over the full sphere. Changing a
+Renew generation changes the permutation and jitter, not merely a global
+rotation.
 
 Refresh begins existing nodes exactly at their committed unit vectors. A new
 node with committed neighbors begins near their weighted spherical mean plus a
@@ -240,11 +264,12 @@ sphere. Segment count adapts to angular length.
 
 ### Land and sea
 
-The saved geography is rendered on a finely subdivided icosphere. Every
-continent member seeds a density-aware support kernel at its committed
-position. Samples along short internal edges add narrow road corridors between
-nearby kernels. Edges longer than a bounded angular distance do not add
-support, so a single graph link cannot pull a land bridge across open water.
+The post-layout spatial geography is rendered on a finely subdivided
+icosphere. Every spatial-continent member seeds a density-aware support kernel
+at its committed position. Samples along short internal edges add narrow road
+corridors between nearby kernels. Edges longer than a bounded angular distance
+do not add support, so a single graph link cannot pull a land bridge across
+open water.
 All semantic continent positions are also indexed as territory sites: a closer
 competing continent site carves sea out of another continent's support. A
 single free note does not punch a lake into otherwise supported land. Free
@@ -253,19 +278,22 @@ free neighbors form a spatially coherent group whose internal weight is not
 weaker than its continent-facing weight. Cartesian spatial buckets keep these
 local queries bounded for large vaults.
 
-The persisted spherical cap is a placement constraint and stable geographic
-identity, not a coastline primitive. Coast ownership is instead the positive
-union of node and short-road support with deterministic multi-scale boundary
-variation. A dominance margin assigns at most one owner and deliberately
-leaves sea where two continent potentials compete. This lets one landmass be
-concave or split around an unsupported gulf while guaranteeing land beneath
-its member cities.
+The persisted angular extent is a diagnostic summary, not a placement
+constraint or coastline primitive. Coast ownership is the positive union of
+node and short-road support with deterministic anisotropy and multi-scale
+boundary variation. A dominance margin assigns at most one owner and
+deliberately leaves sea where continent potentials compete. This lets one
+landmass be concave or split around an unsupported gulf while guaranteeing
+surface beneath its member cities.
 
 Mixed land/sea triangles are clipped by bisection at the ownership boundary
-instead of being accepted wholesale from their centroid. The same
-intersections form the coastline batch, eliminating regular mesh teeth while
-retaining a deterministic irregular silhouette. Semantic island membership
-remains complete, but the land mesh applies a render-only level of detail:
+instead of being accepted wholesale from their centroid. The outer ownership
+mask forms a sand underlay; a second, deterministically varying inset mask
+forms the land interior, leaving an irregular beach band. The outer
+intersections also form the detailed coastline batch, eliminating regular mesh
+teeth while retaining a deterministic irregular silhouette. Semantic island
+membership remains complete, but the land mesh applies a render-only level of
+detail:
 small vaults can show every isolated island, whereas larger vaults receive a
 deterministic density-aware budget capped at 24 spatially separated
 representatives. Candidates too close to supported continent territory are
@@ -287,18 +315,22 @@ A batch ends after stable low displacement for the configured number of
 reports, the iteration budget, or cancellation. Progress is rate-limited and
 contains scalar diagnostics only.
 
-Before success the solver:
+Before the final snapshot is committed, the layout pipeline:
 
 1. normalizes all positions;
 2. rejects non-finite, zero, or incorrectly sized buffers;
 3. computes maximum unit-norm error;
 4. verifies every Refresh old-node displacement cap;
 5. applies proper-rotation alignment when required;
-6. returns the final position buffer once.
+6. returns the final position buffer once;
+7. treats that buffer as fixed input to grid, density, watershed, and spatial
+   region derivation;
+8. atomically persists positions and the resulting semantic geography.
 
-After the main thread validates and atomically commits that result, velocities,
-forces, temperature, worker, and all other working state are discarded. No
-layout computation continues in `fixed-clean` or `fixed-dirty`.
+Geographic analysis cannot feed a result back into the solver. After the main
+thread atomically commits the completed snapshot, velocities, forces,
+temperature, worker, analytical grid, and all other working state are
+discarded. No layout computation continues in `fixed-clean` or `fixed-dirty`.
 
 ## Numerical conventions
 

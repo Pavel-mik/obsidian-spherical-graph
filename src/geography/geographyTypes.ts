@@ -34,21 +34,3 @@ export interface PersistedContinentalGeography {
 	readonly continents: readonly PersistedContinent[];
 	readonly islandNodeIds: readonly string[];
 }
-
-export interface ContinentLayoutPlan {
-	readonly detection: CommunityDetectionResult;
-	readonly continents: readonly PersistedContinent[];
-	readonly assignmentByNode: Int32Array;
-	readonly centers: Float32Array;
-	readonly capRadii: Float32Array;
-}
-
-export interface GeographySolverConstraints {
-	/** `-1` denotes a free island node. */
-	readonly assignmentByNode: Int32Array;
-	/** Packed normalized center vectors in continent order. */
-	readonly centers: Float32Array;
-	/** Maximum intrinsic radius for each reserved continent cap. */
-	readonly capRadii: Float32Array;
-	readonly boundaryStrength: number;
-}

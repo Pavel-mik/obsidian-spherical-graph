@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	computeSphericalCoverage,
 	geodesicDistance,
+	sphericalWeightedMean,
 } from '../../src/geometry/sphericalGeometry';
 import { lengthVec3, readVec3 } from '../../src/geometry/vector3';
 import {
@@ -44,6 +45,17 @@ function fullInput(
 	};
 }
 
+function median(values: readonly number[]): number {
+	if (values.length === 0) {
+		throw new RangeError('Median requires at least one value.');
+	}
+	const sorted = [...values].sort((left, right) => left - right);
+	const middle = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 1
+		? (sorted[middle] ?? 0)
+		: ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+}
+
 describe('SphericalSolver full layout', () => {
 	it('keeps every result on S² after hundreds of intrinsic steps', () => {
 		const result = new SphericalSolver(
@@ -65,32 +77,179 @@ describe('SphericalSolver full layout', () => {
 		}
 	});
 
-	it('keeps continent members inside their reserved intrinsic cap', () => {
+	it('lets the intrinsic topology use the full sphere without geography caps', () => {
 		const nodeCount = 12;
-		const result = new SphericalSolver({
-			...fullInput(nodeCount, 512, {
+		const result = new SphericalSolver(
+			fullInput(nodeCount, 512, {
 				maxIterations: 18,
 				convergenceWindow: 30,
 			}),
-			geography: {
-				assignmentByNode: new Int32Array(nodeCount).fill(0),
-				centers: new Float32Array([1, 0, 0]),
-				capRadii: new Float32Array([0.42]),
-				boundaryStrength: 0.82,
-			},
-		}).solveSync();
+		).solveSync();
 		expect(result.status).toBe('completed');
 		if (result.status !== 'completed') {
 			return;
 		}
+		let maximumDistance = 0;
 		for (let index = 0; index < nodeCount; index += 1) {
-			expect(
+			maximumDistance = Math.max(
+				maximumDistance,
 				geodesicDistance(
 					[1, 0, 0],
 					readVec3(result.positions, index),
 				),
-			).toBeLessThanOrEqual(0.420_001);
+			);
 		}
+		expect(maximumDistance).toBeGreaterThan(1);
+		expect(result.diagnostics.cappedNodeCount).toBe(0);
+	});
+
+	it('keeps dense clusters distinct across sparse bridge links', () => {
+		const clusterSize = 9;
+		const clusterCount = 3;
+		const nodeCount = clusterSize * clusterCount;
+		const endpoints: number[] = [];
+		const weights: number[] = [];
+		const groups = Array.from(
+			{ length: clusterCount },
+			(_, clusterIndex) =>
+				Array.from(
+					{ length: clusterSize },
+					(_, localIndex) =>
+						clusterIndex * clusterSize + localIndex,
+				),
+		);
+		for (const group of groups) {
+			for (let left = 0; left < group.length; left += 1) {
+				for (
+					let right = left + 1;
+					right < group.length;
+					right += 1
+				) {
+					const source = group[left];
+					const target = group[right];
+					if (source === undefined || target === undefined) {
+						continue;
+					}
+					endpoints.push(source, target);
+					weights.push(1);
+				}
+			}
+		}
+		for (
+			let clusterIndex = 0;
+			clusterIndex + 1 < clusterCount;
+			clusterIndex += 1
+		) {
+			endpoints.push(
+				clusterIndex * clusterSize,
+				(clusterIndex + 1) * clusterSize,
+			);
+			weights.push(1);
+		}
+		const input: LayoutSolverInput = {
+			operationId: 'cluster-separation',
+			mode: 'renew',
+			graphSignature: 'three-dense-clusters-two-bridges',
+			effectiveSeed: 991,
+			positions: initializeFullLayout(nodeCount, 991),
+			edgeEndpoints: new Uint32Array(endpoints),
+			edgeWeights: new Float32Array(weights),
+			settings: {
+				maxIterations: 900,
+				convergenceWindow: 40,
+			},
+		};
+		const first = new SphericalSolver(input).solveSync();
+		const repeated = new SphericalSolver(input).solveSync();
+		expect(first.status).toBe('completed');
+		expect(repeated.status).toBe('completed');
+		if (
+			first.status !== 'completed' ||
+			repeated.status !== 'completed'
+		) {
+			return;
+		}
+		expect(first.positions).toEqual(repeated.positions);
+
+		const intraClusterDistances: number[] = [];
+		for (const group of groups) {
+			for (let left = 0; left < group.length; left += 1) {
+				for (
+					let right = left + 1;
+					right < group.length;
+					right += 1
+				) {
+					const source = group[left];
+					const target = group[right];
+					if (source === undefined || target === undefined) {
+						continue;
+					}
+					intraClusterDistances.push(
+						geodesicDistance(
+							readVec3(first.positions, source),
+							readVec3(first.positions, target),
+						),
+					);
+				}
+			}
+		}
+
+		const interClusterDistances: number[] = [];
+		for (
+			let leftGroup = 0;
+			leftGroup < groups.length;
+			leftGroup += 1
+		) {
+			for (
+				let rightGroup = leftGroup + 1;
+				rightGroup < groups.length;
+				rightGroup += 1
+			) {
+				for (const source of groups[leftGroup] ?? []) {
+					for (const target of groups[rightGroup] ?? []) {
+						interClusterDistances.push(
+							geodesicDistance(
+								readVec3(first.positions, source),
+								readVec3(first.positions, target),
+							),
+						);
+					}
+				}
+			}
+		}
+
+		const centers = groups.map((group) =>
+			sphericalWeightedMean(
+				group.map((nodeIndex) =>
+					readVec3(first.positions, nodeIndex),
+				),
+			),
+		);
+		expect(centers.every((center) => center !== null)).toBe(true);
+		const centerDistances: number[] = [];
+		for (let left = 0; left < centers.length; left += 1) {
+			for (
+				let right = left + 1;
+				right < centers.length;
+				right += 1
+			) {
+				const source = centers[left];
+				const target = centers[right];
+				if (source === null || source === undefined ||
+					target === null || target === undefined) {
+					continue;
+				}
+				centerDistances.push(geodesicDistance(source, target));
+			}
+		}
+
+		const typicalIntraDistance = median(intraClusterDistances);
+		expect(typicalIntraDistance).toBeLessThan(
+			median(interClusterDistances) * 0.55,
+		);
+		expect(typicalIntraDistance).toBeLessThan(
+			median(centerDistances) * 0.55,
+		);
 	});
 
 	it('is deterministic for the same graph, seed, and settings', () => {
