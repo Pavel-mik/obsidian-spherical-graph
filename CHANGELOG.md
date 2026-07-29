@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-07-29
+
 ### Changed
 
 - Notes inside directory lobes now start from seeded best-candidate cap samples
