@@ -74,8 +74,11 @@
   inferred graph communities with a stable, explainable mapping users control
   through their existing vault structure.
 - Initialize and Renew receive compact directory territory constraints.
-  Territory centers and hard angular extents affect node placement; land masks,
-  coastlines, colors, and texture remain downstream render products.
+  A disjoint outer folder extent is decomposed into overlapping asymmetric
+  lobes with per-node centers and varied hard angular limits. This prevents a
+  large folder from inheriting the circular silhouette of one uniform cap;
+  land masks, coastlines, colors, and texture remain downstream render
+  products.
 - Same-folder springs retain full strength, cross-folder springs use 14%, and
   root-note edges use 35%. Rendering, selection, and Route Finder always use
   the original graph weights.
@@ -97,11 +100,13 @@
 - Linked root notes can receive deterministic, density-scaled island polygons
   when there is enough clearance from a continent and another island. Orphan
   notes never seed a polygon.
-- A connected ocean targets 50% of the analytical render raster, plus bounded
+- A connected ocean targets 52% of the analytical render raster, plus bounded
   compensation for root-island area.
   Expansion proceeds only inward from the existing external ocean and protects
-  member cells. This explicit visual invariant was chosen because one-cell sea
-  seams are analytically connected but read as rivers rather than oceans.
+  member cells. A deterministic three-scale spherical bias varies coastal
+  erosion pressure to create broad bays and headlands. This explicit visual
+  invariant was chosen because one-cell sea seams are analytically connected
+  but read as rivers, while an unbiased circular cap reads as a disk.
 - Coast detail and terrain texture are deterministic procedural functions of
   the committed snapshot seed and sphere direction. No bitmap texture is
   shipped, fetched, or persisted, and Refresh cannot randomly redraw the map.
@@ -111,6 +116,11 @@
 - Narrow panes preserve horizontal globe framing through a derived vertical
   field of view and use a screen-area label budget. Neither behavior changes
   the camera distance, saved layout, or the user's maximum-label setting.
+- **Auto rotate** is an ephemeral camera animation controlled from the bottom
+  status rail. It never rotates the graph group or rewrites committed vectors,
+  and any manual Arcball gesture stops it. Keeping it out of persisted settings
+  makes the control immediate and prevents a reopened view from unexpectedly
+  consuming continuous frames.
 - The former cyberpunk direction is retired. The active style is an editorial
   scientific atlas: matte navy ocean, muted earth land colors, sand
   coastlines, irregular bays/headlands, gently mottled relief and contours,

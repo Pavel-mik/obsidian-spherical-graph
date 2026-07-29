@@ -36,6 +36,7 @@ import {
 	type RenderFilterState,
 } from './renderFilters';
 import { verticalFovForAspect } from './cameraFraming';
+import { automaticRotationAngle } from './autoRotation';
 
 interface FocusAnimation {
 	startedAt: number;
@@ -52,6 +53,7 @@ interface WindowWithObservers extends Window {
 
 const CAMERA_TARGET = new Vector3(0, 0, 0);
 const IDENTITY_QUATERNION = new Quaternion();
+const AUTO_ROTATION_AXIS = new Vector3(0, 1, 0);
 
 export class SphericalGraphRenderer {
 	private readonly ownerDocument: Document;
@@ -79,6 +81,8 @@ export class SphericalGraphRenderer {
 	private themeObserver: MutationObserver | undefined;
 	private animationFrame: number | undefined;
 	private focusAnimation: FocusAnimation | undefined;
+	private autoRotationEnabled = false;
+	private lastAutoRotationTimestamp: number | undefined;
 	private width = 0;
 	private height = 0;
 	private pixelRatio = 0;
@@ -290,6 +294,18 @@ export class SphericalGraphRenderer {
 		this.setFilters({ ...this.filters, showTags: visible });
 	}
 
+	setAutoRotation(enabled: boolean): void {
+		if (this.autoRotationEnabled === enabled) {
+			return;
+		}
+		this.autoRotationEnabled = enabled;
+		this.lastAutoRotationTimestamp = undefined;
+		if (!enabled) {
+			this.emitCameraChange();
+		}
+		this.requestRender();
+	}
+
 	setFilters(filters: RenderFilterState): void {
 		this.filters = { ...filters };
 		this.nodeLayer.updateFilters(this.filters);
@@ -435,6 +451,10 @@ export class SphericalGraphRenderer {
 
 	private readonly onControlsStart = (): void => {
 		this.cancelFocus();
+		if (this.autoRotationEnabled) {
+			this.setAutoRotation(false);
+			this.callbacks.onAutoRotationChange?.(false);
+		}
 	};
 
 	private readonly onControlsEnd = (): void => {
@@ -444,6 +464,7 @@ export class SphericalGraphRenderer {
 	private readonly onContextLost = (event: Event): void => {
 		event.preventDefault();
 		this.contextLost = true;
+		this.lastAutoRotationTimestamp = undefined;
 		if (this.animationFrame !== undefined) {
 			this.ownerWindow.cancelAnimationFrame(this.animationFrame);
 			this.animationFrame = undefined;
@@ -539,14 +560,40 @@ export class SphericalGraphRenderer {
 			return;
 		}
 		const focusContinues = this.advanceFocusAnimation(timestamp);
+		const autoRotationContinues =
+			this.advanceAutoRotation(timestamp);
 		this.graphGroup.updateMatrixWorld(true);
 		this.tagLayer.render(this.camera, this.width, this.height);
 		this.labelLayer.render(this.camera, this.width, this.height);
 		this.webglRenderer.render(this.scene, this.camera);
-		if (focusContinues) {
+		if (focusContinues || autoRotationContinues) {
 			this.requestRender();
 		}
 	};
+
+	private advanceAutoRotation(timestamp: number): boolean {
+		if (!this.autoRotationEnabled) {
+			return false;
+		}
+		if (this.focusAnimation !== undefined) {
+			this.lastAutoRotationTimestamp = timestamp;
+			return true;
+		}
+		const previous = this.lastAutoRotationTimestamp ?? timestamp;
+		this.lastAutoRotationTimestamp = timestamp;
+		const angle = automaticRotationAngle(timestamp - previous);
+		if (angle > 0) {
+			const rotation = new Quaternion().setFromAxisAngle(
+				AUTO_ROTATION_AXIS,
+				angle,
+			);
+			this.camera.position.applyQuaternion(rotation);
+			this.camera.up.applyQuaternion(rotation).normalize();
+			this.camera.lookAt(CAMERA_TARGET);
+			this.controls.update();
+		}
+		return true;
+	}
 
 	private advanceFocusAnimation(timestamp: number): boolean {
 		const animation = this.focusAnimation;

@@ -43,6 +43,11 @@ vault.
    - Drag the camera through multiple complete revolutions in both directions.
    - Inspect nodes/edges around every apparent longitude.
    - Confirm there is no jump, cut, duplicated boundary, or planar seam.
+   - Select **Auto rotate** in the bottom status rail. Confirm the button becomes
+     pressed, the camera begins a slow steady orbit, and the committed position
+     buffer remains bitwise unchanged.
+   - Select it again to stop. Start it once more and begin a manual drag or
+     wheel gesture; confirm rotation stops and the button returns to unpressed.
 
 3. **Zoom and resize**
 
@@ -173,6 +178,7 @@ vault.
     - Open/activate the view in a narrow split.
     - Verify toolbar wrapping, full remaining canvas height, horizontal globe
       framing, and a reduced label density without horizontal page overflow.
+    - Confirm **Auto rotate** remains visible and operable in the bottom rail.
     - Move the view to a pop-out window.
     - Verify interaction, resize, owner-window animation, and cleanup.
 
@@ -190,7 +196,7 @@ vault.
     - Confirm linked notes directly in the vault root receive island patches,
       degree-one/two folder notes remain on their continent, and every
       degree-zero orphan stays interactive over open water without land.
-    - Confirm the connected ocean covers approximately 50% of the render raster
+    - Confirm the connected ocean covers approximately 52% of the render raster
       and reads as broad water rather than one-cell river seams. Confirm
       protected continent-member cells remain on land and no new inland lakes
       appear.
@@ -201,6 +207,9 @@ vault.
     - Inspect several coasts at close zoom. Confirm the shoreline has
       deterministic fine-scale irregularity, avoids a repeated circular
       “cloud” outline, and is bordered by a variably wide sand-beach band.
+    - Center the largest top-level folder on the camera. Confirm its macro
+      outline contains asymmetric lobes, broad bays, and headlands instead of
+      reproducing the circular boundary of its outer allocation cap.
     - Run Refresh after adding a note inside an existing spatial cluster.
       Confirm the matched continent keeps its name and color while its center
       and diagnostic extent are rederived from the fixed positions. Confirm the

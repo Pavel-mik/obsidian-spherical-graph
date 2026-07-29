@@ -106,6 +106,7 @@ export interface RendererCallbacks {
 	onSelectTag?(tag: RenderTag | undefined): void;
 	onOpenNode?(node: RenderNode, openInNewLeaf: boolean): void;
 	onCameraChange?(camera: CameraState): void;
+	onAutoRotationChange?(enabled: boolean): void;
 	onContextError?(message: string): void;
 	onContextRestored?(): void;
 }

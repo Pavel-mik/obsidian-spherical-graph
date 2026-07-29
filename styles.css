@@ -1276,6 +1276,51 @@
 	overflow-wrap: anywhere;
 }
 
+.spherical-graph-auto-rotate {
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
+	gap: 7px;
+	min-height: 24px;
+	margin-inline-start: auto;
+	padding: 3px 9px;
+	border: 1px solid rgba(33, 230, 255, 0.26);
+	border-radius: 3px;
+	background: rgba(33, 230, 255, 0.045);
+	color: var(--sg-muted);
+	font: inherit;
+	letter-spacing: inherit;
+	cursor: pointer;
+}
+
+.spherical-graph-auto-rotate::before {
+	width: 9px;
+	height: 9px;
+	border: 1px solid currentColor;
+	border-left-color: transparent;
+	border-radius: 50%;
+	content: "";
+}
+
+.spherical-graph-auto-rotate:hover,
+.spherical-graph-auto-rotate:focus-visible {
+	border-color: var(--sg-cyan-soft);
+	color: var(--sg-text);
+	outline: none;
+}
+
+.spherical-graph-auto-rotate:disabled {
+	cursor: default;
+	opacity: 0.45;
+}
+
+.spherical-graph-auto-rotate[data-active="true"] {
+	border-color: var(--sg-cyan);
+	background: rgba(33, 230, 255, 0.11);
+	color: var(--sg-cyan-soft);
+	box-shadow: 0 0 10px rgba(33, 230, 255, 0.13);
+}
+
 .spherical-graph-status-progress {
 	flex: 0 1 320px;
 	width: clamp(88px, 24vw, 320px);
@@ -1631,6 +1676,10 @@
 
 	.spherical-graph-status-rail {
 		padding-inline: 10px;
+	}
+
+	.spherical-graph-auto-rotate {
+		padding-inline: 7px;
 	}
 
 	.spherical-graph-inspector {
@@ -2040,6 +2089,25 @@
 
 .spherical-graph-status-progress {
 	accent-color: var(--sg-coast);
+}
+
+.spherical-graph-auto-rotate {
+	border-color: rgba(129, 150, 159, 0.35);
+	background: rgba(129, 150, 159, 0.07);
+	color: var(--sg-muted);
+}
+
+.spherical-graph-auto-rotate:hover,
+.spherical-graph-auto-rotate:focus-visible {
+	border-color: rgba(212, 181, 114, 0.68);
+	color: var(--sg-text);
+}
+
+.spherical-graph-auto-rotate[data-active="true"] {
+	border-color: var(--sg-coast);
+	background: rgba(212, 181, 114, 0.13);
+	color: var(--sg-node);
+	box-shadow: none;
 }
 
 .spherical-graph-state-overlay,

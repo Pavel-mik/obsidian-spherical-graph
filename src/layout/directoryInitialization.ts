@@ -1,6 +1,9 @@
 import {
 	deterministicPermutation,
 	hashNumbers,
+	hashString,
+	hashToSignedUnitFloat,
+	hashToUnitFloat,
 } from '../geometry/deterministicHash';
 import {
 	exponentialMap,
@@ -27,6 +30,8 @@ const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const CONTINENTAL_LAND_FRACTION = 0.48;
 const MIN_TERRITORY_RADIUS = 0.18;
 const MAX_TERRITORY_RADIUS = 1.48;
+const MIN_LOBE_COUNT = 1;
+const MAX_LOBE_COUNT = 7;
 
 export interface DirectoryInitialization {
 	readonly positions: Float32Array;
@@ -45,6 +50,12 @@ interface FolderGroup {
 interface FolderTerritory {
 	readonly center: Vec3;
 	readonly radius: number;
+}
+
+interface FolderLobe {
+	readonly center: Vec3;
+	readonly radius: number;
+	readonly members: readonly number[];
 }
 
 function separateTerritories(groups: FolderGroup[]): void {
@@ -152,18 +163,177 @@ export function directoryFolderIndexByNode(graph: GraphData): Int32Array {
 	});
 }
 
-function capPoint(
+function lobeCount(memberCount: number): number {
+	return Math.min(
+		MAX_LOBE_COUNT,
+		Math.max(
+			MIN_LOBE_COUNT,
+			Math.round(Math.sqrt(Math.max(1, memberCount)) / 3),
+		),
+	);
+}
+
+function regionKey(path: string): string {
+	const parts = path.replaceAll('\\', '/').split('/');
+	return parts.length >= 3
+		? `${parts[0] ?? ''}/${parts[1] ?? ''}`
+		: (parts[0] ?? path);
+}
+
+function assignMembersToLobes(
+	graph: GraphData,
+	group: FolderGroup,
+	count: number,
+	seed: number,
+): number[][] {
+	const membersByRegion = new Map<string, number[]>();
+	for (const nodeIndex of group.members) {
+		const path = graph.nodes[nodeIndex]?.path ?? `${nodeIndex}`;
+		const key = regionKey(path);
+		const members = membersByRegion.get(key);
+		if (members === undefined) {
+			membersByRegion.set(key, [nodeIndex]);
+		} else {
+			members.push(nodeIndex);
+		}
+	}
+	const targetSize = Math.max(1, group.members.length / count);
+	const lobes = Array.from({ length: count }, () => [] as number[]);
+	const cohorts = [...membersByRegion.entries()].sort(
+		([leftKey, left], [rightKey, right]) =>
+			right.length - left.length || leftKey.localeCompare(rightKey),
+	);
+	for (const [key, members] of cohorts) {
+		const span = Math.min(
+			count,
+			Math.max(1, Math.ceil(members.length / (targetSize * 1.2))),
+		);
+		const first = hashString(key, seed) % count;
+		const permutation = deterministicPermutation(
+			members.length,
+			hashString(key, hashNumbers(seed, members.length)),
+		);
+		for (let offset = 0; offset < permutation.length; offset += 1) {
+			const member = members[permutation[offset] ?? offset];
+			if (member !== undefined) {
+				lobes[(first + (offset % span)) % count]?.push(member);
+			}
+		}
+	}
+	for (let emptyIndex = 0; emptyIndex < lobes.length; emptyIndex += 1) {
+		const empty = lobes[emptyIndex];
+		if (empty === undefined || empty.length > 0) {
+			continue;
+		}
+		const donor = lobes
+			.map((members, index) => ({ members, index }))
+			.filter(({ index }) => index !== emptyIndex)
+			.sort(
+				(left, right) =>
+					right.members.length - left.members.length ||
+					left.index - right.index,
+			)[0]?.members;
+		if (donor === undefined || donor.length <= 1) {
+			continue;
+		}
+		const transferCount = Math.max(
+			1,
+			Math.floor(donor.length / (count + 1)),
+		);
+		empty.push(...donor.splice(-transferCount));
+	}
+	return lobes;
+}
+
+function folderLobes(
+	graph: GraphData,
+	group: FolderGroup,
+	folderIndex: number,
+	seed: number,
+): readonly FolderLobe[] {
+	const count = lobeCount(group.members.length);
+	const membersByLobe = assignMembersToLobes(
+		graph,
+		group,
+		count,
+		hashNumbers(seed, folderIndex, 0x10be),
+	);
+	const tangentX = orthogonalUnitVec3(group.center, seed);
+	const tangentY = normalizeVec3(crossVec3(group.center, tangentX));
+	return membersByLobe.flatMap((members, index) => {
+		if (members.length === 0) {
+			return [];
+		}
+		const lobeSeed = hashNumbers(seed, folderIndex, index, 0x10be);
+		const phase =
+			index * GOLDEN_ANGLE +
+			hashToUnitFloat(lobeSeed, 0x91a5) * Math.PI * 2;
+		const centerOffset =
+			count === 1
+				? group.radius * 0.08
+				: group.radius *
+					(0.12 + hashToUnitFloat(lobeSeed, 0x0ff5) * 0.2);
+		const direction = normalizeVec3([
+			tangentX[0] * Math.cos(phase) +
+				tangentY[0] * Math.sin(phase),
+			tangentX[1] * Math.cos(phase) +
+				tangentY[1] * Math.sin(phase),
+			tangentX[2] * Math.cos(phase) +
+				tangentY[2] * Math.sin(phase),
+		]);
+		return [
+			{
+				center: exponentialMap(
+					group.center,
+					scaleVec3(direction, centerOffset),
+				),
+				radius:
+					group.radius *
+					(count === 1
+						? 0.72
+						: 0.43 +
+							hashToUnitFloat(lobeSeed, 0x6ad1) * 0.07),
+				members,
+			},
+		];
+	});
+}
+
+function organicBoundaryScale(phase: number, seed: number): number {
+	const firstPhase =
+		hashToSignedUnitFloat(seed, 0xb01) * Math.PI;
+	const secondPhase =
+		hashToSignedUnitFloat(seed, 0xb02) * Math.PI;
+	const detailPhase =
+		hashToSignedUnitFloat(seed, 0xb03) * Math.PI;
+	return Math.max(
+		0.52,
+		Math.min(
+			0.96,
+			0.77 +
+				Math.sin(phase * 2 + firstPhase) * 0.1 +
+				Math.sin(phase * 3 + secondPhase) * 0.075 +
+				Math.sin(phase * 7 + detailPhase) * 0.045,
+		),
+	);
+}
+
+function organicCapPlacement(
 	center: Vec3,
 	index: number,
 	count: number,
 	radius: number,
 	seed: number,
-): Vec3 {
+): {
+	readonly position: Vec3;
+	readonly maximumDistance: number;
+} {
 	const radialFraction = Math.sqrt((index + 0.45) / Math.max(1, count));
-	const angularRadius = radius * radialFraction * 0.86;
 	const phase =
 		index * GOLDEN_ANGLE +
 		(hashNumbers(seed, index, 0xc4f) / 0x1_0000_0000) * Math.PI * 2;
+	const maximumDistance = radius * organicBoundaryScale(phase, seed);
+	const angularRadius = maximumDistance * radialFraction * 0.88;
 	const tangentX = orthogonalUnitVec3(center, seed);
 	const tangentY = normalizeVec3(crossVec3(center, tangentX));
 	const direction = normalizeVec3([
@@ -171,7 +341,13 @@ function capPoint(
 		tangentX[1] * Math.cos(phase) + tangentY[1] * Math.sin(phase),
 		tangentX[2] * Math.cos(phase) + tangentY[2] * Math.sin(phase),
 	]);
-	return exponentialMap(center, scaleVec3(direction, angularRadius));
+	return {
+		position: exponentialMap(
+			center,
+			scaleVec3(direction, angularRadius),
+		),
+		maximumDistance,
+	};
 }
 
 function folderTerritoriesByNode(
@@ -275,30 +451,49 @@ export function initializeDirectoryLayout(
 		if (group === undefined) {
 			continue;
 		}
-		const permutation = deterministicPermutation(
-			group.members.length,
-			hashNumbers(effectiveSeed, folderIndex, 0x6d1),
+		const lobes = folderLobes(
+			graph,
+			group,
+			folderIndex,
+			effectiveSeed,
 		);
-		for (let memberOffset = 0; memberOffset < group.members.length; memberOffset += 1) {
-			const nodeIndex = group.members[memberOffset];
-			const pointIndex = permutation[memberOffset];
-			if (nodeIndex === undefined || pointIndex === undefined) {
+		for (let lobeIndex = 0; lobeIndex < lobes.length; lobeIndex += 1) {
+			const lobe = lobes[lobeIndex];
+			if (lobe === undefined) {
 				continue;
 			}
-			writeVec3(
-				positions,
-				nodeIndex,
-				capPoint(
-					group.center,
-					pointIndex,
-					group.members.length,
-					group.radius,
-					hashNumbers(effectiveSeed, folderIndex, nodeIndex),
-				),
+			const permutation = deterministicPermutation(
+				lobe.members.length,
+				hashNumbers(effectiveSeed, folderIndex, lobeIndex, 0x6d1),
 			);
-			writeVec3(centers, nodeIndex, group.center);
-			maximumDistances[nodeIndex] = group.radius;
-			folderIndexByNode[nodeIndex] = folderIndex;
+			for (
+				let memberOffset = 0;
+				memberOffset < lobe.members.length;
+				memberOffset += 1
+			) {
+				const nodeIndex = lobe.members[memberOffset];
+				const pointIndex = permutation[memberOffset];
+				if (nodeIndex === undefined || pointIndex === undefined) {
+					continue;
+				}
+				const placement = organicCapPlacement(
+					lobe.center,
+					pointIndex,
+					lobe.members.length,
+					lobe.radius,
+					hashNumbers(
+						effectiveSeed,
+						folderIndex,
+						lobeIndex,
+						nodeIndex,
+					),
+				);
+				writeVec3(positions, nodeIndex, placement.position);
+				writeVec3(centers, nodeIndex, lobe.center);
+				maximumDistances[nodeIndex] =
+					placement.maximumDistance;
+				folderIndexByNode[nodeIndex] = folderIndex;
+			}
 		}
 	}
 

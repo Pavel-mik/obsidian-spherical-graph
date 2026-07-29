@@ -52,8 +52,8 @@ flowchart LR
   labels, one instanced node layer, a muted dashed graticule, batched geodesic
   edges, selected/route ribbons,
   endpoint rings, an instanced tag-satellite layer with batched spiral links,
-  bounded zoom-gated labels, picking, camera controls, theme and resize
-  handling, and deterministic disposal.
+  bounded zoom-gated labels, picking, manual and optional automatic camera
+  controls, theme and resize handling, and deterministic disposal.
 - `src/view` owns the ItemView, toolbar, fuzzy search, status presentation, and
   responsive selection-details panel, ephemeral route-picking state, and
   callback interfaces. It does not call the solver directly. The panel derives
@@ -158,17 +158,20 @@ cancellation, and validation semantics.
 ## Directory geography pipeline
 
 The first path segment is the authoritative continent key. Initialize and Renew
-allocate deterministic weighted spherical territories, place each folder's
-linked notes within its territory, retain full same-folder springs, reduce
-cross-folder springs, and clamp assigned nodes to their own territory after
-every intrinsic integration step. Root notes and orphans are unconstrained.
+allocate deterministic weighted outer spherical territories, decompose each
+folder into one to seven overlapping asymmetric lobes, place subfolder cohorts
+across those lobes, retain full same-folder springs, reduce cross-folder
+springs, and clamp assigned nodes to their per-node lobe after every intrinsic
+integration step. Root notes and orphans are unconstrained.
 
 After validation, `postLayoutGeography` groups all linked folder notes by their
 top-level path, makes linked root notes islands, and omits orphans from land.
 It derives centers and diagnostic extents from the fixed vectors and preserves
 identity/color by full-path or relative-path membership overlap. The renderer
 then builds adaptive member/road support with exclusive ownership and expands
-only the connected external ocean until visible water is approximately 50%.
+only the connected external ocean until visible water is approximately 52%.
+Multi-scale spherical erosion bias makes weak coastal sectors retreat into
+broad bays without moving or excluding protected member cities.
 
 The analytical grid, density samples, watershed labels, and cell ownership are
 temporary. The atomic snapshot persists fixed note vectors and compact semantic
@@ -179,8 +182,10 @@ geography, not the analytical surface.
 The renderer is constructed lazily in `ItemView.onOpen`, using the view's
 `ownerDocument` and `defaultView` so pop-out windows are supported. Rendering
 is invalidation-based: camera changes, an atomic snapshot, selection, visible
-topology, resize, theme, or focus animation schedule a frame. There is no
-permanent 60 fps loop in a fixed state.
+topology, resize, theme, or focus animation schedule a frame. A continuous
+frame loop exists only while the user-enabled **Auto rotate** control is
+active; disabling it or starting a manual camera gesture returns the renderer
+to invalidation-only frames.
 
 The WebGL graticule is a low-contrast dashed `LineDashedMaterial`; document
 links remain continuous geodesic roads with a separate material. `SphereLayer`
@@ -192,9 +197,10 @@ Detailed bays, headlands, and the irregular beach band are therefore smooth
 rather than aligned to mesh cells.
 `landSupport` excludes degree-zero notes, keeps every linked directory member,
 and retreats weak coastal ownership from the already connected ocean until the
-50% target plus bounded root-island compensation is reached. Protected member
-cells remain land, so this render-only retreat widens seas without changing
-positions or creating inland holes.
+52% target plus bounded root-island compensation is reached. A precomputed
+smooth spherical bias varies the retreat rate at three scales. Protected member
+cells remain land, so this render-only retreat widens seas and carves
+headlands/bays without changing positions or creating inland holes.
 The land and ocean `ShaderMaterial`s generate their atlas texture from local
 sphere direction, requiring no texture files or runtime I/O. The ocean depth
 skin sits slightly inside the logical globe so land, graticule, roads, and

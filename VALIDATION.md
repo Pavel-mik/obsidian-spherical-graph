@@ -1,5 +1,46 @@
 # Validation
 
+## Organic continents and auto-rotation release validation (1.5.0)
+
+- Date: 2026-07-29
+- Environment: Windows 11 x64, Node.js 24.12.0, npm 11.6.2
+- `npm run check`: PASS
+- ESLint and strict TypeScript: PASS
+- Vitest: PASS; 43 files, 224 tests
+- Production build and release metadata validation: PASS
+
+Automated regressions verify that a large folder is decomposed into at least
+three deterministic intrinsic lobe centers with varied per-node radial limits,
+every initialized point remains inside its own hard S² constraint, directory
+territories retain sea separation, and the camera rotation step is finite,
+slow, deterministic, and capped after a background-tab delay. The complete
+land-support suite still protects every linked member, preserves connected
+ocean, avoids inland lakes, and keeps the 636-node raster within its performance
+and memory bounds.
+
+Browser visual QA used the production `SphericalGraphRenderer`, release
+stylesheet, directory initializer, post-layout geography, and land-support
+pipeline in a disposable 244-note / 531-link / 4-continent atlas. At
+1280 × 720 the largest folder showed an asymmetric macro outline with broad
+bays and headlands rather than a circular cap. The bottom-rail **Auto rotate**
+button was unique and visible; selecting it changed `aria-pressed` to `true`
+and visibly advanced the globe, while a second selection returned it to
+`false`. At 520 × 760 the control remained visible without horizontal
+overflow. Browser console errors and warnings: none.
+
+The browser atlas validates the production renderer and responsive control
+surface, but is not a full Obsidian Electron-shell session. The corresponding
+manual vault checks remain in `MANUAL_TEST_PLAN.md`.
+
+### Release artifacts (1.5.0)
+
+- `main.js`: 858,621 bytes;
+  SHA-256 `4176AA9DA5B2289C319BA6E9BC11958E279D7D7484CA024E46816E6227EF1440`
+- `manifest.json`: 356 bytes, plugin 1.5.0;
+  SHA-256 `71EF150CBFE785225C8808D9A8CE10D1C7D287F43772FE81B8488F847F83F849`
+- `styles.css`: 49,224 bytes;
+  SHA-256 `6CF48EC62FD6FB70C54DADEA56DE7FC1878AC6D25394B146FEE9626E789E00C9`
+
 ## Directory geography release validation (1.4.0)
 
 - Date: 2026-07-29

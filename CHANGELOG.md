@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-29
+
+### Added
+
+- A directly accessible **Auto rotate** push button now lives in the bottom
+  status rail. It starts a slow camera orbit without changing any committed
+  note position, stops on a second press, and also stops when the user begins
+  a manual camera gesture.
+
+### Changed
+
+- Large directory continents now use deterministic compound territories
+  instead of filling one uniform circular cap. Subfolder cohorts occupy
+  overlapping asymmetric lobes, and each node receives a varied intrinsic
+  radial limit.
+- Connected-ocean growth now includes smooth multi-scale spherical coastal
+  bias. Weak shoreline sectors erode into broad bays while protected member
+  cells remain land, producing headlands and irregular macro silhouettes in
+  addition to the existing fine coastline detail.
+- The connected-ocean target is 52%, still approximately half the globe but
+  with enough coastal retreat to prevent a nearly hemispherical directory from
+  reading as a perfect disk.
+
+### Notes
+
+- The layout algorithm version is now 5. Existing maps receive one automatic
+  Initialize so the compound directory territories take effect.
+
 ## [1.4.0] - 2026-07-29
 
 ### Added
@@ -284,7 +312,8 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.4.0...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.5.0...HEAD
+[1.5.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.4.0...1.5.0
 [1.4.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.3.1...1.4.0
 [1.3.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.3.0...1.3.1
 [1.3.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.2.5...1.3.0

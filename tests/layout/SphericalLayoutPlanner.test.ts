@@ -201,6 +201,57 @@ describe('SphericalLayoutPlanner integration', () => {
 		expect(territory.assignedNodeMask[6]).toBe(0);
 	});
 
+	it('splits a large folder into an irregular compound territory', () => {
+		const nodeCount = 81;
+		const paths = Array.from(
+			{ length: nodeCount },
+			(_, index) =>
+				`Books/${index % 4 === 0 ? 'History/' : index % 4 === 1 ? 'Science/' : ''}Note-${index}.md`,
+		);
+		const edges = Array.from(
+			{ length: nodeCount - 1 },
+			(_, index) => ({
+				...LINK,
+				source: index,
+				target: index + 1,
+			}),
+		);
+		const initialized = initializeDirectoryLayout(
+			graph(paths, edges),
+			29,
+		);
+		const centers = new Set<string>();
+		let minimumRadius = Number.POSITIVE_INFINITY;
+		let maximumRadius = 0;
+		for (let index = 0; index < nodeCount; index += 1) {
+			const territoryCenter = readVec3(
+				initialized.territory.centers,
+				index,
+			);
+			centers.add(
+				territoryCenter
+					.map((value) => value.toFixed(4))
+					.join('|'),
+			);
+			const radius =
+				initialized.territory.maximumDistances[index] ?? 0;
+			minimumRadius = Math.min(minimumRadius, radius);
+			maximumRadius = Math.max(maximumRadius, radius);
+			expect(
+				geodesicDistance(
+					territoryCenter,
+					readVec3(initialized.positions, index),
+				),
+			).toBeLessThanOrEqual(radius + 1e-6);
+		}
+
+		expect(centers.size).toBeGreaterThanOrEqual(3);
+		expect(maximumRadius - minimumRadius).toBeGreaterThan(0.035);
+		expect(
+			initializeDirectoryLayout(graph(paths, edges), 29).positions,
+		).toEqual(initialized.positions);
+	});
+
 	it('starts old nodes at committed positions and new nodes near neighbors', () => {
 		const previous = graph(['a', 'b'], [LINK]);
 		const current = graph(

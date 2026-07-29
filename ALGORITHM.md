@@ -79,9 +79,10 @@ land geometry is still derived only after the solver has produced and
 validated the final unit-vector buffer:
 
 1. group linked notes by their first path segment;
-2. allocate weighted deterministic territory centers and angular extents on
-   \(S^2\);
-3. initialize each folder inside its own territory;
+2. allocate weighted deterministic folder centers and disjoint outer angular
+   extents on \(S^2\);
+3. split each folder into overlapping asymmetric intrinsic lobes and initialize
+   subfolder cohorts across those lobes;
 4. solve with full same-folder springs, reduced cross-folder springs, and a
    hard intrinsic territory boundary;
 5. validate and fix the completed note positions;
@@ -89,10 +90,10 @@ validated the final unit-vector buffer:
    to approximately half the surface;
 7. derive render-only coast, beach, and linked-root-note island geometry.
 
-The worker receives only compact numeric territory centers, masks, and maximum
-geodesic distances. It never receives rendered coastlines, density rasters,
-colors, labels, or land ownership. Territory enforcement is an intrinsic
-geodesic clamp, not a planar or latitude/longitude constraint.
+The worker receives only compact numeric per-node lobe centers, masks, and
+varied maximum geodesic distances. It never receives rendered coastlines,
+density rasters, colors, labels, or land ownership. Territory enforcement is
+an intrinsic geodesic clamp, not a planar or latitude/longitude constraint.
 
 ### Folder ownership and cross-folder roads
 
@@ -111,9 +112,11 @@ directions without collapsing or merging their owning territories.
 After the solver stops, each folder's fixed member directions and short
 same-folder roads seed compact land-support kernels on a subdivided icosphere.
 Support ownership is exclusive; competing owners leave sea between them.
-Enclosed holes are reconciled and only the connected external ocean is expanded
-until its raster fraction reaches 50%, plus bounded compensation for the
-visible area of root-note islands. Member cells remain protected.
+Enclosed holes are reconciled and only the connected external ocean is
+expanded until its raster fraction reaches 52%, plus bounded compensation for
+the visible area of root-note islands. A smooth deterministic multi-scale
+spherical bias makes erosion advance farther through weak shoreline sectors,
+forming broad bays and headlands. Member cells remain protected.
 
 Previous geography is matched using both complete paths and paths relative to
 their top-level folder. This preserves continent identity and color through
@@ -125,10 +128,14 @@ the current folder name.
 Initialize and Renew distribute folder centers with a deterministically
 permuted Fibonacci sphere. Territory area is proportional to
 \(n_\mathrm{folder}^{0.8}\), so large folders receive more room without
-monopolizing the globe. Folder nodes use a deterministic golden-angle pattern
-inside their spherical territory. Linked root notes start near the weighted
-mean of the continents they reference; orphans use globally distributed free
-points. Changing a Renew generation changes all seeded permutations.
+monopolizing the globe. Each folder receives one to seven overlapping lobes
+according to its population. Subfolder cohorts remain locally coherent while
+oversized cohorts are deterministically spread across adjacent lobes. Lobe
+centers, radii, node angles, and per-node radial limits use independent seeded
+phases; the union stays inside the disjoint outer folder extent but does not
+form a circular cap. Linked root notes start near the weighted mean of the
+continents they reference; orphans use globally distributed free points.
+Changing a Renew generation changes all seeded permutations.
 
 Refresh begins existing nodes exactly at their committed unit vectors. A new
 node with committed neighbors begins near their weighted spherical mean plus a
@@ -261,9 +268,10 @@ local queries bounded for large vaults.
 After enclosed sea components are reconciled, the renderer expands only the
 already connected external ocean, one weak coastal raster ring at a time.
 Member support cells are protected, and candidate cells are ordered by land
-density. The target connected-ocean fraction is 50%, plus bounded compensation
-for root-island area. This widens river-like seams into readable seas without
-manufacturing inland lakes.
+density plus a deterministic smooth three-scale spherical coastal bias. The
+target connected-ocean fraction is 52%, plus bounded compensation for
+root-island area. This widens river-like seams, cuts broad bays into weak
+sectors, and avoids circular macro outlines without manufacturing inland lakes.
 
 The persisted angular extent is a diagnostic summary, not a placement
 constraint or coastline primitive. Coast ownership is the positive union of

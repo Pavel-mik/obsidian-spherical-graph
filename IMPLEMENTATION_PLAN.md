@@ -32,3 +32,7 @@
   linked root notes as islands, and leave every orphan over open water.
 - [x] Add same-subfolder selection emphasis and a searchable excluded-folder
   picker with subtree semantics.
+- [x] Replace uniform circular directory caps with deterministic compound
+  territories and multi-scale connected-ocean coastal erosion.
+- [x] Add a directly accessible bottom-rail Auto rotate control that preserves
+  the fixed position buffer and stops on manual camera interaction.

@@ -13,6 +13,7 @@ export const VIEW_CONTROL_COPY = {
 	renew: 'Renew layout',
 	cancelCalculation: 'Cancel calculation',
 	resetCamera: 'Reset camera',
+	autoRotate: 'Auto rotate',
 	findRoute: UI_STRINGS.routeIdle,
 	tags: 'Tags',
 	attachments: 'Attachments',

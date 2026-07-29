@@ -9,19 +9,22 @@ becomes its own continent, notes become cities, links become roads across the
 surface, and tags orbit overhead as satellites. Linked notes stored directly
 in the vault root become islands; orphan notes remain cities over open water.
 The cartography reserves approximately half the globe for one connected ocean.
-Route Finder reveals every shortest path between distant notes.
+Compound directory territories and post-layout coastal erosion keep large
+continents irregular rather than circular. Route Finder reveals every shortest
+path between distant notes.
 
 Spherical Graph is designed as a stable spatial map: a finite layout operation
 computes positions, validates and saves one complete snapshot, and then stops.
 Normal reading, search, filtering, selection, rotation, zoom, theme changes,
 and resizing do not move notes.
 
-Initialize and Renew first allocate deterministic intrinsic spherical
+Initialize and Renew first allocate deterministic compound intrinsic spherical
 territories to the top-level folders. Same-folder topology arranges cities
-inside each territory; cross-folder links have reduced layout weight and can
-move endpoints without transferring them to another continent. After the
-finite solver stops, adaptive land support over the fixed positions produces
-exclusive coastlines, beaches, root-note islands, and one broad ocean.
+across overlapping asymmetric lobes; cross-folder links have reduced layout
+weight and can move endpoints without transferring them to another continent.
+After the finite solver stops, adaptive land support and multi-scale coastal
+erosion over the fixed positions produce exclusive coastlines, beaches,
+root-note islands, and one broad ocean.
 
 ## See your vault as a world
 
@@ -89,9 +92,10 @@ and a reliable rename keeps the old position under the new path. Select
 - Intrinsic, seam-free spherical layout with deterministic exact and sampled
   repulsion modes.
 - Directory-aware Initialize/Renew placement directly on \(S^2\): each
-  non-orphan top-level folder owns a deterministic territory, internal links
-  retain full spring weight, cross-folder links are weaker, and hard geodesic
-  boundaries prevent continental overlap.
+  non-orphan top-level folder owns a deterministic compound territory,
+  internal links retain full spring weight, cross-folder links are weaker, and
+  hard geodesic lobe boundaries prevent continental overlap without imposing a
+  circular silhouette.
 - Post-layout cartography over fixed positions uses adaptive member and
   same-folder-road support, exclusive land ownership, irregular coastlines,
   and one connected ocean targeting approximately half the globe.
@@ -115,6 +119,8 @@ and a reliable rename keeps the old position under the new path. Select
   active-note emphasis,
   search/focus, open-note actions, camera reset, keyboard controls, and a
   translucent selection panel with clickable direct neighbors.
+- A persistent **Auto rotate** push button in the bottom rail starts or stops a
+  slow camera orbit; manual camera interaction stops it immediately.
 - Searchable excluded-folder picker in settings. Selecting a folder excludes
   its entire subtree after an explicit Refresh without moving the current map
   immediately.
@@ -139,6 +145,7 @@ and a reliable rename keeps the old position under the new path. Select
 | Action | Control |
 | --- | --- |
 | Rotate | Drag empty canvas space |
+| Start or stop automatic rotation | Use **Auto rotate** in the bottom status rail |
 | Zoom | Wheel or supported pinch gesture |
 | Inspect | Hover a node |
 | Select | Click a node |
@@ -159,7 +166,7 @@ and a reliable rename keeps the old position under the new path. Select
 | Stop a calculation | Choose **Cancel calculation** in **Map** |
 | Restore view | Choose **Reset camera** in **Map** |
 
-Dragging never changes a node position.
+Manual or automatic rotation changes only the camera and never a node position.
 
 ## Settings
 

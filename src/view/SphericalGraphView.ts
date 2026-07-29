@@ -42,7 +42,10 @@ import {
 	RouteToolbarState,
 	ViewToolbar,
 } from './ViewToolbar';
-import { RENEW_CONFIRMATION_COPY } from './viewCopy';
+import {
+	RENEW_CONFIRMATION_COPY,
+	VIEW_CONTROL_COPY,
+} from './viewCopy';
 import {
 	SphericalGraphViewModel,
 	SphericalGraphViewOptions,
@@ -80,6 +83,8 @@ export class SphericalGraphView extends ItemView {
 	private toolbar: ViewToolbar | undefined;
 	private detailsPanel: SelectionDetailsPanel | undefined;
 	private statusPresenter: LayoutStatusPresenter | undefined;
+	private autoRotateButton: HTMLButtonElement | undefined;
+	private autoRotationEnabled = false;
 	private root: HTMLElement | undefined;
 	private stage: HTMLElement | undefined;
 	private stateOverlay: HTMLElement | undefined;
@@ -211,6 +216,24 @@ export class SphericalGraphView extends ItemView {
 		statusRail.className = 'spherical-graph-status-rail';
 		this.root.append(statusRail);
 		this.statusPresenter = new LayoutStatusPresenter(statusRail);
+		this.autoRotateButton = statusRail.createEl('button');
+		this.autoRotateButton.type = 'button';
+		this.autoRotateButton.className =
+			'spherical-graph-auto-rotate';
+		this.autoRotateButton.textContent =
+			VIEW_CONTROL_COPY.autoRotate;
+		this.autoRotateButton.disabled = true;
+		this.autoRotateButton.title =
+			'Start automatic globe rotation';
+		this.autoRotateButton.setAttribute(
+			'aria-label',
+			VIEW_CONTROL_COPY.autoRotate,
+		);
+		this.autoRotateButton.addEventListener(
+			'click',
+			this.onAutoRotateToggle,
+		);
+		this.updateAutoRotateButton();
 
 		this.stateOverlay = this.root.createDiv();
 		this.stateOverlay.className = 'spherical-graph-state-overlay';
@@ -242,6 +265,9 @@ export class SphericalGraphView extends ItemView {
 							this.options.callbacks.onCameraChange(camera),
 						);
 					},
+					onAutoRotationChange: (enabled) => {
+						this.setAutoRotation(enabled, false);
+					},
 					onContextError: (message) => {
 						this.runtimeError = message;
 						this.updateStateOverlay();
@@ -253,6 +279,7 @@ export class SphericalGraphView extends ItemView {
 				},
 			});
 			this.renderer.setFilters(this.displayFilters);
+			this.autoRotateButton.disabled = false;
 		} catch (error) {
 			this.runtimeError = errorMessage(
 				error,
@@ -277,6 +304,12 @@ export class SphericalGraphView extends ItemView {
 		this.opened = false;
 		this.renderer?.dispose();
 		this.renderer = undefined;
+		this.autoRotateButton?.removeEventListener(
+			'click',
+			this.onAutoRotateToggle,
+		);
+		this.autoRotateButton = undefined;
+		this.autoRotationEnabled = false;
 		this.toolbar?.dispose();
 		this.toolbar = undefined;
 		this.detailsPanel?.dispose();
@@ -793,6 +826,36 @@ export class SphericalGraphView extends ItemView {
 			this.statusPresenter?.update(this.model.status) ??
 			presentLayoutStatus(this.model.status);
 		this.toolbar?.setStatus(presentation);
+	}
+
+	private readonly onAutoRotateToggle = (): void => {
+		this.setAutoRotation(!this.autoRotationEnabled);
+	};
+
+	private setAutoRotation(
+		enabled: boolean,
+		updateRenderer = true,
+	): void {
+		this.autoRotationEnabled = enabled;
+		if (updateRenderer) {
+			this.renderer?.setAutoRotation(enabled);
+		}
+		this.updateAutoRotateButton();
+	}
+
+	private updateAutoRotateButton(): void {
+		const button = this.autoRotateButton;
+		if (button === undefined) {
+			return;
+		}
+		button.dataset.active = String(this.autoRotationEnabled);
+		button.setAttribute(
+			'aria-pressed',
+			String(this.autoRotationEnabled),
+		);
+		button.title = this.autoRotationEnabled
+			? 'Stop automatic globe rotation'
+			: 'Start automatic globe rotation';
 	}
 
 	private updateStateOverlay(): void {

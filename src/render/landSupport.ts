@@ -40,9 +40,10 @@ const MEMBER_GUARANTEE_MAX_RADIUS = 0.024;
 const BOUNDARY_NOISE_BAND = 0.052;
 const BOUNDARY_SEARCH_RADIUS = 0.14;
 const SUPPORT_DISTANCE_CAP = 0.2;
-const TARGET_VISIBLE_OCEAN_FRACTION = 0.5;
+const TARGET_VISIBLE_OCEAN_FRACTION = 0.52;
 const APPROXIMATE_ROOT_ISLAND_AREA_FRACTION = 0.0008;
 const MAXIMUM_ISLAND_OCEAN_COMPENSATION = 0.12;
+const ORGANIC_COAST_BIAS_WEIGHT = 0.16;
 
 interface DensityAnchor {
 	readonly direction: Vec3;
@@ -1010,10 +1011,40 @@ function connectedOceanTargetFraction(islandCount: number): number {
 	);
 }
 
+function organicCoastBias(point: Vec3, seed: number): number {
+	const firstAxis = normalizeVec3([
+		hashToSignedUnitFloat(seed, 0xc01, 0),
+		hashToSignedUnitFloat(seed, 0xc01, 1),
+		hashToSignedUnitFloat(seed, 0xc01, 2),
+	]);
+	const secondAxis = normalizeVec3([
+		hashToSignedUnitFloat(seed, 0xc02, 0),
+		hashToSignedUnitFloat(seed, 0xc02, 1),
+		hashToSignedUnitFloat(seed, 0xc02, 2),
+	]);
+	const detailAxis = normalizeVec3([
+		hashToSignedUnitFloat(seed, 0xc03, 0),
+		hashToSignedUnitFloat(seed, 0xc03, 1),
+		hashToSignedUnitFloat(seed, 0xc03, 2),
+	]);
+	const firstPhase =
+		hashToSignedUnitFloat(seed, 0xc04) * Math.PI;
+	const secondPhase =
+		hashToSignedUnitFloat(seed, 0xc05) * Math.PI;
+	const detailPhase =
+		hashToSignedUnitFloat(seed, 0xc06) * Math.PI;
+	return (
+		Math.sin(dotVec3(point, firstAxis) * 3.4 + firstPhase) * 0.54 +
+		Math.sin(dotVec3(point, secondAxis) * 7.1 + secondPhase) * 0.3 +
+		Math.sin(dotVec3(point, detailAxis) * 15.7 + detailPhase) * 0.16
+	);
+}
+
 /**
  * Expands only the already connected external ocean, one coastal raster ring
- * at a time. Member cells remain protected. This turns weak one-cell seams
- * into readable seas without creating inland holes or moving any node.
+ * at a time. Member cells remain protected. A smooth multi-scale spherical
+ * bias makes some coastal sectors erode more deeply than others, restoring
+ * broad bays and peninsulas instead of reproducing a circular layout cap.
  */
 function expandConnectedOcean(
 	grid: IntrinsicSphericalGrid,
@@ -1022,11 +1053,15 @@ function expandConnectedOcean(
 	forced: Int32Array,
 	bestDensity: Float32Array,
 	islandCount: number,
+	seed: number,
 ): Uint8Array {
 	let connectedOcean = connectedSeaFromExisting(
 		grid,
 		owners,
 		initialConnectedOcean,
+	);
+	const coastBias = Float32Array.from(grid.vertices, (point) =>
+		organicCoastBias(point, seed),
 	);
 	const targetCount = Math.ceil(
 		grid.vertices.length * connectedOceanTargetFraction(islandCount),
@@ -1055,8 +1090,12 @@ function expandConnectedOcean(
 		}
 		const ordered = [...frontier].sort(
 			(left, right) =>
-				(bestDensity[left] ?? 0) -
-					(bestDensity[right] ?? 0) ||
+				Math.log1p(bestDensity[left] ?? 0) +
+					(coastBias[left] ?? 0) *
+						ORGANIC_COAST_BIAS_WEIGHT -
+					(Math.log1p(bestDensity[right] ?? 0) +
+						(coastBias[right] ?? 0) *
+							ORGANIC_COAST_BIAS_WEIGHT) ||
 				left - right,
 		);
 		const removeCount = Math.min(
@@ -1175,6 +1214,7 @@ function buildLandRaster(
 	anchors: SpatialBuckets<DensityAnchor>,
 	waterSeeds: SpatialBuckets<WaterSeed>,
 	maximumSupport: number,
+	seed: number,
 ): LandRaster {
 	const memberCount = assignments.reduce(
 		(total, owner) => total + (owner >= 0 ? 1 : 0),
@@ -1213,6 +1253,7 @@ function buildLandRaster(
 		forced,
 		fields.best,
 		geography.islandNodeIndices.length,
+		seed,
 	);
 	const boundaries = boundarySamples(
 		grid,
@@ -1290,6 +1331,7 @@ export function createLandSupportModel(
 			created.anchors,
 			waterSeeds,
 			maximumSupportRadius,
+			modelSeed,
 		),
 		anchors: created.anchors,
 		members: created.members,
