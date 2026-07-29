@@ -13,9 +13,14 @@ import {
 	type RefreshPlan,
 } from './RefreshPlanner';
 import {
-	initializeFullLayout,
 	initializeRefreshLayout,
 } from './initialization';
+import {
+	directoryAwareEdgeWeights,
+	directoryFolderIndexByNode,
+	initializeDirectoryLayout,
+} from './directoryInitialization';
+import { topLevelFolder } from '../geography/directorySemantics';
 import type {
 	RefreshConstraints,
 	SolverSettings,
@@ -66,11 +71,37 @@ function solverSettings(
 function renameSourceByTarget(
 	diff: GraphDiff,
 ): ReadonlyMap<string, string> {
+	const crossFolderPairCounts = new Map<string, number>();
+	for (const rename of diff.renamedNodes) {
+		const oldFolder = topLevelFolder(rename.oldPath);
+		const newFolder = topLevelFolder(rename.newPath);
+		if (
+			oldFolder !== undefined &&
+			newFolder !== undefined &&
+			oldFolder !== newFolder
+		) {
+			const key = `${oldFolder}\u0000${newFolder}`;
+			crossFolderPairCounts.set(
+				key,
+				(crossFolderPairCounts.get(key) ?? 0) + 1,
+			);
+		}
+	}
 	return new Map(
-		diff.renamedNodes.map((rename) => [
-			rename.newPath,
-			rename.oldPath,
-		]),
+		diff.renamedNodes
+			.filter((rename) => {
+				const oldFolder = topLevelFolder(rename.oldPath);
+				const newFolder = topLevelFolder(rename.newPath);
+				return (
+					oldFolder === newFolder ||
+					(oldFolder !== undefined &&
+						newFolder !== undefined &&
+						(crossFolderPairCounts.get(
+							`${oldFolder}\u0000${newFolder}`,
+						) ?? 0) >= 2)
+				);
+			})
+			.map((rename) => [rename.newPath, rename.oldPath]),
 	);
 }
 
@@ -129,19 +160,29 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 		const settings = this.getSettings();
 		const { graph } = context;
 		const buffers = graphBuffers(graph);
+		const directoryEdgeWeights = directoryAwareEdgeWeights(
+			graph,
+			directoryFolderIndexByNode(graph),
+		);
 		const resolvedSettings = solverSettings(settings);
 
 		if (context.mode !== 'refresh') {
 			this.latestRefreshPlan = null;
 			const movableMask = new Uint8Array(graph.nodes.length);
 			movableMask.fill(1);
+			const initialized = initializeDirectoryLayout(
+				graph,
+				context.effectiveSeed,
+			);
 			return {
-				positions: initializeFullLayout(
-					graph.nodes.length,
-					context.effectiveSeed,
+				positions: initialized.positions,
+				edgeEndpoints: buffers.edgeEndpoints,
+				edgeWeights: directoryAwareEdgeWeights(
+					graph,
+					initialized.folderIndexByNode,
 				),
-				...buffers,
 				movableMask,
+				territory: initialized.territory,
 				settings: resolvedSettings,
 			};
 		}
@@ -163,7 +204,7 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 			committedPositions: committed.positions,
 			existingNodeMask: committed.existingNodeMask,
 			edgeEndpoints: buffers.edgeEndpoints,
-			edgeWeights: buffers.edgeWeights,
+			edgeWeights: directoryEdgeWeights,
 			effectiveSeed: context.effectiveSeed,
 		});
 		const plan = createRefreshPlan({
@@ -201,7 +242,8 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 		};
 		return {
 			positions: initialized.positions,
-			...buffers,
+			edgeEndpoints: buffers.edgeEndpoints,
+			edgeWeights: directoryEdgeWeights,
 			refresh,
 			settings: resolvedSettings,
 		};

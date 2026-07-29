@@ -159,7 +159,7 @@ describe('node- and edge-supported continent territory', () => {
 		}
 	});
 
-	it('keeps legacy orphan and low-degree members out of continent support', () => {
+	it('keeps orphans out while retaining low-degree directory members', () => {
 		const directions: readonly Vec3[] = [
 			[-1, 0, 0],
 			[0, 1, 0],
@@ -191,17 +191,13 @@ describe('node- and edge-supported continent territory', () => {
 			degrees,
 		);
 
-		expect(eligibleIslandNodeIndices(geography, 4, degrees)).toEqual([1, 2]);
-		expect(landSupportDiagnostics(model).densityAnchorCount).toBe(1);
+		expect(eligibleIslandNodeIndices(geography, 4, degrees)).toEqual([]);
+		expect(landSupportDiagnostics(model).densityAnchorCount).toBe(3);
 		expect(classifySupportedContinent(directions[0] ?? center, model)).toBe(
 			-1,
 		);
-		expect(classifySupportedContinent(directions[1] ?? center, model)).toBe(
-			-1,
-		);
-		expect(classifySupportedContinent(directions[2] ?? center, model)).toBe(
-			-1,
-		);
+		expect(classifySupportedContinent(directions[1] ?? center, model)).toBe(0);
+		expect(classifySupportedContinent(directions[2] ?? center, model)).toBe(0);
 		expect(classifySupportedContinent(center, model)).toBe(0);
 	});
 
@@ -445,7 +441,7 @@ describe('node- and edge-supported continent territory', () => {
 			expect(diagnostics.rasterCellCount).toBeLessThanOrEqual(10_242);
 			expect(diagnostics.densityAnchorCount).toBe(nodeCount);
 			expect(diagnostics.connectedOceanFraction).toBeGreaterThanOrEqual(
-				0.389,
+				0.495,
 			);
 			expect(elapsed).toBeLessThan(3_500);
 		},

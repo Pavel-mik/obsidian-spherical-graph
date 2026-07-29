@@ -20,14 +20,15 @@
   into a compact disclosure menu while keeping note search visible.
 - [x] Add render-only tag, attachment, existing-file, and orphan filters.
 - [x] Anchor and intrinsically pack tag satellites from committed note positions.
-- [x] Keep Initialize and Renew on the classic deterministic full-sphere layout,
-  and freeze validated positions before any geographic analysis.
-- [x] Derive geography afterward with an adaptive intrinsic spherical grid,
-  fine/coarse density fields, watershed basins, and one connected ocean; use
-  graph communities only as a soft prior.
-- [x] Select exclusive spatial continents, preserve semantic identity across
-  Refresh, keep orphan notes over water, treat degree-one/two notes as islands,
-  and render deterministic land, broad connected oceans, irregular coastlines,
-  and sand beaches without feeding geography back into node positions.
+- [x] Freeze every validated layout before deriving detailed land, coast, beach,
+  and ocean geometry.
+- [x] Render deterministic land, broad connected oceans, irregular coastlines,
+  and sand beaches without feeding render-time ownership back into positions.
 - [x] Replace the retired cyberpunk treatment with the continental atlas design
   system and add an on-screen Continents toggle.
+- [x] Make top-level vault folders authoritative continents with deterministic
+  intrinsic territories, weak cross-folder springs, and hard S² boundaries.
+- [x] Reserve approximately half the surface for connected ocean, render only
+  linked root notes as islands, and leave every orphan over open water.
+- [x] Add same-subfolder selection emphasis and a searchable excluded-folder
+  picker with subtree semantics.

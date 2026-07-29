@@ -1,5 +1,36 @@
 # Validation
 
+## Directory geography release validation (1.4.0)
+
+- Date: 2026-07-29
+- Environment: Windows 11 x64, Node.js 24.12.0, npm 11.6.2
+- `npm run check`: PASS
+- ESLint and strict TypeScript: PASS
+- Vitest: PASS; 42 files, 221 tests
+- Production build and release metadata validation: PASS
+- `git diff --check`: PASS; only Windows line-ending notices
+
+The automated fixtures verify one deterministic, persistent continent per
+linked vault-root folder, hard intrinsic S² territory boundaries with ocean
+between folders, linked root notes initialized as islands outside those
+territories, and orphan notes without land. Render tests cover the additional
+same-subfolder selection highlight, while settings tests and type checking
+cover the public-API folder exclusion picker and existing subtree filtering.
+
+This turn did not run a full Obsidian GUI session. The plugin has no
+browser-served QA target in the repository, so browser automation could not
+exercise the Electron-only view; the relevant visual and interaction checks
+remain listed in `MANUAL_TEST_PLAN.md`.
+
+### Release artifacts (1.4.0)
+
+- `main.js`: 854,295 bytes;
+  SHA-256 `A3DA9544CBC076C86853BA81787FD1C56342A7C55697F5D3C49D9F84E52D7A32`
+- `manifest.json`: 356 bytes, plugin 1.4.0;
+  SHA-256 `23B867BC02FDE2DC2CEA1A63B0FE522948E5BDA0C4C8FAD1DB02899292825C2A`
+- `styles.css`: 47,733 bytes;
+  SHA-256 `FE26CC845D40C2B3F811513C56B99AA56B0EEF8B3657AEB4028BC4E5B0F68AE6`
+
 ## Environment
 
 - Date: 2026-07-24

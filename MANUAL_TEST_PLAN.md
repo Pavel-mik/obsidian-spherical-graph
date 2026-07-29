@@ -184,24 +184,20 @@ vault.
     - Toggle **Map → Continents**. Confirm land, coastlines, islands, and
       cartographic labels disappear/reappear without changing the committed
       position buffer.
-    - In a clustered synthetic vault, confirm large spatially dense regions
-      form non-overlapping landmasses around their visible nodes, with sea
-      between neighboring owners. Confirm small disconnected groups and weakly
-      linked notes outside accepted land remain islands.
-    - In a mixed-degree fixture, confirm degree-zero orphan notes remain
-      interactive cities over water, degree-one/two notes can receive separate
-      island patches, and only degree-three-or-higher notes support continents.
-    - In a saturated three-continent fixture, confirm the connected ocean covers
-      at least 39% of the render raster and reads as broad water between
-      landmasses rather than one-cell river seams. Confirm protected continent
-      member cells remain on land and no new inland lakes appear.
+    - Create several top-level vault folders. Confirm every folder containing
+      linked notes forms exactly one non-overlapping continent with its current
+      folder name.
+    - Confirm linked notes directly in the vault root receive island patches,
+      degree-one/two folder notes remain on their continent, and every
+      degree-zero orphan stays interactive over open water without land.
+    - Confirm the connected ocean covers approximately 50% of the render raster
+      and reads as broad water rather than one-cell river seams. Confirm
+      protected continent-member cells remain on land and no new inland lakes
+      appear.
     - Use an instrumented geography run to confirm every land cell has exactly
       one owner and all ocean cells form one connected component.
-    - Use a fixture where one graph community occupies two distant spatial
-      clusters. Confirm the community can support both candidates but does not
-      force them into one footprint or move their nodes. Conversely, confirm a
-      prominent spatial basin is not rejected solely because graph-community
-      support is weak.
+    - Add several cross-folder links. Confirm their endpoints can approach their
+      own coasts, but no linked note crosses into the other folder's territory.
     - Inspect several coasts at close zoom. Confirm the shoreline has
       deterministic fine-scale irregularity, avoids a repeated circular
       “cloud” outline, and is bordered by a variably wide sand-beach band.
@@ -209,9 +205,14 @@ vault.
       Confirm the matched continent keeps its name and color while its center
       and diagnostic extent are rederived from the fixed positions. Confirm the
       geography update itself does not alter any position.
-    - Run Renew and confirm a new full-sphere arrangement is allowed; then
-      confirm geography is derived from that completed arrangement rather than
-      constraining it during the solve.
+    - Run Renew and confirm directory territories are regenerated
+      deterministically from the new effective seed and remain fixed afterward.
+    - Select a note below `Folder/Subfolder`. Confirm the existing selected and
+      linked-neighbor emphasis remains, while all notes in the same two-level
+      region receive the secondary directory ring.
+    - In settings, search for and exclude a parent folder. Confirm its path is
+      shown as a removable chip, all descendants become pending exclusions, and
+      the current fixed map does not move until explicit Refresh.
 
 20. **Large synthetic vault**
 

@@ -16,7 +16,9 @@ flowchart LR
     W -->|"progress only"| L
     W -->|"one final buffer"| V["Final validation"]
     V --> F["Fixed positions on S²"]
-    G --> H["Post-layout geography<br/>grid → density → watershed → ocean"]
+    G --> Q["Directory semantics<br/>folder → continent / root → island"]
+    Q --> L
+    G --> H["Post-layout geography<br/>directory ownership → land support → ocean"]
     F --> H
     H -->|"atomic positions + geography save"| P
     P --> R["SphericalGraphRenderer"]
@@ -33,16 +35,15 @@ flowchart LR
   every unweighted shortest route. It has no dependency on the solver.
 - `src/geometry` contains pure vector, geodesic, exponential-map, SLERP,
   geodesic-arc, hash/PRNG, and proper-rotation alignment functions.
-- `src/geography` consumes only a completed fixed position buffer. It builds an
-  adaptive intrinsic spherical grid and density field, reconciles watershed
-  basins, enforces exclusive regions and one connected ocean, uses graph
-  communities only as soft priors, filters weak-degree notes from continental
-  support, preserves compatible semantic identity during Refresh, and creates
-  the persisted geography descriptor.
-- `src/layout` owns initialization, force evaluation, exact and sampled
-  repulsion, Refresh planning and anchoring, the batch solver, worker protocol,
-  worker entry point, and the lifecycle state machine. It has no dependency on
-  geographic assignments, centers, extents, or land ownership.
+- `src/geography` defines top-level-folder continent ownership, first-two-level
+  selection regions, linked-root-note islands, and orphan water markers. After
+  a completed solve it re-derives centers, diagnostic extents, conductance,
+  stable identity/color matching, and the persisted geography descriptor.
+- `src/layout` owns directory-aware intrinsic initialization, reduced
+  cross-folder spring weights, hard geodesic territory constraints, force
+  evaluation, exact and sampled repulsion, Refresh planning and anchoring, the
+  batch solver, worker protocol, worker entry point, and the lifecycle state
+  machine. Render-time land ownership never feeds back into the solver.
 - `src/persistence` validates untrusted stored data, migrates schema versions,
   reconciles current paths with a committed snapshot, and serializes atomic
   layout commits separately from debounced settings/camera writes.
@@ -154,33 +155,20 @@ If worker creation is unavailable, the same pure solver runs in bounded batches
 that yield to the owner window's event loop. It preserves final-only rendering,
 cancellation, and validation semantics.
 
-## Post-layout geography pipeline
+## Directory geography pipeline
 
-The layout/geography dependency is intentionally one-way. Initialize and Renew
-use the classic globally distributed deterministic initialization; Refresh
-starts from committed positions and preserves its local anchor rules. Once the
-final solver buffer passes validation, its vectors are fixed and geography may
-inspect them. Geography never submits forces, cap radii, assignments, or
-centers back to the solver.
+The first path segment is the authoritative continent key. Initialize and Renew
+allocate deterministic weighted spherical territories, place each folder's
+linked notes within its territory, retain full same-folder springs, reduce
+cross-folder springs, and clamp assigned nodes to their own territory after
+every intrinsic integration step. Root notes and orphans are unconstrained.
 
-`postLayoutGeography` chooses a subdivided icosahedral grid from measured
-nearest-neighbor spacing. `sphericalDensity` evaluates fine and coarse compact
-kernels with locally adaptive bandwidths, then creates watershed basins by
-density ascent and deterministic saddle merging. Multiresolution CPM
-communities are passed only as basin marker priors: agreement can support a
-merge or candidate, but it cannot create a location or override spatial
-ownership. Only degree-three-or-higher notes participate in continental
-spacing, density, basin population, and ownership; degree-zero notes contribute
-no land, and degree-one/two notes remain island candidates.
-
-`sphericalRegions` selects sufficiently large graph-supported or
-spatially-prominent basins, grows exclusive low-density-bounded regions,
-inserts sea between competing owners, and reconciles sea components into one
-connected ocean. Note membership is read from the resulting cell ownership;
-eligible unassigned degree-one/two notes remain islands, while orphan notes may
-be omitted from geography altogether. Previous geography is used only to retain
-a compatible ID, label, and color. Center and diagnostic angular extent are
-recomputed from the fixed positions.
+After validation, `postLayoutGeography` groups all linked folder notes by their
+top-level path, makes linked root notes islands, and omits orphans from land.
+It derives centers and diagnostic extents from the fixed vectors and preserves
+identity/color by full-path or relative-path membership overlap. The renderer
+then builds adaptive member/road support with exclusive ownership and expands
+only the connected external ocean until visible water is approximately 50%.
 
 The analytical grid, density samples, watershed labels, and cell ownership are
 temporary. The atomic snapshot persists fixed note vectors and compact semantic
@@ -202,11 +190,11 @@ support, clips mixed icosphere triangles at the exact ownership transition,
 draws the outer mask as sand, and overlays a variably inset land interior.
 Detailed bays, headlands, and the irregular beach band are therefore smooth
 rather than aligned to mesh cells.
-`landSupport` also rechecks live node degrees for backward-compatible snapshots
-and retreats weak coastal ownership from the already connected ocean until a
-34–46% ocean floor is reached. Protected member cells remain land, so this
-render-only retreat widens seas without changing positions or creating inland
-holes.
+`landSupport` excludes degree-zero notes, keeps every linked directory member,
+and retreats weak coastal ownership from the already connected ocean until the
+50% target plus bounded root-island compensation is reached. Protected member
+cells remain land, so this render-only retreat widens seas without changing
+positions or creating inland holes.
 The land and ocean `ShaderMaterial`s generate their atlas texture from local
 sphere direction, requiring no texture files or runtime I/O. The ocean depth
 skin sits slightly inside the logical globe so land, graticule, roads, and

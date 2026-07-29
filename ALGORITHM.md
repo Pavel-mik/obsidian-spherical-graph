@@ -72,94 +72,63 @@ is normalized and velocity is reprojected into the new tangent plane. The
 integrator sums tangent forces, applies damping, caps angular velocity, applies
 the exponential map, and then applies any Refresh anchor cone.
 
-## Post-layout spatial geography
+## Directory-owned spherical geography
 
-Geography is derived only after the solver has produced and validated the
-final unit-vector buffer. The dependency order is strict:
+Vault paths provide stable semantic ownership before layout, while detailed
+land geometry is still derived only after the solver has produced and
+validated the final unit-vector buffer:
 
-1. compute the classic deterministic graph layout on \(S^2\);
-2. fix the completed note positions;
-3. choose an intrinsic spherical-grid resolution from observed note spacing;
-4. evaluate an adaptive multi-scale density field;
-5. construct and reconcile watershed basins;
-6. select exclusive spatial continents and one connected ocean;
-7. derive the render-only coast and beach geometry.
+1. group linked notes by their first path segment;
+2. allocate weighted deterministic territory centers and angular extents on
+   \(S^2\);
+3. initialize each folder inside its own territory;
+4. solve with full same-folder springs, reduced cross-folder springs, and a
+   hard intrinsic territory boundary;
+5. validate and fix the completed note positions;
+6. build adaptive land support for each folder and expand one connected ocean
+   to approximately half the surface;
+7. derive render-only coast, beach, and linked-root-note island geometry.
 
-No value produced by steps 3–7 is present in `LayoutSolverInput`, the worker
-protocol, force evaluation, or integration. In particular, there is no
-geographic boundary force and no continent cap. This one-way dependency keeps
-the map from becoming a self-fulfilling collection of circular regions.
+The worker receives only compact numeric territory centers, masks, and maximum
+geodesic distances. It never receives rendered coastlines, density rasters,
+colors, labels, or land ownership. Territory enforcement is an intrinsic
+geodesic clamp, not a planar or latitude/longitude constraint.
 
-### Soft graph-community prior
+### Folder ownership and cross-folder roads
 
-After positions are fixed, the note graph is also partitioned by a
-deterministic multiresolution Constant Potts Model (CPM) local-moving
-optimizer. It runs seeded orders at four resolutions, forms consensus
-components within each resolution, and reconciles candidates using stability,
-conductance, topology cohesion, and sublinear size signals. The existing
-bounded affinity completion can recover uncertain graph-boundary notes.
+Every linked note under one top-level folder belongs to that folder's
+continent, including degree-one and degree-two notes. Degree-zero notes do not
+create land. A linked note directly in the vault root becomes an island.
 
-These graph communities are marker priors, not continents by themselves.
-They may lower or raise a watershed merge threshold, support a spatial basin,
-contribute stability and conductance diagnostics, and help preserve a region's
-semantic identity. They cannot choose an initial position, pull a node toward
-a center, reserve surface area, or override the final spatial ownership.
+Same-folder edges retain their full spring weight. Edges between top-level
+folders use 14% of their graph weight for layout; edges involving a root note
+use 35%. All edges retain their original weight for rendering, selection, and
+Route Finder. Cross-folder endpoints can therefore approach useful coastal
+directions without collapsing or merging their owning territories.
 
-### Intrinsic grid and adaptive density
+### Fixed-position cartography
 
-The analytical surface is a deterministically subdivided icosahedron. Grid
-resolution is selected from the characteristic sixth-neighbor angular spacing,
-so a large dense vault receives finer cells without imposing one fixed global
-map resolution. Every committed note is mapped to its nearest grid vertex, but
-only notes with graph degree at least three participate in the spacing estimate
-and continental density field.
+After the solver stops, each folder's fixed member directions and short
+same-folder roads seed compact land-support kernels on a subdivided icosphere.
+Support ownership is exclusive; competing owners leave sea between them.
+Enclosed holes are reconciled and only the connected external ocean is expanded
+until its raster fraction reaches 50%, plus bounded compensation for the
+visible area of root-note islands. Member cells remain protected.
 
-Each note's sixth-neighbor distance supplies a locally adaptive bandwidth,
-clamped around the global characteristic spacing. The density field combines a
-fine compact kernel and a broader compact kernel with weights 0.82 and 0.18.
-Dense local structures therefore retain detail while sparse but coherent areas
-receive enough support to remain connected.
-
-Degree filtering is cartographic rather than positional: it never changes a
-committed vector. Orphan notes have zero land weight, and degree-one/two notes
-are excluded from continent basins so sparse appendices cannot close an ocean
-or enlarge a major landmass.
-
-### Watershed and connected ocean
-
-Every grid cell ascends deterministically to a neighboring density maximum,
-forming initial watershed basins. Adjacent basins record their highest saddle.
-Shallow saddles are merged by a deterministic union process. A shared CPM
-prior can make a merge easier, conflicting priors make it harder, and small
-unsupported basins use a conservative threshold; density remains the geometric
-evidence in every case.
-
-Candidate land basins must be sufficiently large and have either graph support
-or spatial prominence above the local density background. At most seven are
-retained. Ownership grows only through sufficiently dense cells in the
-candidate's watershed basin, with eligible degree-three-or-higher node cells
-protected as seeds.
-Neighboring owners are separated by an explicit sea cell. The remaining sea
-components are reconciled so the analytical map contains exactly one connected
-ocean rather than accidental enclosed holes. Degree-one/two notes without a
-selected owner remain island candidates; degree-zero notes remain ordinary
-cities over ocean and create no land.
-
-The final note assignments come from this exclusive spatial ownership, not
-from the CPM assignment. Jaccard matching against the previous committed
-geography may preserve a compatible continent's ID, label, and color. Its
-center and diagnostic angular extent are always re-derived from the fixed
-positions. That extent is metadata for labeling and rendering, never a layout
-constraint.
+Previous geography is matched using both complete paths and paths relative to
+their top-level folder. This preserves continent identity and color through
+ordinary Refreshes and multi-note top-level folder renames. Labels always use
+the current folder name.
 
 ## Deterministic initialization
 
-Initialize and Renew always begin with a globally distributed, deterministically
-permuted Fibonacci sphere plus small seeded tangent jitter. Community detection
-is not consulted. The ordinary intrinsic springs, repulsion, and coverage
-regularizers are then free to reveal topology over the full sphere. Changing a
-Renew generation changes the permutation and jitter, not merely a global
-rotation.
+Initialize and Renew distribute folder centers with a deterministically
+permuted Fibonacci sphere. Territory area is proportional to
+\(n_\mathrm{folder}^{0.8}\), so large folders receive more room without
+monopolizing the globe. Folder nodes use a deterministic golden-angle pattern
+inside their spherical territory. Linked root notes start near the weighted
+mean of the continents they reference; orphans use globally distributed free
+points. Changing a Renew generation changes all seeded permutations.
 
 Refresh begins existing nodes exactly at their committed unit vectors. A new
 node with committed neighbors begins near their weighted spherical mean plus a
@@ -273,14 +242,14 @@ sphere. Segment count adapts to angular length.
 
 ### Land and sea
 
-The post-layout spatial geography is rendered on a finely subdivided
-icosphere. Every degree-three-or-higher spatial-continent member seeds a
-density-aware support kernel at its committed position. Samples along short
-internal edges add narrow road corridors between nearby kernels. Edges longer
+The post-layout directory geography is rendered on a finely subdivided
+icosphere. Every linked member of a top-level folder seeds a density-aware
+support kernel at its committed position. Samples along short same-folder
+edges add narrow road corridors between nearby kernels. Edges longer
 than a bounded angular distance do not add support, so a single graph link
 cannot pull a land bridge across open water. The degree check is repeated at
 render time so snapshots created by older plugin versions immediately gain the
-new water/island behavior without regenerating or moving their layout.
+new water/island behavior without moving their committed layout.
 All semantic continent positions are also indexed as territory sites: a closer
 competing continent site carves sea out of another continent's support. A
 single free note does not punch a lake into otherwise supported land. Free
@@ -292,9 +261,9 @@ local queries bounded for large vaults.
 After enclosed sea components are reconciled, the renderer expands only the
 already connected external ocean, one weak coastal raster ring at a time.
 Member support cells are protected, and candidate cells are ordered by land
-density. The target is 34% for one continent, rises by 2.5 percentage points
-for each additional continent, and is capped at 46%. This widens river-like
-seams into readable seas without manufacturing inland lakes.
+density. The target connected-ocean fraction is 50%, plus bounded compensation
+for root-island area. This widens river-like seams into readable seas without
+manufacturing inland lakes.
 
 The persisted angular extent is a diagnostic summary, not a placement
 constraint or coastline primitive. Coast ownership is the positive union of
@@ -309,13 +278,12 @@ instead of being accepted wholesale from their centroid. The outer ownership
 mask forms a sand underlay; a second, deterministically varying inset mask
 forms the land interior, leaving an irregular beach band. The outer
 intersections also form the detailed coastline batch, eliminating regular mesh
-teeth while retaining a deterministic irregular silhouette. Degree-one/two
-notes are eligible for independent island patches. Candidates too close to
-supported continent territory or another island are omitted, and island radius
-decreases with note count. Degree-zero notes and any weak-note candidate
-without a safe patch remain ordinary interactive cities over open water, so
-layout, links, routes, labels, and persistence are unchanged. Eligible islands
-are emitted as small irregular tangent patches in the same batched land mesh.
+teeth while retaining a deterministic irregular silhouette. Only linked notes
+stored directly in the vault root are eligible for independent island patches.
+Candidates too close to supported continent territory or another island are
+omitted, and island radius decreases with note count. Degree-zero notes remain
+ordinary interactive cities over open water. Eligible islands are emitted as
+small irregular tangent patches in the same batched land mesh.
 
 Ocean and land use separate offline procedural shaders. Seamless spherical
 multi-octave noise supplies subtle water depth, terrain relief, strata, fine

@@ -4,6 +4,100 @@
 	overflow: hidden;
 }
 
+.spherical-graph-folder-chips {
+	display: flex;
+	flex: 1 0 100%;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.spherical-graph-folder-chip {
+	align-items: center;
+	background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+	border: 1px solid color-mix(in srgb, var(--interactive-accent) 38%, transparent);
+	border-radius: 999px;
+	color: var(--text-normal);
+	display: inline-flex;
+	font-size: var(--font-ui-smaller);
+	gap: 5px;
+	max-width: 100%;
+	padding: 2px 5px 2px 9px;
+}
+
+.spherical-graph-folder-chip > span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.spherical-graph-folder-chip button {
+	align-items: center;
+	background: transparent;
+	border: 0;
+	border-radius: 50%;
+	box-shadow: none;
+	color: var(--text-muted);
+	display: inline-flex;
+	font-size: 16px;
+	height: 20px;
+	justify-content: center;
+	line-height: 1;
+	padding: 0;
+	width: 20px;
+}
+
+.spherical-graph-folder-chip button:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.spherical-graph-folder-chip-empty,
+.spherical-graph-folder-picker-description,
+.spherical-graph-folder-picker-empty {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.spherical-graph-folder-picker-search {
+	box-sizing: border-box;
+	margin-bottom: 10px;
+	width: 100%;
+}
+
+.spherical-graph-folder-picker-list {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	max-height: min(52vh, 440px);
+	overflow: auto;
+	padding: 5px;
+}
+
+.spherical-graph-folder-picker-row {
+	align-items: center;
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	display: flex;
+	gap: 8px;
+	min-height: 32px;
+	padding: 3px 8px 3px calc(8px + var(--sg-folder-depth) * 14px);
+}
+
+.spherical-graph-folder-picker-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.spherical-graph-folder-picker-row.is-covered-by-parent {
+	color: var(--text-muted);
+}
+
+.spherical-graph-folder-picker-footer {
+	display: flex;
+	gap: 8px;
+	justify-content: flex-end;
+	margin-top: 14px;
+}
+
 .spherical-graph-view {
 	--sg-void: #02050b;
 	--sg-panel: #06101a;
@@ -1574,6 +1668,7 @@
 	--sg-panel-hover: #172e3d;
 	--sg-city: #f1e4c4;
 	--sg-city-neighbor: #fff2cf;
+	--sg-city-directory-peer: #82b7ad;
 	--sg-selection: #ff6b57;
 	--sg-route: #f1bb55;
 	--sg-route-start: #f1bb55;

@@ -8,10 +8,16 @@ import type {
 import type { PersistedLayoutSnapshot } from '../../src/persistence/layoutState';
 import { DEFAULT_SPHERICAL_GRAPH_SETTINGS } from '../../src/settings/settings';
 import { SphericalLayoutPlanner } from '../../src/layout/SphericalLayoutPlanner';
+import { geodesicDistance } from '../../src/geometry/sphericalGeometry';
 import { readVec3 } from '../../src/geometry/vector3';
-import { initializeFullLayout } from '../../src/layout/initialization';
+import { initializeDirectoryLayout } from '../../src/layout/directoryInitialization';
 
 function graph(paths: readonly string[], edges: readonly GraphEdge[]): GraphData {
+	const degrees = new Uint32Array(paths.length);
+	for (const edge of edges) {
+		degrees[edge.source] = (degrees[edge.source] ?? 0) + 1;
+		degrees[edge.target] = (degrees[edge.target] ?? 0) + 1;
+	}
 	const descriptor: GraphDescriptor = {
 		nodeIds: [...paths],
 		edges: edges.map((edge) => {
@@ -41,8 +47,8 @@ function graph(paths: readonly string[], edges: readonly GraphEdge[]): GraphData
 			id: path,
 			path,
 			basename: path,
-			degree: 0,
-			weightedDegree: 0,
+			degree: degrees[index] ?? 0,
+			weightedDegree: degrees[index] ?? 0,
 			exists: true,
 		})),
 		edges,
@@ -80,7 +86,19 @@ const LINK: GraphEdge = {
 
 describe('SphericalLayoutPlanner integration', () => {
 	it('builds deterministic complete-layout payloads from graph indexes', () => {
-		const current = graph(['a', 'b', 'c'], [LINK]);
+		const current = graph(
+			['Books/a.md', 'Books/b.md', 'Research/c.md'],
+			[
+				LINK,
+				{
+					source: 1,
+					target: 2,
+					weight: 1,
+					forwardWeight: 1,
+					backwardWeight: 0,
+				},
+			],
+		);
 		const planner = new SphericalLayoutPlanner(
 			() => DEFAULT_SPHERICAL_GRAPH_SETTINGS,
 		);
@@ -105,9 +123,13 @@ describe('SphericalLayoutPlanner integration', () => {
 		expect(first.positions).toEqual(repeated.positions);
 		expect(first.positions).not.toEqual(nextGeneration.positions);
 		expect(first.positions).toEqual(
-			initializeFullLayout(current.nodes.length, 7),
+			initializeDirectoryLayout(current, 7).positions,
 		);
-		expect(first.edgeEndpoints).toEqual(new Uint32Array([0, 1]));
+		expect(first.edgeEndpoints).toEqual(new Uint32Array([0, 1, 1, 2]));
+		expect(first.edgeWeights).toEqual(new Float32Array([1, 0.14]));
+		expect(first.territory?.assignedNodeMask).toEqual(
+			new Uint8Array([1, 1, 1]),
+		);
 		expect(first.refresh).toBeUndefined();
 		expect('geography' in first).toBe(false);
 
@@ -118,9 +140,65 @@ describe('SphericalLayoutPlanner integration', () => {
 			effectiveSeed: 7,
 		});
 		expect(initialized.positions).toEqual(
-			initializeFullLayout(current.nodes.length, 7),
+			initializeDirectoryLayout(current, 7).positions,
 		);
 		expect('geography' in initialized).toBe(false);
+	});
+
+	it('keeps directory territories separated by ocean and root notes outside them', () => {
+		const current = graph(
+			[
+				'Books/a.md',
+				'Books/b.md',
+				'Research/c.md',
+				'Projects/d.md',
+				'Projects/e.md',
+				'Projects/f.md',
+				'root.md',
+			],
+			[
+				{ ...LINK, source: 0, target: 1 },
+				{ ...LINK, source: 1, target: 6 },
+				{ ...LINK, source: 2, target: 6 },
+				{ ...LINK, source: 3, target: 4 },
+				{ ...LINK, source: 4, target: 5 },
+			],
+		);
+		const initialized = initializeDirectoryLayout(current, 17);
+		const territory = initialized.territory;
+		const representatives = [0, 2, 3];
+		for (let left = 0; left < representatives.length; left += 1) {
+			for (let right = left + 1; right < representatives.length; right += 1) {
+				const leftNode = representatives[left];
+				const rightNode = representatives[right];
+				if (leftNode === undefined || rightNode === undefined) {
+					continue;
+				}
+				expect(
+					geodesicDistance(
+						readVec3(territory.centers, leftNode),
+						readVec3(territory.centers, rightNode),
+					),
+				).toBeGreaterThanOrEqual(
+					(territory.maximumDistances[leftNode] ?? 0) +
+						(territory.maximumDistances[rightNode] ?? 0) +
+						0.075,
+				);
+			}
+		}
+
+		const rootPosition = readVec3(initialized.positions, 6);
+		for (const representative of representatives) {
+			expect(
+				geodesicDistance(
+					rootPosition,
+					readVec3(territory.centers, representative),
+				),
+			).toBeGreaterThan(
+				(territory.maximumDistances[representative] ?? 0) + 0.075,
+			);
+		}
+		expect(territory.assignedNodeMask[6]).toBe(0);
 	});
 
 	it('starts old nodes at committed positions and new nodes near neighbors', () => {

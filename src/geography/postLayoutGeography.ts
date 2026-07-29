@@ -6,10 +6,10 @@ import {
 import { readVec3, type Vec3 } from '../geometry/vector3';
 import type { GraphData } from '../graph/graphTypes';
 import {
-	detectContinentalCommunities,
-	type CommunityDetectionOptions,
-} from './communityDetection';
-import { continentId } from './communityMetrics';
+	isContinentalNode,
+	isRootIslandNode,
+	topLevelFolder,
+} from './directorySemantics';
 import {
 	CONTINENTAL_GEOGRAPHY_VERSION,
 	CONTINENT_COLOR_COUNT,
@@ -24,20 +24,16 @@ import {
 	type SphericalWatershed,
 } from './sphericalDensity';
 import {
-	buildSphericalRegions,
-	type SphericalRegionOptions,
-} from './sphericalRegions';
-import {
 	createIntrinsicSphericalGrid,
 	gridSubdivisionForSpacing,
 	type IntrinsicSphericalGrid,
 } from './sphericalGrid';
+import type { SphericalRegionOptions } from './sphericalRegions';
+import type { CommunityDetectionOptions } from './communityDetection';
 
-const MIN_CONTINENTAL_NODE_DEGREE = 3;
-
-export interface PostLayoutGeographyOptions
-	extends SphericalRegionOptions {
+export interface PostLayoutGeographyOptions extends SphericalRegionOptions {
 	readonly gridSubdivision?: number;
+	/** Retained for source compatibility; directory ownership is authoritative. */
 	readonly communityDetection?: CommunityDetectionOptions;
 }
 
@@ -47,90 +43,18 @@ export interface PostLayoutGeographyAnalysis {
 	readonly grid: IntrinsicSphericalGrid;
 	readonly density: SphericalDensityField;
 	readonly watershed: SphericalWatershed;
-	/**
-	 * Exclusive analytical ownership of grid vertices. `-1` is connected
-	 * ocean. This is intentionally not persisted in schema v1 yet.
-	 */
 	readonly ownerByCell: Int32Array;
+}
+
+interface DirectoryGroup {
+	readonly folder: string;
+	readonly memberIndices: readonly number[];
+	readonly nodeIds: readonly string[];
 }
 
 interface PreviousMatch {
 	readonly continent: PersistedContinent;
 	readonly similarity: number;
-}
-
-function jaccard(
-	left: readonly string[],
-	right: readonly string[],
-): number {
-	const leftSet = new Set(left);
-	let intersection = 0;
-	for (const value of right) {
-		intersection += leftSet.has(value) ? 1 : 0;
-	}
-	const union = leftSet.size + new Set(right).size - intersection;
-	return union === 0 ? 0 : intersection / union;
-}
-
-function matchPreviousContinents(
-	nodeIdsByContinent: readonly (readonly string[])[],
-	previous: PersistedContinentalGeography | undefined,
-): ReadonlyMap<number, PreviousMatch> {
-	if (previous === undefined) {
-		return new Map();
-	}
-	const candidates: Array<{
-		readonly nextIndex: number;
-		readonly previousIndex: number;
-		readonly similarity: number;
-	}> = [];
-	for (
-		let nextIndex = 0;
-		nextIndex < nodeIdsByContinent.length;
-		nextIndex += 1
-	) {
-		for (
-			let previousIndex = 0;
-			previousIndex < previous.continents.length;
-			previousIndex += 1
-		) {
-			const similarity = jaccard(
-				nodeIdsByContinent[nextIndex] ?? [],
-				previous.continents[previousIndex]?.nodeIds ?? [],
-			);
-			if (similarity >= 0.42) {
-				candidates.push({ nextIndex, previousIndex, similarity });
-			}
-		}
-	}
-	candidates.sort(
-		(left, right) =>
-			right.similarity - left.similarity ||
-			left.nextIndex - right.nextIndex ||
-			left.previousIndex - right.previousIndex,
-	);
-	const matchedNext = new Set<number>();
-	const matchedPrevious = new Set<number>();
-	const matches = new Map<number, PreviousMatch>();
-	for (const candidate of candidates) {
-		if (
-			matchedNext.has(candidate.nextIndex) ||
-			matchedPrevious.has(candidate.previousIndex)
-		) {
-			continue;
-		}
-		const continent = previous.continents[candidate.previousIndex];
-		if (continent === undefined) {
-			continue;
-		}
-		matchedNext.add(candidate.nextIndex);
-		matchedPrevious.add(candidate.previousIndex);
-		matches.set(candidate.nextIndex, {
-			continent,
-			similarity: candidate.similarity,
-		});
-	}
-	return matches;
 }
 
 function displayName(value: string): string {
@@ -143,52 +67,128 @@ function displayName(value: string): string {
 		: base.replace(/\b\p{L}/gu, (letter) => letter.toLocaleUpperCase());
 }
 
-function continentLabel(
-	graph: GraphData,
-	memberIndices: readonly number[],
-	fallbackIndex: number,
-): string {
-	const folderCounts = new Map<string, number>();
-	for (const nodeIndex of memberIndices) {
-		const path = graph.nodes[nodeIndex]?.path ?? '';
-		const firstSlash = path.indexOf('/');
-		if (firstSlash <= 0) {
-			continue;
-		}
-		const folder = path.slice(0, firstSlash);
-		folderCounts.set(folder, (folderCounts.get(folder) ?? 0) + 1);
-	}
-	const dominant = [...folderCounts.entries()].sort(
-		(left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
-	)[0];
-	if (
-		dominant !== undefined &&
-		dominant[1] / Math.max(1, memberIndices.length) >= 0.4
-	) {
-		return displayName(dominant[0]);
-	}
-	const representative = [...memberIndices]
-		.map((index) => graph.nodes[index])
-		.filter((node) => node !== undefined)
-		.sort(
-			(left, right) =>
-				right.degree - left.degree ||
-				left.path.localeCompare(right.path),
-		)[0];
-	return representative === undefined
-		? `Region ${fallbackIndex + 1}`
-		: displayName(representative.basename);
+function relativeNodeId(value: string): string {
+	const normalized = value.replaceAll('\\', '/');
+	const separator = normalized.indexOf('/');
+	return separator < 0 ? normalized : normalized.slice(separator + 1);
 }
 
-function regionCenter(
+function jaccard(left: readonly string[], right: readonly string[]): number {
+	const leftSet = new Set(left);
+	let intersection = 0;
+	for (const value of right) {
+		intersection += leftSet.has(value) ? 1 : 0;
+	}
+	const union = leftSet.size + new Set(right).size - intersection;
+	return union === 0 ? 0 : intersection / union;
+}
+
+function membershipSimilarity(
+	left: readonly string[],
+	right: readonly string[],
+): number {
+	return Math.max(
+		jaccard(left, right),
+		jaccard(left.map(relativeNodeId), right.map(relativeNodeId)),
+	);
+}
+
+function matchPreviousContinents(
+	groups: readonly DirectoryGroup[],
+	previous: PersistedContinentalGeography | undefined,
+): ReadonlyMap<number, PreviousMatch> {
+	if (previous === undefined) {
+		return new Map();
+	}
+	const candidates: Array<{
+		readonly groupIndex: number;
+		readonly previousIndex: number;
+		readonly similarity: number;
+	}> = [];
+	for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+		for (
+			let previousIndex = 0;
+			previousIndex < previous.continents.length;
+			previousIndex += 1
+		) {
+			const similarity = membershipSimilarity(
+				groups[groupIndex]?.nodeIds ?? [],
+				previous.continents[previousIndex]?.nodeIds ?? [],
+			);
+			if (similarity >= 0.42) {
+				candidates.push({ groupIndex, previousIndex, similarity });
+			}
+		}
+	}
+	candidates.sort(
+		(left, right) =>
+			right.similarity - left.similarity ||
+			left.groupIndex - right.groupIndex ||
+			left.previousIndex - right.previousIndex,
+	);
+	const usedGroups = new Set<number>();
+	const usedPrevious = new Set<number>();
+	const matches = new Map<number, PreviousMatch>();
+	for (const candidate of candidates) {
+		if (
+			usedGroups.has(candidate.groupIndex) ||
+			usedPrevious.has(candidate.previousIndex)
+		) {
+			continue;
+		}
+		const continent = previous.continents[candidate.previousIndex];
+		if (continent === undefined) {
+			continue;
+		}
+		usedGroups.add(candidate.groupIndex);
+		usedPrevious.add(candidate.previousIndex);
+		matches.set(candidate.groupIndex, {
+			continent,
+			similarity: candidate.similarity,
+		});
+	}
+	return matches;
+}
+
+function directoryGroups(graph: GraphData): DirectoryGroup[] {
+	const indicesByFolder = new Map<string, number[]>();
+	for (const node of graph.nodes) {
+		if (!isContinentalNode(node)) {
+			continue;
+		}
+		const folder = topLevelFolder(node.path);
+		if (folder === undefined) {
+			continue;
+		}
+		const entries = indicesByFolder.get(folder);
+		if (entries === undefined) {
+			indicesByFolder.set(folder, [node.index]);
+		} else {
+			entries.push(node.index);
+		}
+	}
+	return [...indicesByFolder.entries()]
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([folder, memberIndices]) => ({
+			folder,
+			memberIndices: Object.freeze([...memberIndices].sort((a, b) => a - b)),
+			nodeIds: Object.freeze(
+				memberIndices
+					.map((index) => graph.nodes[index]?.id)
+					.filter((id): id is string => id !== undefined)
+					.sort(),
+			),
+		}));
+}
+
+function groupCenter(
 	positions: ArrayLike<number>,
 	members: readonly number[],
-	fallback: Vec3,
 ): Vec3 {
 	return (
 		sphericalWeightedMean(
 			members.map((index) => readVec3(positions, index)),
-		) ?? fallback
+		) ?? readVec3(positions, members[0] ?? 0)
 	);
 }
 
@@ -199,16 +199,35 @@ function diagnosticCapRadius(
 	spacing: number,
 ): number {
 	let maximumDistance = 0;
-	for (const memberIndex of members) {
+	for (const member of members) {
 		maximumDistance = Math.max(
 			maximumDistance,
-			geodesicDistance(center, readVec3(positions, memberIndex)),
+			geodesicDistance(center, readVec3(positions, member)),
 		);
 	}
 	return Math.min(
-		1.2,
-		Math.max(0.1, maximumDistance + Math.min(0.12, spacing * 0.55)),
+		1.55,
+		Math.max(0.12, maximumDistance + Math.min(0.14, spacing * 0.6)),
 	);
+}
+
+function conductance(
+	graph: GraphData,
+	assignment: Int32Array,
+	owner: number,
+): number {
+	let internal = 0;
+	let external = 0;
+	for (const edge of graph.edges) {
+		const sourceOwner = assignment[edge.source] ?? -1;
+		const targetOwner = assignment[edge.target] ?? -1;
+		if (sourceOwner === owner && targetOwner === owner) {
+			internal += edge.weight;
+		} else if (sourceOwner === owner || targetOwner === owner) {
+			external += edge.weight;
+		}
+	}
+	return external / Math.max(1, internal * 2 + external);
 }
 
 function freezeGeography(
@@ -222,11 +241,7 @@ function freezeGeography(
 				Object.freeze({
 					...continent,
 					nodeIds: Object.freeze([...continent.nodeIds]),
-					center: Object.freeze([
-						continent.center[0],
-						continent.center[1],
-						continent.center[2],
-					] as Vec3),
+					center: Object.freeze([...continent.center] as [number, number, number]),
 				}),
 			),
 		),
@@ -234,15 +249,10 @@ function freezeGeography(
 	});
 }
 
-function continentalNodeWeights(graph: GraphData): Float64Array {
-	return Float64Array.from(graph.nodes, (node) =>
-		node.degree >= MIN_CONTINENTAL_NODE_DEGREE ? 1 : 0,
-	);
-}
-
 /**
- * Derives cartographic geography only after the fixed layout has completed.
- * Graph communities are marker priors; they never choose or mutate positions.
+ * Converts the fixed S² layout into deterministic directory geography.
+ * Top-level folders are authoritative continents, linked root notes are
+ * islands, and degree-zero notes never manufacture land.
  */
 export function derivePostLayoutGeography(
 	graph: GraphData,
@@ -254,83 +264,37 @@ export function derivePostLayoutGeography(
 	if (positions.length !== graph.nodes.length * 3) {
 		throw new RangeError('Geography positions must contain one vector per note.');
 	}
-	if (graph.nodes.length === 0) {
-		const grid = createIntrinsicSphericalGrid(
-			options.gridSubdivision ?? 2,
-		);
-		const density = evaluateAdaptiveDensity(grid, positions);
-		const watershed = buildSphericalWatershed(grid, density, {
-			minimumBasinNodes: options.minimumContinentNodes ?? 6,
-		});
-		return {
-			geography: freezeGeography([], []),
-			assignmentByNode: new Int32Array(),
-			grid,
-			density,
-			watershed,
-			ownerByCell: new Int32Array(grid.vertices.length).fill(-1),
-		};
-	}
-	const nodeWeights = continentalNodeWeights(graph);
-	const supportedNodeCount = nodeWeights.reduce(
-		(count, weight) => count + (weight > 0 ? 1 : 0),
-		0,
-	);
-	const spacing = estimateNodeSpacing(
-		positions,
-		6,
-		nodeWeights,
-	).characteristicSpacing;
-	const subdivision =
-		options.gridSubdivision ?? gridSubdivisionForSpacing(spacing);
-	const grid = createIntrinsicSphericalGrid(subdivision);
-	const detection = detectContinentalCommunities(
-		graph,
-		seed,
-		options.communityDetection,
-	);
-	const density = evaluateAdaptiveDensity(grid, positions, nodeWeights);
-	const minimumBasinNodes =
-		options.minimumContinentNodes ??
-		Math.max(
-			6,
-			Math.min(22, Math.ceil(Math.sqrt(supportedNodeCount) * 0.58)),
-		);
-	const priorByNode = detection.assignmentByNode.slice();
-	for (let nodeIndex = 0; nodeIndex < priorByNode.length; nodeIndex += 1) {
-		if ((nodeWeights[nodeIndex] ?? 0) <= 0) {
-			priorByNode[nodeIndex] = -1;
+	const groups = directoryGroups(graph);
+	const assignmentByNode = new Int32Array(graph.nodes.length);
+	assignmentByNode.fill(-1);
+	for (let owner = 0; owner < groups.length; owner += 1) {
+		for (const nodeIndex of groups[owner]?.memberIndices ?? []) {
+			assignmentByNode[nodeIndex] = owner;
 		}
 	}
+	const weights = Float64Array.from(assignmentByNode, (owner) =>
+		owner >= 0 ? 1 : 0,
+	);
+	const spacing =
+		graph.nodes.length === 0
+			? Math.PI / 2
+			: estimateNodeSpacing(positions, 6, weights).characteristicSpacing;
+	const subdivision =
+		options.gridSubdivision ??
+		Math.max(2, Math.min(6, gridSubdivisionForSpacing(spacing)));
+	const grid = createIntrinsicSphericalGrid(subdivision);
+	const density = evaluateAdaptiveDensity(grid, positions, weights);
 	const watershed = buildSphericalWatershed(grid, density, {
-		priorByNode,
-		minimumBasinNodes,
+		priorByNode: assignmentByNode,
+		minimumBasinNodes: 1,
 	});
-	const regionResult = buildSphericalRegions(
-		graph,
-		detection,
-		grid,
-		density,
-		watershed,
-		options,
-	);
-	const nodeIdsByContinent = regionResult.regions.map((region) =>
-		region.memberIndices
-			.map((index) => graph.nodes[index]?.id)
-			.filter((id): id is string => id !== undefined)
-			.sort(),
-	);
-	const previousMatches = matchPreviousContinents(
-		nodeIdsByContinent,
-		previous,
-	);
+	const previousMatches = matchPreviousContinents(groups, previous);
 	const usedColors = new Set<number>();
-	const continents = regionResult.regions.map((region, index) => {
-		const nodeIds = nodeIdsByContinent[index] ?? [];
-		const previousMatch = previousMatches.get(index)?.continent;
+	const continents = groups.map((group, owner) => {
+		const previousMatch = previousMatches.get(owner)?.continent;
 		let colorIndex =
 			previousMatch?.colorIndex ??
-			hashString(continentId(nodeIds), seed) % CONTINENT_COLOR_COUNT;
+			hashString(`directory:${group.folder}`, seed) % CONTINENT_COLOR_COUNT;
 		for (let attempt = 0; attempt < CONTINENT_COLOR_COUNT; attempt += 1) {
 			if (!usedColors.has(colorIndex)) {
 				break;
@@ -338,52 +302,37 @@ export function derivePostLayoutGeography(
 			colorIndex = (colorIndex + 1) % CONTINENT_COLOR_COUNT;
 		}
 		usedColors.add(colorIndex);
-		const fallback =
-			grid.vertices[region.basin] ?? ([1, 0, 0] as const);
-		const center = regionCenter(
-			positions,
-			region.memberIndices,
-			fallback,
-		);
+		const center = groupCenter(positions, group.memberIndices);
+		const boundaryRatio = conductance(graph, assignmentByNode, owner);
 		return {
-			id: previousMatch?.id ?? continentId(nodeIds),
-			label:
-				previousMatch?.label ??
-				continentLabel(graph, region.memberIndices, index),
-			nodeIds,
+			id:
+				previousMatch?.id ??
+				`directory-${hashString(group.folder).toString(16).padStart(8, '0')}`,
+			label: displayName(group.folder),
+			nodeIds: group.nodeIds,
 			center,
 			capRadius: diagnosticCapRadius(
 				positions,
-				region.memberIndices,
+				group.memberIndices,
 				center,
-				density.characteristicSpacing,
+				spacing,
 			),
 			colorIndex,
-			stability: region.stability,
-			conductance: region.conductance,
+			stability: 1,
+			conductance: boundaryRatio,
 		} satisfies PersistedContinent;
 	});
-	const islandNodeIds: string[] = [];
-	for (let nodeIndex = 0; nodeIndex < graph.nodes.length; nodeIndex += 1) {
-		const node = graph.nodes[nodeIndex];
-		if (
-			node !== undefined &&
-			node.degree > 0 &&
-			(regionResult.assignmentByNode[nodeIndex] ?? -1) < 0
-		) {
-			const nodeId = node.id;
-			if (nodeId !== undefined) {
-				islandNodeIds.push(nodeId);
-			}
-		}
-	}
+	const islandNodeIds = graph.nodes
+		.filter(isRootIslandNode)
+		.map((node) => node.id)
+		.sort();
 	return {
 		geography: freezeGeography(continents, islandNodeIds),
-		assignmentByNode: regionResult.assignmentByNode,
+		assignmentByNode,
 		grid,
 		density,
 		watershed,
-		ownerByCell: regionResult.ownerByCell,
+		ownerByCell: new Int32Array(grid.vertices.length).fill(-1),
 	};
 }
 

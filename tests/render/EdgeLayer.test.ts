@@ -16,6 +16,7 @@ const theme: RenderTheme = {
 	nodeAttachment: '#ffb547',
 	nodeUnresolved: '#70818d',
 	nodeNeighbor: '#9beeff',
+	nodeDirectoryPeer: '#82b7ad',
 	nodeActive: '#f3a712',
 	nodeHovered: '#ffe066',
 	nodeSelected: '#8d6bff',

@@ -17,6 +17,7 @@ import {
 	MAX_TAG_ORBIT_HEIGHT_PERCENT,
 	MIN_TAG_ORBIT_HEIGHT_PERCENT,
 } from '../constants';
+import { ExcludedFolderModal } from './ExcludedFolderModal';
 
 export interface SphericalGraphSettingTabController {
 	getSettings(): SphericalGraphSettings;
@@ -31,9 +32,9 @@ const COPY = {
 	appearanceHeading: 'Appearance',
 	advancedHeading: 'Advanced layout',
 	refreshHeading: 'Refresh preservation',
-	excludedFolders: 'Excluded folder prefixes',
+	excludedFolders: 'Excluded folders',
 	excludedFoldersDescription:
-		'Comma- or line-separated vault-relative prefixes. Filter changes become pending and never start a calculation.',
+		'Choose vault folders to omit with all descendants. Filter changes become pending and never start a calculation.',
 	debounce: 'Change detection debounce',
 	debounceDescription: 'Delay before vault changes are grouped, in milliseconds.',
 	pendingLimit: 'Pending detail limit',
@@ -57,7 +58,7 @@ const COPY = {
 		'Labels appear after this zoom level. 0% always shows them; 100% requires the closest zoom.',
 	showContinents: 'Show continents',
 	showContinentsDescription:
-		'Render topology-derived land, coastlines, islands, and map labels. This never moves the fixed layout.',
+		'Render folder-owned land, coastlines, root-note islands, and map labels. This never moves the fixed layout.',
 	surfaceMode: 'Sphere surface',
 	surfaceOpacity: 'Surface opacity',
 	followTheme: 'Background follows theme',
@@ -123,22 +124,60 @@ export class SphericalGraphSettingTab extends PluginSettingTab {
 			.setName(COPY.dataHeading)
 			.setHeading();
 
-		new Setting(this.containerEl)
+		const excludedSetting = new Setting(this.containerEl)
 			.setName(COPY.excludedFolders)
 			.setDesc(COPY.excludedFoldersDescription)
-			.addTextArea((text) => {
-				text
-					.setPlaceholder('Archive/\ntemplates/')
-					.setValue(settings.data.excludedFolderPrefixes.join('\n'))
-					.onChange((value) =>
-						this.commit(settings, 'data', (next) => {
-							next.data.excludedFolderPrefixes = value
-								.split(/[,\n]/u)
-								.map((prefix) => prefix.trim());
-						}),
-					);
-				text.inputEl.rows = 3;
+			.addButton((button) => {
+				button
+					.setButtonText('Choose folders')
+					.setTooltip('Choose excluded vault folders')
+					.onClick(() => {
+						new ExcludedFolderModal(
+							this.app,
+							settings.data.excludedFolderPrefixes,
+							(paths) => {
+								void this.commit(
+									settings,
+									'data',
+									(next) => {
+										next.data.excludedFolderPrefixes = [...paths];
+									},
+								).then(() => this.display());
+							},
+						).open();
+					});
 			});
+		const chips = excludedSetting.settingEl.createDiv({
+			cls: 'spherical-graph-folder-chips',
+		});
+		if (settings.data.excludedFolderPrefixes.length === 0) {
+			chips.createSpan({
+				text: 'None selected',
+				cls: 'spherical-graph-folder-chip-empty',
+			});
+		}
+		for (const path of settings.data.excludedFolderPrefixes) {
+			const chip = chips.createSpan({
+				cls: 'spherical-graph-folder-chip',
+			});
+			chip.createSpan({ text: path });
+			const remove = chip.createEl('button', {
+				text: '×',
+				attr: {
+					type: 'button',
+					'aria-label': `Include ${path} again`,
+					title: `Include ${path} again`,
+				},
+			});
+			remove.addEventListener('click', () => {
+				void this.commit(settings, 'data', (next) => {
+					next.data.excludedFolderPrefixes =
+						next.data.excludedFolderPrefixes.filter(
+							(entry) => entry !== path,
+						);
+				}).then(() => this.display());
+			});
+		}
 
 		this.addNumberSetting(
 			this.containerEl,

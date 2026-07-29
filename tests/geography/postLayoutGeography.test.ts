@@ -2,16 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
 	derivePostLayoutGeography,
 } from '../../src/geography/postLayoutGeography';
-import { oceanComponentCount } from '../../src/geography/sphericalRegions';
 import {
-	exponentialMap,
-	geodesicDistance,
-} from '../../src/geometry/sphericalGeometry';
-import {
-	crossVec3,
 	normalizeVec3,
-	orthogonalUnitVec3,
-	scaleVec3,
 	writeVec3,
 	type Vec3,
 } from '../../src/geometry/vector3';
@@ -20,329 +12,143 @@ import type {
 	GraphEdge,
 	GraphNode,
 } from '../../src/graph/graphTypes';
+import { fibonacciSpherePoint } from '../../src/layout/initialization';
 
-function graphWithGroups(groupSizes: readonly number[]): GraphData {
-	const nodes: GraphNode[] = [];
-	const edges: GraphEdge[] = [];
-	let start = 0;
-	for (let groupIndex = 0; groupIndex < groupSizes.length; groupIndex += 1) {
-		const size = groupSizes[groupIndex] ?? 0;
-		const folder = groupIndex === 0 ? 'Research' : 'Books';
-		for (let offset = 0; offset < size; offset += 1) {
-			const index = start + offset;
-			nodes.push({
-				index,
-				id: `${folder}/note-${index}.md`,
-				path: `${folder}/note-${index}.md`,
-				basename: `note-${index}`,
-				degree: Math.max(0, size - 1),
-				weightedDegree: Math.max(0, size - 1),
-				exists: true,
-			});
-		}
-		for (let left = start; left < start + size; left += 1) {
-			for (let right = left + 1; right < start + size; right += 1) {
-				edges.push({
-					source: left,
-					target: right,
-					weight: 1,
-					forwardWeight: 1,
-					backwardWeight: 0,
-				});
-			}
-		}
-		start += size;
-	}
+function graph(paths: readonly string[], edgePairs: readonly [number, number][]): GraphData {
+	const degrees = new Uint32Array(paths.length);
+	const edges: GraphEdge[] = edgePairs.map(([source, target]) => {
+		degrees[source] = (degrees[source] ?? 0) + 1;
+		degrees[target] = (degrees[target] ?? 0) + 1;
+		return {
+			source,
+			target,
+			weight: 1,
+			forwardWeight: 1,
+			backwardWeight: 0,
+		};
+	});
+	const nodes: GraphNode[] = paths.map((path, index) => ({
+		index,
+		id: path,
+		path,
+		basename: path.split('/').at(-1) ?? path,
+		degree: degrees[index] ?? 0,
+		weightedDegree: degrees[index] ?? 0,
+		exists: true,
+	}));
 	return {
 		nodes,
 		edges,
-		signature: `groups-${groupSizes.join('-')}`,
+		signature: paths.join('|'),
 		filterSignature: 'filters',
 		descriptor: {
-			nodeIds: nodes.map((node) => node.id),
+			nodeIds: [...paths],
 			edges: edges.map((edge) => ({
-				sourceId: nodes[edge.source]?.id ?? '',
-				targetId: nodes[edge.target]?.id ?? '',
-				weight: edge.weight,
-				forwardWeight: edge.forwardWeight,
-				backwardWeight: edge.backwardWeight,
+				sourceId: paths[edge.source] ?? '',
+				targetId: paths[edge.target] ?? '',
+				weight: 1,
+				forwardWeight: 1,
+				backwardWeight: 0,
 			})),
 			filterSignature: 'filters',
 		},
 	};
 }
 
-function addLooseNodes(graph: GraphData, count: number): GraphData {
-	const nodes = [...graph.nodes];
-	for (let offset = 0; offset < count; offset += 1) {
-		const index = nodes.length;
-		nodes.push({
-			index,
-			id: `Loose/note-${index}.md`,
-			path: `Loose/note-${index}.md`,
-			basename: `note-${index}`,
-			degree: 0,
-			weightedDegree: 0,
-			exists: true,
-		});
+function positions(count: number): Float32Array {
+	const result = new Float32Array(count * 3);
+	for (let index = 0; index < count; index += 1) {
+		writeVec3(result, index, fibonacciSpherePoint(index, count));
 	}
-	return {
-		...graph,
-		nodes,
-		signature: `${graph.signature}-loose-${count}`,
-		descriptor: {
-			...graph.descriptor,
-			nodeIds: nodes.map((node) => node.id),
-		},
-	};
+	return result;
 }
 
-function addWeakNodes(
-	graph: GraphData,
-	degrees: readonly number[],
-): GraphData {
-	const nodes = [...graph.nodes];
-	const edges = [...graph.edges];
-	for (const degree of degrees) {
-		const index = nodes.length;
-		nodes.push({
-			index,
-			id: `Weak/degree-${degree}-${index}.md`,
-			path: `Weak/degree-${degree}-${index}.md`,
-			basename: `degree-${degree}-${index}`,
-			degree,
-			weightedDegree: degree,
-			exists: true,
-		});
-		for (let neighbor = 0; neighbor < degree; neighbor += 1) {
-			edges.push({
-				source: neighbor,
-				target: index,
-				weight: 1,
-				forwardWeight: 1,
-				backwardWeight: 0,
-			});
-		}
-	}
-	return {
-		...graph,
-		nodes,
-		edges,
-		signature: `${graph.signature}-weak-${degrees.join('-')}`,
-		descriptor: {
-			...graph.descriptor,
-			nodeIds: nodes.map((node) => node.id),
-			edges: edges.map((edge) => ({
-				sourceId: nodes[edge.source]?.id ?? '',
-				targetId: nodes[edge.target]?.id ?? '',
-				weight: edge.weight,
-				forwardWeight: edge.forwardWeight,
-				backwardWeight: edge.backwardWeight,
-			})),
-		},
-	};
-}
-
-function withoutEdges(graph: GraphData): GraphData {
-	const nodes = graph.nodes.map((node) => ({
-		...node,
-		degree: 0,
-		weightedDegree: 0,
-	}));
-	return {
-		...graph,
-		nodes,
-		edges: [],
-		signature: `${graph.signature}-without-edges`,
-		descriptor: {
-			...graph.descriptor,
-			edges: [],
-		},
-	};
-}
-
-function clusterDirections(
-	center: Vec3,
-	count: number,
-	maximumRadius = 0.14,
-): Vec3[] {
-	const firstTangent = orthogonalUnitVec3(center, count);
-	const secondTangent = normalizeVec3(
-		crossVec3(center, firstTangent),
-	);
-	return Array.from({ length: count }, (_, index) => {
-		const phase = index * Math.PI * (3 - Math.sqrt(5));
-		const radius =
-			0.035 +
-			maximumRadius * Math.sqrt((index + 0.5) / count);
-		const tangent = normalizeVec3([
-			firstTangent[0] * Math.cos(phase) +
-				secondTangent[0] * Math.sin(phase),
-			firstTangent[1] * Math.cos(phase) +
-				secondTangent[1] * Math.sin(phase),
-			firstTangent[2] * Math.cos(phase) +
-				secondTangent[2] * Math.sin(phase),
-		]);
-		return exponentialMap(center, scaleVec3(tangent, radius));
-	});
-}
-
-function packPositions(groups: readonly (readonly Vec3[])[]): Float32Array {
-	const positions = new Float32Array(
-		groups.reduce((sum, group) => sum + group.length, 0) * 3,
-	);
-	let index = 0;
-	for (const group of groups) {
-		for (const point of group) {
-			writeVec3(positions, index, point);
-			index += 1;
-		}
-	}
-	return positions;
-}
-
-function uniformDirections(count: number): Vec3[] {
-	const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-	return Array.from({ length: count }, (_, index) => {
-		const y = 1 - (2 * (index + 0.5)) / count;
-		const ring = Math.sqrt(Math.max(0, 1 - y * y));
-		const angle = index * goldenAngle;
-		return [
-			ring * Math.cos(angle),
-			y,
-			ring * Math.sin(angle),
-		];
-	});
-}
-
-describe('post-layout spherical geography', () => {
-	it('derives disjoint continents, connected ocean, and islands without moving positions', () => {
-		const graph = addLooseNodes(graphWithGroups([10, 10]), 6);
-		const positions = packPositions([
-			clusterDirections([1, 0, 0], 10),
-			clusterDirections([0, 1, 0], 10),
+describe('post-layout directory geography', () => {
+	it('creates exactly one continent per non-orphan top-level folder', () => {
+		const data = graph(
 			[
-				[-1, 0, 0],
-				[0, -1, 0],
-				[0, 0, 1],
-				[0, 0, -1],
-				normalizeVec3([-1, 1, 0]),
-				normalizeVec3([-1, -1, 0]),
+				'Books/a.md',
+				'Books/Fiction/b.md',
+				'Research/c.md',
+				'Research/Deep/d.md',
 			],
-		]);
-		const before = positions.slice();
-		const analysis = derivePostLayoutGeography(
-			graph,
-			positions,
-			42,
-			undefined,
-			{
-				gridSubdivision: 4,
-				minimumContinentNodes: 6,
-			},
+			[
+				[0, 1],
+				[1, 2],
+				[2, 3],
+			],
 		);
+		const fixed = positions(data.nodes.length);
+		const before = fixed.slice();
+		const analysis = derivePostLayoutGeography(data, fixed, 42);
 
-		expect(positions).toEqual(before);
-		expect(analysis.geography.continents).toHaveLength(2);
-		expect(
-			analysis.geography.continents
-				.map((continent) => continent.label)
-				.sort(),
-		).toEqual(['Books', 'Research']);
+		expect(fixed).toEqual(before);
+		expect(analysis.geography.continents.map((value) => value.label)).toEqual(
+			['Books', 'Research'],
+		);
+		expect(analysis.geography.continents[0]?.nodeIds).toEqual([
+			'Books/Fiction/b.md',
+			'Books/a.md',
+		]);
+		expect([...analysis.assignmentByNode]).toEqual([0, 0, 1, 1]);
 		expect(analysis.geography.islandNodeIds).toEqual([]);
-		expect([...analysis.assignmentByNode.slice(20)]).toEqual(
-			Array.from({ length: 6 }, () => -1),
-		);
-		expect(
-			oceanComponentCount(analysis.grid, analysis.ownerByCell),
-		).toBe(1);
-		expect(
-			analysis.ownerByCell.every(
-				(owner) =>
-					owner === -1 ||
-					(owner >= 0 &&
-						owner < analysis.geography.continents.length),
-			),
-		).toBe(true);
-		for (const continent of analysis.geography.continents) {
-			expect(Math.hypot(...continent.center)).toBeCloseTo(1, 6);
-			expect(continent.capRadius).toBeGreaterThanOrEqual(0.1);
-			expect(continent.capRadius).toBeLessThanOrEqual(1.2);
-		}
 	});
 
-	it('spatially splits one topological prior into distant landmasses', () => {
-		const graph = graphWithGroups([16]);
-		const positions = packPositions([
-			clusterDirections([1, 0, 0], 8),
-			clusterDirections([0, 1, 0], 8),
-		]);
-		const analysis = derivePostLayoutGeography(
-			graph,
-			positions,
-			17,
-			undefined,
-			{
-				gridSubdivision: 4,
-				minimumContinentNodes: 6,
-			},
+	it('keeps degree-one and degree-two folder notes on their continent', () => {
+		const data = graph(
+			['Books/a.md', 'Books/b.md', 'Books/c.md'],
+			[
+				[0, 1],
+				[1, 2],
+			],
 		);
-
-		expect(analysis.geography.continents).toHaveLength(2);
-		expect(
-			analysis.geography.continents.every(
-				(continent) => continent.nodeIds.length === 8,
-			),
-		).toBe(true);
-		expect(
-			geodesicDistance(
-				analysis.geography.continents[0]?.center ?? [1, 0, 0],
-				analysis.geography.continents[1]?.center ?? [1, 0, 0],
-			),
-		).toBeGreaterThan(1);
-		expect(
-			oceanComponentCount(analysis.grid, analysis.ownerByCell),
-		).toBe(1);
-	});
-
-	it('merges conflicting graph priors when they form one shallow spatial basin', () => {
-		const graph = graphWithGroups([8, 8]);
-		const center: Vec3 = [1, 0, 0];
-		const firstCenter = exponentialMap(center, [0, 0.18, 0]);
-		const secondCenter = exponentialMap(center, [0, -0.18, 0]);
-		const positions = packPositions([
-			clusterDirections(firstCenter, 8, 0.12),
-			clusterDirections(secondCenter, 8, 0.12),
-		]);
 		const analysis = derivePostLayoutGeography(
-			graph,
-			positions,
-			29,
-			undefined,
-			{
-				gridSubdivision: 4,
-				minimumContinentNodes: 6,
-			},
+			data,
+			positions(data.nodes.length),
+			7,
 		);
 
 		expect(analysis.geography.continents).toHaveLength(1);
-		expect(analysis.geography.continents[0]?.nodeIds).toHaveLength(16);
+		expect(analysis.geography.continents[0]?.nodeIds).toHaveLength(3);
+		expect(analysis.geography.islandNodeIds).toEqual([]);
+		expect([...analysis.assignmentByNode]).toEqual([0, 0, 0]);
 	});
 
-	it('keeps a dense cluster of orphan notes over open water', () => {
-		const graph = withoutEdges(graphWithGroups([12]));
-		const positions = packPositions([
-			clusterDirections([1, 0, 0], 12),
-		]);
+	it('renders linked root notes as islands and leaves all orphans over ocean', () => {
+		const data = graph(
+			[
+				'Books/a.md',
+				'Books/b.md',
+				'Index.md',
+				'Orphan.md',
+				'Loose/orphan.md',
+			],
+			[
+				[0, 1],
+				[0, 2],
+			],
+		);
 		const analysis = derivePostLayoutGeography(
-			graph,
-			positions,
-			31,
-			undefined,
-			{
-				gridSubdivision: 4,
-				minimumContinentNodes: 6,
-			},
+			data,
+			positions(data.nodes.length),
+			11,
+		);
+
+		expect(analysis.geography.continents).toHaveLength(1);
+		expect(analysis.geography.continents[0]?.nodeIds).toEqual([
+			'Books/a.md',
+			'Books/b.md',
+		]);
+		expect(analysis.geography.islandNodeIds).toEqual(['Index.md']);
+		expect([...analysis.assignmentByNode]).toEqual([0, 0, -1, -1, -1]);
+	});
+
+	it('does not create land for a folder containing only orphans', () => {
+		const data = graph(['Empty/a.md', 'Empty/b.md'], []);
+		const analysis = derivePostLayoutGeography(
+			data,
+			positions(data.nodes.length),
+			13,
 		);
 
 		expect(analysis.geography.continents).toEqual([]);
@@ -350,214 +156,53 @@ describe('post-layout spherical geography', () => {
 		expect([...analysis.density.density].every((value) => value === 0)).toBe(
 			true,
 		);
-		expect([...analysis.ownerByCell].every((owner) => owner === -1)).toBe(
-			true,
-		);
 	});
 
-	it('keeps degree-one and degree-two notes as islands, never continent support', () => {
-		const graph = addWeakNodes(graphWithGroups([10]), [0, 1, 2, 2]);
-		const positions = packPositions([
-			clusterDirections([1, 0, 0], 10),
-			[
-				[-1, 0, 0],
-				[0, 1, 0],
-				[0, -1, 0],
-				[0, 0, 1],
-			],
+	it('is deterministic and preserves identity across a top-level folder rename', () => {
+		const firstGraph = graph(
+			['Books/a.md', 'Books/Sub/b.md'],
+			[[0, 1]],
+		);
+		const fixed = new Float32Array([
+			...normalizeVec3([1, 0.1, 0] as Vec3),
+			...normalizeVec3([1, -0.1, 0] as Vec3),
 		]);
-		const analysis = derivePostLayoutGeography(
-			graph,
-			positions,
-			43,
-			undefined,
-			{
-				gridSubdivision: 4,
-				minimumContinentNodes: 6,
-			},
-		);
-
-		expect(analysis.geography.continents).toHaveLength(1);
-		expect(analysis.geography.continents[0]?.nodeIds).toHaveLength(10);
-		expect(analysis.geography.islandNodeIds).toEqual([
-			'Weak/degree-1-11.md',
-			'Weak/degree-2-12.md',
-			'Weak/degree-2-13.md',
-		]);
-		expect([...analysis.assignmentByNode.slice(10)]).toEqual([
-			-1,
-			-1,
-			-1,
-			-1,
-		]);
-	});
-
-	it('does not let a topological prior turn a uniform globe into one continent', () => {
-		const graph = graphWithGroups([16]);
-		const positions = packPositions([uniformDirections(16)]);
-		const analysis = derivePostLayoutGeography(
-			graph,
-			positions,
-			37,
-			undefined,
-			{
-				gridSubdivision: 3,
-				minimumContinentNodes: 6,
-			},
-		);
-
-		expect(analysis.geography.continents).toEqual([]);
-		expect(analysis.geography.islandNodeIds).toHaveLength(16);
-		expect(
-			oceanComponentCount(analysis.grid, analysis.ownerByCell),
-		).toBe(1);
-	});
-
-	it('keeps several dense marker regions separate across a loose spherical background', () => {
-		const groupSizes = [26, 23, 20, 18, 16] as const;
-		const looseCount = 36;
-		const graph = addLooseNodes(
-			graphWithGroups(groupSizes),
-			looseCount,
-		);
-		const centers: readonly Vec3[] = [
-			[1, 0, 0],
-			[0, 1, 0],
-			[-1, 0, 0],
-			[0, -1, 0],
-			[0, 0, 1],
-		];
-		const positions = packPositions([
-			...groupSizes.map((size, index) =>
-				clusterDirections(
-					centers[index] ?? [1, 0, 0],
-					size,
-					0.34,
-				),
-			),
-			uniformDirections(looseCount),
-		]);
-		const analysis = derivePostLayoutGeography(
-			graph,
-			positions,
-			83,
-			undefined,
-			{
-				gridSubdivision: 4,
-				minimumContinentNodes: 10,
-				maximumContinents: 7,
-			},
-		);
-
-		expect(analysis.geography.continents.length).toBeGreaterThanOrEqual(4);
-		expect(
-			analysis.geography.continents.every(
-				(continent) => continent.nodeIds.length >= 10,
-			),
-		).toBe(true);
-		expect(
-			oceanComponentCount(analysis.grid, analysis.ownerByCell),
-		).toBe(1);
-		expect(
-			analysis.geography.continents.reduce(
-				(total, continent) => total + continent.nodeIds.length,
-				0,
-			),
-		).toBeGreaterThanOrEqual(80);
-		expect(analysis.geography.islandNodeIds).toEqual([]);
-		const coreGraph = graphWithGroups(groupSizes);
-		const corePositions = packPositions([
-			...groupSizes.map((size, index) =>
-				clusterDirections(
-					centers[index] ?? [1, 0, 0],
-					size,
-					0.34,
-				),
-			),
-		]);
-		const coreAnalysis = derivePostLayoutGeography(
-			coreGraph,
-			corePositions,
-			83,
-			undefined,
-			{
-				gridSubdivision: 4,
-				minimumContinentNodes: 10,
-				maximumContinents: 7,
-			},
-		);
-		expect(analysis.density.characteristicSpacing).toBe(
-			coreAnalysis.density.characteristicSpacing,
-		);
-		expect(analysis.density.density).toEqual(coreAnalysis.density.density);
-	});
-
-	it('is deterministic and reuses matched persisted identity', () => {
-		const graph = graphWithGroups([9, 9]);
-		const positions = packPositions([
-			clusterDirections([1, 0, 0], 9),
-			clusterDirections([0, 1, 0], 9),
-		]);
-		const first = derivePostLayoutGeography(
-			graph,
-			positions,
-			23,
-			undefined,
-			{
-				gridSubdivision: 3,
-				minimumContinentNodes: 6,
-			},
-		);
+		const first = derivePostLayoutGeography(firstGraph, fixed, 19);
 		const previous = {
 			...first.geography,
-			continents: first.geography.continents.map(
-				(continent, index) => ({
-					...continent,
-					id: `stable-${index}`,
-					label: `Stable ${index}`,
-					colorIndex: 5 - index,
-				}),
-			),
+			continents: first.geography.continents.map((continent) => ({
+				...continent,
+				id: 'stable-books',
+				colorIndex: 5,
+			})),
 		};
-		const second = derivePostLayoutGeography(
-			graph,
-			positions,
-			23,
+		const renamedGraph = graph(
+			['Library/a.md', 'Library/Sub/b.md'],
+			[[0, 1]],
+		);
+		const renamed = derivePostLayoutGeography(
+			renamedGraph,
+			fixed,
+			19,
 			previous,
-			{
-				gridSubdivision: 3,
-				minimumContinentNodes: 6,
-			},
 		);
 		const repeated = derivePostLayoutGeography(
-			graph,
-			positions,
-			23,
+			renamedGraph,
+			fixed,
+			19,
 			previous,
-			{
-				gridSubdivision: 3,
-				minimumContinentNodes: 6,
-			},
 		);
 
-		expect(second.geography).toEqual(repeated.geography);
-		expect(second.ownerByCell).toEqual(repeated.ownerByCell);
-		expect(second.geography.continents.map((continent) => continent.id)).toEqual(
-			['stable-0', 'stable-1'],
-		);
-		expect(
-			second.geography.continents.map((continent) => continent.label),
-		).toEqual(['Stable 0', 'Stable 1']);
+		expect(renamed.geography).toEqual(repeated.geography);
+		expect(renamed.geography.continents[0]?.id).toBe('stable-books');
+		expect(renamed.geography.continents[0]?.colorIndex).toBe(5);
+		expect(renamed.geography.continents[0]?.label).toBe('Library');
 	});
 
 	it('rejects a position buffer that is not the completed layout', () => {
-		const graph = graphWithGroups([8]);
+		const data = graph(['Books/a.md', 'Books/b.md'], [[0, 1]]);
 		expect(() =>
-			derivePostLayoutGeography(
-				graph,
-				new Float32Array(3),
-				42,
-			),
+			derivePostLayoutGeography(data, new Float32Array(3), 42),
 		).toThrow(/one vector per note/u);
 	});
 });

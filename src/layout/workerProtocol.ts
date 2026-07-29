@@ -161,6 +161,17 @@ function isRefreshPayload(value: unknown): boolean {
 	);
 }
 
+function isTerritoryPayload(value: unknown): boolean {
+	if (!isRecord(value)) {
+		return false;
+	}
+	return (
+		value.centers instanceof Float32Array &&
+		value.maximumDistances instanceof Float32Array &&
+		value.assignedNodeMask instanceof Uint8Array
+	);
+}
+
 function isRunPayload(value: unknown): value is LayoutRunPayload {
 	if (!isRecord(value)) {
 		return false;
@@ -172,6 +183,8 @@ function isRunPayload(value: unknown): value is LayoutRunPayload {
 		(value.movableMask === undefined ||
 			value.movableMask instanceof Uint8Array) &&
 		(value.refresh === undefined || isRefreshPayload(value.refresh)) &&
+		(value.territory === undefined ||
+			isTerritoryPayload(value.territory)) &&
 		value.geography === undefined &&
 		(value.settings === undefined || isRecord(value.settings))
 	);
@@ -277,6 +290,11 @@ export function getRunRequestTransferables(
 	add(request.payload.edgeEndpoints);
 	add(request.payload.edgeWeights);
 	add(request.payload.movableMask);
+	if (request.payload.territory !== undefined) {
+		add(request.payload.territory.centers);
+		add(request.payload.territory.maximumDistances);
+		add(request.payload.territory.assignedNodeMask);
+	}
 	if (request.payload.refresh !== undefined) {
 		add(request.payload.refresh.existingNodeMask);
 		add(request.payload.refresh.newNodeMask);

@@ -40,10 +40,9 @@ const MEMBER_GUARANTEE_MAX_RADIUS = 0.024;
 const BOUNDARY_NOISE_BAND = 0.052;
 const BOUNDARY_SEARCH_RADIUS = 0.14;
 const SUPPORT_DISTANCE_CAP = 0.2;
-const MIN_CONTINENTAL_NODE_DEGREE = 3;
-const BASE_MINIMUM_CONNECTED_OCEAN_FRACTION = 0.34;
-const OCEAN_FRACTION_PER_ADDITIONAL_CONTINENT = 0.025;
-const MAXIMUM_CONNECTED_OCEAN_FRACTION = 0.46;
+const TARGET_VISIBLE_OCEAN_FRACTION = 0.5;
+const APPROXIMATE_ROOT_ISLAND_AREA_FRACTION = 0.0008;
+const MAXIMUM_ISLAND_OCEAN_COMPENSATION = 0.12;
 
 interface DensityAnchor {
 	readonly direction: Vec3;
@@ -224,22 +223,6 @@ export function eligibleIslandNodeIndices(
 			indices.add(nodeIndex);
 		}
 	}
-	if (nodeDegrees !== undefined) {
-		for (const continent of geography.continents) {
-			for (const nodeIndex of continent.nodeIndices) {
-				const degree = nodeDegrees[nodeIndex] ?? 0;
-				if (
-					Number.isSafeInteger(nodeIndex) &&
-					nodeIndex >= 0 &&
-					nodeIndex < nodeCount &&
-					degree > 0 &&
-					degree < MIN_CONTINENTAL_NODE_DEGREE
-				) {
-					indices.add(nodeIndex);
-				}
-			}
-		}
-	}
 	return [...indices].sort((left, right) => left - right);
 }
 
@@ -261,8 +244,7 @@ function semanticAssignments(
 				Number.isSafeInteger(nodeIndex) &&
 				nodeIndex >= 0 &&
 				nodeIndex < nodeCount &&
-				(degree === undefined ||
-					degree >= MIN_CONTINENTAL_NODE_DEGREE) &&
+				(degree === undefined || degree > 0) &&
 				assignments[nodeIndex] === -2
 			) {
 				assignments[nodeIndex] = owner;
@@ -1014,13 +996,17 @@ function connectedSeaFromExisting(
 	return connected;
 }
 
-function connectedOceanTargetFraction(ownerCount: number): number {
+function connectedOceanTargetFraction(islandCount: number): number {
 	return clamp(
-		BASE_MINIMUM_CONNECTED_OCEAN_FRACTION +
-			Math.max(0, ownerCount - 1) *
-				OCEAN_FRACTION_PER_ADDITIONAL_CONTINENT,
-		BASE_MINIMUM_CONNECTED_OCEAN_FRACTION,
-		MAXIMUM_CONNECTED_OCEAN_FRACTION,
+		TARGET_VISIBLE_OCEAN_FRACTION +
+			Math.min(
+				MAXIMUM_ISLAND_OCEAN_COMPENSATION,
+				Math.max(0, islandCount) *
+					APPROXIMATE_ROOT_ISLAND_AREA_FRACTION,
+			),
+		TARGET_VISIBLE_OCEAN_FRACTION,
+		TARGET_VISIBLE_OCEAN_FRACTION +
+			MAXIMUM_ISLAND_OCEAN_COMPENSATION,
 	);
 }
 
@@ -1035,7 +1021,7 @@ function expandConnectedOcean(
 	initialConnectedOcean: Uint8Array,
 	forced: Int32Array,
 	bestDensity: Float32Array,
-	ownerCount: number,
+	islandCount: number,
 ): Uint8Array {
 	let connectedOcean = connectedSeaFromExisting(
 		grid,
@@ -1043,7 +1029,7 @@ function expandConnectedOcean(
 		initialConnectedOcean,
 	);
 	const targetCount = Math.ceil(
-		grid.vertices.length * connectedOceanTargetFraction(ownerCount),
+		grid.vertices.length * connectedOceanTargetFraction(islandCount),
 	);
 	let connectedCount = connectedOcean.reduce(
 		(total, value) => total + value,
@@ -1226,7 +1212,7 @@ function buildLandRaster(
 		initialConnectedOcean,
 		forced,
 		fields.best,
-		geography.continents.length,
+		geography.islandNodeIndices.length,
 	);
 	const boundaries = boundarySamples(
 		grid,

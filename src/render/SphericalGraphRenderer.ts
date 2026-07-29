@@ -682,6 +682,7 @@ export class SphericalGraphRenderer {
 			nodeAttachment: css('--sg-attachment', '#b9a26c'),
 			nodeUnresolved: css('--sg-unresolved', '#7f8d91'),
 			nodeNeighbor: css('--sg-city-neighbor', '#fff2cf'),
+			nodeDirectoryPeer: css('--sg-city-directory-peer', '#82b7ad'),
 			nodeActive: css('--sg-active', '#7eb5c2'),
 			nodeHovered: css('--sg-selection', '#ff6b57'),
 			nodeSelected: css('--sg-selection', '#ff6b57'),

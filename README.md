@@ -4,11 +4,11 @@
 [![Latest release](https://img.shields.io/github/v/release/Pavel-mik/obsidian-spherical-graph?label=release)](https://github.com/Pavel-mik/obsidian-spherical-graph/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
 
-Turn your Obsidian vault into an explorable world. Dense, weakly connected
-regions become continents separated by visible seas; notes become cities,
-links become roads across the surface, and tags orbit overhead as satellites.
-Orphan notes remain cities over open water, while notes with one or two links
-become small islands instead of inflating a continent.
+Turn your Obsidian vault into an explorable world. Each top-level vault folder
+becomes its own continent, notes become cities, links become roads across the
+surface, and tags orbit overhead as satellites. Linked notes stored directly
+in the vault root become islands; orphan notes remain cities over open water.
+The cartography reserves approximately half the globe for one connected ocean.
 Route Finder reveals every shortest path between distant notes.
 
 Spherical Graph is designed as a stable spatial map: a finite layout operation
@@ -16,15 +16,12 @@ computes positions, validates and saves one complete snapshot, and then stops.
 Normal reading, search, filtering, selection, rotation, zoom, theme changes,
 and resizing do not move notes.
 
-Cartography is deliberately downstream from layout. The plugin first computes
-the ordinary deterministic graph layout on \(S^2\) and fixes every note
-position. It then evaluates adaptive density on an intrinsic spherical grid,
-builds a watershed with one explicit connected ocean, derives spatial
-continents, and finally renders coasts and beaches. Graph communities are a
-soft prior for interpreting the finished map; geography is never a force,
-initialization constraint, or reason to move a note. Only notes with at least
-three links contribute continental density; weaker notes remain visually
-available without closing the seas between major regions.
+Initialize and Renew first allocate deterministic intrinsic spherical
+territories to the top-level folders. Same-folder topology arranges cities
+inside each territory; cross-folder links have reduced layout weight and can
+move endpoints without transferring them to another continent. After the
+finite solver stops, adaptive land support over the fixed positions produces
+exclusive coastlines, beaches, root-note islands, and one broad ocean.
 
 ## See your vault as a world
 
@@ -91,23 +88,17 @@ and a reliable rename keeps the old position under the new path. Select
   commands.
 - Intrinsic, seam-free spherical layout with deterministic exact and sampled
   repulsion modes.
-- Classic deterministic Initialize/Renew placement over the full sphere,
-  followed by the ordinary intrinsic spring, repulsion, and coverage solve.
-  No community assignment, geographic center, or continent radius enters the
-  worker protocol.
-- Post-layout cartography over fixed positions: an adaptive subdivided
-  icosahedral grid, local-spacing density kernels, watershed basins, exclusive
-  spatial regions, and an explicit connected ocean. Multiresolution CPM
-  community detection supplies only a soft graph prior for basin reconciliation
-  and naming; spatial evidence decides the final continents. Degree-zero notes
-  stay as cities over water, and degree-one/two notes can receive independent
-  island patches.
-- A deterministic connected-ocean floor widens weak coastal seams into readable
-  seas while preserving every fixed node position and every required
-  continent-city support cell.
-- Jaccard matching preserves stable continent identity, label, and color across
-  compatible Refreshes. Centers and diagnostic extents are always re-derived
-  from the fixed positions and never constrain layout.
+- Directory-aware Initialize/Renew placement directly on \(S^2\): each
+  non-orphan top-level folder owns a deterministic territory, internal links
+  retain full spring weight, cross-folder links are weaker, and hard geodesic
+  boundaries prevent continental overlap.
+- Post-layout cartography over fixed positions uses adaptive member and
+  same-folder-road support, exclusive land ownership, irregular coastlines,
+  and one connected ocean targeting approximately half the globe.
+- Degree-zero notes stay as cities over water. Degree-one/two folder notes
+  remain on their continent; only linked root notes receive island patches.
+- Membership matching preserves stable continent identity and color across
+  compatible Refreshes and multi-note top-level folder renames.
 - Incremental Refresh with a new-node warm-up, graph-neighborhood affected set,
   hard-fixed remote nodes, anchors, and a displacement cap.
 - Transactional committed snapshot, schema migrations, stable camera state,
@@ -120,9 +111,13 @@ and a reliable rename keeps the old position under the new path. Select
   regions, islands, cartographic region labels, instanced tangent city markers,
   batched geodesic roads, a restrained dashed graticule, smoothly fading
   labels, responsive narrow-pane framing, and invalidation-based frames.
-- Hover details, selection and neighbor emphasis, active-note emphasis,
+- Hover details, selection, linked-neighbor and same-subfolder emphasis,
+  active-note emphasis,
   search/focus, open-note actions, camera reset, keyboard controls, and a
   translucent selection panel with clickable direct neighbors.
+- Searchable excluded-folder picker in settings. Selecting a folder excludes
+  its entire subtree after an explicit Refresh without moving the current map
+  immediately.
 - Offline route finding that highlights every shortest path between two notes
   over the existing links, including all equally short alternatives, explicit
   `Start` and `Dest` markers, and clickable route details.
@@ -170,7 +165,7 @@ Dragging never changes a node position.
 
 ### Data
 
-- excluded folder prefixes
+- searchable excluded-folder picker with subtree semantics and removable paths
 - graph-change debounce
 - pending-diff detail limit
 

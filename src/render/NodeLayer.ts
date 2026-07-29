@@ -115,7 +115,7 @@ export class NodeLayer {
 				side: DoubleSide,
 				toneMapped: false,
 			}),
-			Math.max(1, this.nodesByInstance.length + 4),
+			Math.max(1, this.nodesByInstance.length * 2 + 4),
 		);
 		highlightMesh.name = 'spherical-graph-node-highlights';
 		highlightMesh.count = 0;
@@ -232,6 +232,16 @@ export class NodeLayer {
 			selectedNode === undefined
 				? undefined
 				: snapshot.neighborsByIndex.get(selectedNode.index);
+		const selectedRegion =
+			selectedNode === undefined
+				? undefined
+				: snapshot.directoryRegionByNodeId.get(selectedNode.id);
+		const directoryPeers =
+			selectedRegion === undefined
+				? undefined
+				: new Set(
+						snapshot.nodeIdsByDirectoryRegion.get(selectedRegion) ?? [],
+					);
 
 		for (
 			let instanceId = 0;
@@ -268,6 +278,9 @@ export class NodeLayer {
 			const isRouteStart = node.id === this.route?.startNodeId;
 			const isRouteEnd = node.id === this.route?.endNodeId;
 			const isNeighbor = selectedNeighbors?.has(node.index) ?? false;
+			const isDirectoryPeer =
+				node.id !== this.selection.selectedNodeId &&
+				(directoryPeers?.has(node.id) ?? false);
 			let scale = this.baseScaleForNode(node);
 			if (isSelected) {
 				scale *= 1.62;
@@ -279,6 +292,8 @@ export class NodeLayer {
 				scale *= 1.25;
 			} else if (isNeighbor) {
 				scale *= 1.12;
+			} else if (isDirectoryPeer) {
+				scale *= 1.06;
 			}
 
 			this.scale.setScalar(scale);
@@ -305,6 +320,8 @@ export class NodeLayer {
 							? this.theme.nodeActive
 							: isNeighbor
 								? this.theme.nodeNeighbor
+								: isDirectoryPeer
+									? this.theme.nodeDirectoryPeer
 								: baseColor;
 			mesh.setColorAt(instanceId, this.color.set(color));
 
@@ -375,6 +392,22 @@ export class NodeLayer {
 				addRing(nodeId, 2.75, this.theme.nodeRouteEnd);
 			} else {
 				addRing(nodeId, 1.9, this.theme.nodeRoute);
+			}
+		}
+		const selectedRegion =
+			this.selection.selectedNodeId === undefined
+				? undefined
+				: snapshot.directoryRegionByNodeId.get(
+						this.selection.selectedNodeId,
+					);
+		for (
+			const nodeId of
+				(selectedRegion === undefined
+					? []
+					: snapshot.nodeIdsByDirectoryRegion.get(selectedRegion)) ?? []
+		) {
+			if (nodeId !== this.selection.selectedNodeId) {
+				addRing(nodeId, 1.55, this.theme.nodeDirectoryPeer);
 			}
 		}
 		if (

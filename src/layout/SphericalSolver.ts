@@ -133,6 +133,7 @@ export class SphericalSolver {
 	private readonly edgeWeights: Float32Array;
 	private readonly baseMovableMask: Uint8Array;
 	private readonly refresh: LayoutSolverInput['refresh'];
+	private readonly territory: LayoutSolverInput['territory'];
 	private readonly cappedNodes: Uint8Array;
 	private readonly startedAt: number;
 
@@ -170,6 +171,28 @@ export class SphericalSolver {
 		this.edgeWeights = input.edgeWeights.slice();
 		this.velocities = new Float64Array(this.positions.length);
 		this.cappedNodes = new Uint8Array(nodeCount);
+		if (input.territory !== undefined) {
+			this.validateTerritoryConstraints(input.territory, nodeCount);
+			const centers = new Float32Array(input.territory.centers.length);
+			for (let index = 0; index < nodeCount; index += 1) {
+				writeVec3(
+					centers,
+					index,
+					input.territory.assignedNodeMask[index] === 1
+						? normalizeVec3(readVec3(input.territory.centers, index))
+						: readVec3(this.positions, index),
+				);
+			}
+			this.territory = {
+				centers,
+				maximumDistances:
+					input.territory.maximumDistances.slice(),
+				assignedNodeMask:
+					input.territory.assignedNodeMask.slice(),
+			};
+		} else {
+			this.territory = undefined;
+		}
 
 		if (this.mode === 'refresh') {
 			if (input.refresh === undefined) {
@@ -204,6 +227,34 @@ export class SphericalSolver {
 			);
 		}
 		this.startedAt = defaultNow();
+	}
+
+	private validateTerritoryConstraints(
+		territory: NonNullable<LayoutSolverInput['territory']>,
+		nodeCount: number,
+	): void {
+		if (
+			territory.centers.length !== nodeCount * 3 ||
+			territory.maximumDistances.length !== nodeCount ||
+			territory.assignedNodeMask.length !== nodeCount
+		) {
+			throw new RangeError(
+				'Territory constraints must contain one center and radius per node.',
+			);
+		}
+		for (let index = 0; index < nodeCount; index += 1) {
+			const maximumDistance = territory.maximumDistances[index] ?? 0;
+			if (
+				territory.assignedNodeMask[index] === 1 &&
+				(!Number.isFinite(maximumDistance) ||
+					maximumDistance <= 0 ||
+					maximumDistance > Math.PI)
+			) {
+				throw new RangeError(
+					'Territory radii must be finite and within the sphere.',
+				);
+			}
+		}
 	}
 
 	private validateRefreshConstraints(
@@ -421,6 +472,58 @@ export class SphericalSolver {
 					nextX = cosine * anchorX + sine * tangentX;
 					nextY = cosine * anchorY + sine * tangentY;
 					nextZ = cosine * anchorZ + sine * tangentZ;
+					this.cappedNodes[index] = 1;
+				}
+			}
+			if (
+				this.territory?.assignedNodeMask[index] === 1
+			) {
+				const centerX = this.territory.centers[offset] ?? 0;
+				const centerY = this.territory.centers[offset + 1] ?? 0;
+				const centerZ = this.territory.centers[offset + 2] ?? 0;
+				const dot = clamp(
+					centerX * nextX +
+						centerY * nextY +
+						centerZ * nextZ,
+					-1,
+					1,
+				);
+				const crossX = centerY * nextZ - centerZ * nextY;
+				const crossY = centerZ * nextX - centerX * nextZ;
+				const crossZ = centerX * nextY - centerY * nextX;
+				const distance = Math.atan2(
+					Math.hypot(crossX, crossY, crossZ),
+					dot,
+				);
+				const maximumDistance =
+					this.territory.maximumDistances[index] ?? Math.PI;
+				if (distance > maximumDistance + 1e-12) {
+					let tangentX = nextX - dot * centerX;
+					let tangentY = nextY - dot * centerY;
+					let tangentZ = nextZ - dot * centerZ;
+					const tangentNorm = Math.hypot(
+						tangentX,
+						tangentY,
+						tangentZ,
+					);
+					if (tangentNorm > 1e-12) {
+						tangentX /= tangentNorm;
+						tangentY /= tangentNorm;
+						tangentZ /= tangentNorm;
+					} else {
+						const fallback = orthogonalUnitVec3(
+							[centerX, centerY, centerZ],
+							hashNumbers(this.effectiveSeed, index, 0xd1ae),
+						);
+						tangentX = fallback[0];
+						tangentY = fallback[1];
+						tangentZ = fallback[2];
+					}
+					const cosine = Math.cos(maximumDistance);
+					const sine = Math.sin(maximumDistance);
+					nextX = cosine * centerX + sine * tangentX;
+					nextY = cosine * centerY + sine * tangentY;
+					nextZ = cosine * centerZ + sine * tangentZ;
 					this.cappedNodes[index] = 1;
 				}
 			}

@@ -1,4 +1,5 @@
 import { AppearanceSettings } from '../settings/settings';
+import { directoryRegionKey } from '../geography/directorySemantics';
 
 export type RenderNodeKind = 'note' | 'attachment' | 'unresolved';
 
@@ -70,6 +71,7 @@ export interface RenderTheme {
 	nodeAttachment: string;
 	nodeUnresolved: string;
 	nodeNeighbor: string;
+	nodeDirectoryPeer: string;
 	nodeActive: string;
 	nodeHovered: string;
 	nodeSelected: string;
@@ -125,6 +127,8 @@ export interface PreparedRenderSnapshot {
 	neighborsByIndex: ReadonlyMap<number, ReadonlySet<number>>;
 	tagById: ReadonlyMap<string, RenderTag>;
 	tagsByNodeIndex: ReadonlyMap<number, readonly RenderTag[]>;
+	directoryRegionByNodeId: ReadonlyMap<string, string>;
+	nodeIdsByDirectoryRegion: ReadonlyMap<string, readonly string[]>;
 	geography: RenderGeography;
 }
 
@@ -227,6 +231,32 @@ export function prepareRenderSnapshot(
 		snapshot.geography,
 		nodeByIndex,
 	);
+	const directoryRegionByNodeId = new Map<string, string>();
+	const mutableNodeIdsByDirectoryRegion = new Map<string, string[]>();
+	for (const node of snapshot.nodes) {
+		if ((node.kind ?? 'note') !== 'note') {
+			continue;
+		}
+		const region = directoryRegionKey(node.path);
+		if (region === undefined) {
+			continue;
+		}
+		directoryRegionByNodeId.set(node.id, region);
+		const entries = mutableNodeIdsByDirectoryRegion.get(region);
+		if (entries === undefined) {
+			mutableNodeIdsByDirectoryRegion.set(region, [node.id]);
+		} else {
+			entries.push(node.id);
+		}
+	}
+	const nodeIdsByDirectoryRegion = new Map(
+		[...mutableNodeIdsByDirectoryRegion.entries()].map(
+			([region, nodeIds]) => [
+				region,
+				Object.freeze([...nodeIds].sort()),
+			] as const,
+		),
+	);
 
 	return {
 		snapshotId: snapshot.snapshotId,
@@ -239,6 +269,8 @@ export function prepareRenderSnapshot(
 		neighborsByIndex: neighbors,
 		tagById,
 		tagsByNodeIndex,
+		directoryRegionByNodeId,
+		nodeIdsByDirectoryRegion,
 		geography,
 	};
 }

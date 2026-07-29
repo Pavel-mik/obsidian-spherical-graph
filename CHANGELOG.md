@@ -6,6 +6,43 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-29
+
+### Added
+
+- Every non-orphan top-level vault folder now owns one deterministic continent.
+  Notes in that folder remain inside its intrinsic spherical territory, while
+  cross-folder links weakly pull only their endpoints toward useful ports.
+- Linked notes stored directly in the vault root become standalone islands.
+  Orphan notes anywhere remain interactive cities over open water and never
+  manufacture land.
+- Selecting a note now adds a restrained secondary highlight to notes in the
+  same first-two-level directory region while preserving the existing selected,
+  linked-neighbor, active-note, and Route Finder visual states.
+- Settings now provide a searchable vault-folder picker with subtree exclusion,
+  removable path chips, and preservation of missing legacy paths.
+
+### Changed
+
+- Initialize and Renew use a deterministic directory-aware S² initialization.
+  Same-folder edges keep full spring weight, cross-folder edges are reduced, and
+  hard geodesic territory boundaries prevent continental overlap.
+- The connected external ocean now targets approximately 50% of the spherical
+  raster, with deterministic compensation for the visible area of root-note
+  islands.
+- Degree-one and degree-two notes inside a folder are ordinary continent
+  members. The previous rule that converted them into individual islands was
+  removed.
+- A cross-folder single-note move is treated as a semantic relocation during
+  Refresh. Multi-note folder renames retain the previous map and geography
+  identity through deterministic membership matching.
+
+### Notes
+
+- The layout algorithm version is now 4. Older committed layouts receive one
+  automatic Initialize so directory territories and the new ocean budget are
+  applied. The resulting layout is fixed again after that completed operation.
+
 ## [1.3.1] - 2026-07-28
 
 ### Changed
@@ -247,7 +284,8 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.3.1...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.4.0...HEAD
+[1.4.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.3.1...1.4.0
 [1.3.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.3.0...1.3.1
 [1.3.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.2.5...1.3.0
 [1.2.5]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.2.4...1.2.5

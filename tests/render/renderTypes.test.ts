@@ -11,7 +11,7 @@ function snapshot(): RenderGraphSnapshot {
 			{
 				index: 0,
 				id: 'a',
-				path: 'A.md',
+				path: 'Books/Fiction/A.md',
 				basename: 'A',
 				degree: 1,
 				weightedDegree: 1,
@@ -19,7 +19,7 @@ function snapshot(): RenderGraphSnapshot {
 			{
 				index: 1,
 				id: 'b',
-				path: 'B.md',
+				path: 'Books/Fiction/B.md',
 				basename: 'B',
 				degree: 1,
 				weightedDegree: 1,
@@ -62,6 +62,11 @@ describe('prepareRenderSnapshot', () => {
 		expect(prepared.tagsByNodeIndex.get(1)?.[0]?.id).toBe('#shared');
 		expect(prepared.geography.continents[0]?.label).toBe('Archive');
 		expect(prepared.geography.islandNodeIndices).toEqual([1]);
+		expect(prepared.directoryRegionByNodeId.get('a')).toBe('Books/Fiction');
+		expect(prepared.nodeIdsByDirectoryRegion.get('Books/Fiction')).toEqual([
+			'a',
+			'b',
+		]);
 
 		prepared.positions[0] = 0;
 		expect(source.positions[0]).toBe(1);

@@ -103,6 +103,35 @@ describe('SphericalSolver full layout', () => {
 		expect(result.diagnostics.cappedNodeCount).toBe(0);
 	});
 
+	it('enforces intrinsic hard boundaries for assigned directory territories', () => {
+		const result = new SphericalSolver({
+			operationId: 'directory-territory',
+			mode: 'renew',
+			graphSignature: 'directory-territory',
+			effectiveSeed: 91,
+			positions: new Float32Array([0, 1, 0]),
+			edgeEndpoints: new Uint32Array(),
+			edgeWeights: new Float32Array(),
+			territory: {
+				centers: new Float32Array([1, 0, 0]),
+				maximumDistances: new Float32Array([0.25]),
+				assignedNodeMask: new Uint8Array([1]),
+			},
+			settings: {
+				maxIterations: 1,
+				convergenceWindow: 2,
+			},
+		}).solveSync();
+		expect(result.status).toBe('completed');
+		if (result.status !== 'completed') {
+			return;
+		}
+		expect(
+			geodesicDistance([1, 0, 0], readVec3(result.positions, 0)),
+		).toBeCloseTo(0.25, 5);
+		expect(result.diagnostics.cappedNodeCount).toBe(1);
+	});
+
 	it('keeps dense clusters distinct across sparse bridge links', () => {
 		const clusterSize = 9;
 		const clusterCount = 3;

@@ -70,38 +70,22 @@
 
 ## Continents and atlas direction
 
-- Geography has a strict one-way dependency on the committed layout. Initialize
-  and Renew first run the ordinary deterministic full-sphere solver; Refresh
-  first completes its bounded positional update. Only after the final position
-  buffer is validated and fixed may the atlas pipeline inspect it.
-- Geographic state never enters initialization, the worker payload, force
-  evaluation, integration, or displacement constraints. Pre-layout continent
-  caps were rejected because they produced circular, self-confirming regions
-  and could pull semantically related but spatially distant notes into the
-  wrong landmass.
-- Post-layout analysis samples the fixed note positions on an intrinsic
-  subdivided-icosahedron grid. Grid resolution and compact fine/coarse density
-  kernels adapt to measured global and local note spacing instead of assuming
-  one continent radius.
-- Deterministic multiresolution CPM consensus, conductance, compactness, and
-  stability remain useful as a **soft prior**. The prior can support a spatial
-  basin or make a watershed merge slightly more permissive, but it can never
-  move a note, override final surface ownership, or turn a geographically
-  disconnected footprint into one continent.
-- Density-gradient watershed basins are reconciled at their saddles. Final
-  surface ownership is exclusive, neighboring continent owners are separated
-  by explicit sea cells, and ocean reconciliation preserves one connected
-  ocean component rather than overlapping translucent landmasses.
-- Continent acceptance combines spatial size and prominence with optional graph
-  support. Final membership comes from the owning grid cell at each fixed note
-  position. Only degree-three-or-higher notes can support or join continental
-  land; degree-one/two notes are island candidates, while orphan notes stay as
-  cities over open water. This prevents sparse graph appendices from inflating
-  a landmass while keeping every note interactive.
-- Refresh continuity preserves matched continent identity, label, and color
-  through deterministic overlap matching. Centers and diagnostic extents are
-  always rederived from the current fixed positions; a persisted extent is
-  descriptive metadata, never a layout or rendering constraint.
+- Top-level vault folders are authoritative continent owners. This replaces
+  inferred graph communities with a stable, explainable mapping users control
+  through their existing vault structure.
+- Initialize and Renew receive compact directory territory constraints.
+  Territory centers and hard angular extents affect node placement; land masks,
+  coastlines, colors, and texture remain downstream render products.
+- Same-folder springs retain full strength, cross-folder springs use 14%, and
+  root-note edges use 35%. Rendering, selection, and Route Finder always use
+  the original graph weights.
+- Every linked note under a top-level folder is a continent member regardless
+  of degree. Linked root notes are islands; all degree-zero notes stay as cities
+  over open water. The degree-one/two island rule was removed because it made
+  large vaults visually speckled.
+- Refresh continuity preserves compatible continent identity and color through
+  full-path and relative-path overlap matching. Current folder names always
+  determine labels.
 - Mixed surface triangles are clipped at the ownership boundary; centroid-only
   triangle acceptance was rejected because it exposes a regular sawtooth
   coastline. Land uses a variably inset ownership mask while a wider,
@@ -110,13 +94,11 @@
   semantic geography only. This keeps snapshots compact and lets themes recolor
   the atlas without moving notes. Density, watershed, and cell-ownership arrays
   are temporary analytical data and are not persisted.
-- Degree-one/two notes can receive deterministic, density-scaled island
-  polygons when there is enough clearance from a continent and another island.
-  Orphan notes never seed a polygon. A hard representative budget was rejected
-  because it hid useful sparse islands; geometric clearance and decreasing
-  radius bound overlap without turning the ocean into confetti.
-- A connected ocean must occupy at least 34% of the analytical render raster,
-  increasing by 2.5 percentage points per additional continent up to 46%.
+- Linked root notes can receive deterministic, density-scaled island polygons
+  when there is enough clearance from a continent and another island. Orphan
+  notes never seed a polygon.
+- A connected ocean targets 50% of the analytical render raster, plus bounded
+  compensation for root-island area.
   Expansion proceeds only inward from the existing external ocean and protects
   member cells. This explicit visual invariant was chosen because one-cell sea
   seams are analytically connected but read as rivers rather than oceans.

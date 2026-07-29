@@ -75,6 +75,15 @@ export interface RefreshConstraints {
 	readonly alignToAnchors?: boolean;
 }
 
+export interface LayoutTerritoryConstraints {
+	/** One normalized territory center per node. Unassigned entries are ignored. */
+	readonly centers: Float32Array;
+	/** Per-node hard geodesic distance from its owning territory center. */
+	readonly maximumDistances: Float32Array;
+	/** One value per node; 1 means the hard directory territory applies. */
+	readonly assignedNodeMask: Uint8Array;
+}
+
 export interface LayoutSolverInput {
 	readonly operationId: string;
 	readonly mode: LayoutOperationMode;
@@ -85,6 +94,7 @@ export interface LayoutSolverInput {
 	readonly edgeWeights: Float32Array;
 	readonly movableMask?: Uint8Array;
 	readonly refresh?: RefreshConstraints;
+	readonly territory?: LayoutTerritoryConstraints;
 	readonly settings?: Partial<SolverSettings>;
 }
 
