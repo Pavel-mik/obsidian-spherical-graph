@@ -83,8 +83,8 @@ validated the final unit-vector buffer:
    extents on \(S^2\);
 3. split each folder into overlapping asymmetric intrinsic lobes and initialize
    subfolder cohorts across those lobes;
-4. solve with full same-folder springs, reduced cross-folder springs, and a
-   hard intrinsic territory boundary;
+4. solve with full same-folder springs, reduced cross-folder springs, a smooth
+   inward territory barrier, and a hard intrinsic safety boundary;
 5. validate and fix the completed note positions;
 6. build adaptive land support for each folder and expand one connected ocean
    to approximately half the surface;
@@ -92,8 +92,9 @@ validated the final unit-vector buffer:
 
 The worker receives only compact numeric per-node lobe centers, masks, and
 varied maximum geodesic distances. It never receives rendered coastlines,
-density rasters, colors, labels, or land ownership. Territory enforcement is
-an intrinsic geodesic clamp, not a planar or latitude/longitude constraint.
+density rasters, colors, labels, or land ownership. Territory enforcement uses
+a smooth intrinsic restoring force before an intrinsic geodesic safety clamp,
+not a planar or latitude/longitude constraint.
 
 ### Folder ownership and cross-folder roads
 
@@ -132,10 +133,14 @@ monopolizing the globe. Each folder receives one to seven overlapping lobes
 according to its population. Subfolder cohorts remain locally coherent while
 oversized cohorts are deterministically spread across adjacent lobes. Lobe
 centers, radii, node angles, and per-node radial limits use independent seeded
-phases; the union stays inside the disjoint outer folder extent but does not
-form a circular cap. Linked root notes start near the weighted mean of the
-continents they reference; orphans use globally distributed free points.
-Changing a Renew generation changes all seeded permutations.
+phases. Nodes inside each lobe are chosen from seeded best-candidate spherical
+cap samples with a local proximity index, rather than a radial or Fibonacci
+sequence. The union stays inside the disjoint outer folder extent without
+forming visible rings. Linked root notes start near the weighted mean of the
+continents they reference. Orphans use seeded random ocean samples with local
+separation and remain hard-fixed during the solve, so coverage regularization
+cannot turn them back into a uniform lattice. Changing a Renew generation
+changes all seeded samples.
 
 Refresh begins existing nodes exactly at their committed unit vectors. A new
 node with committed neighbors begins near their weighted spherical mean plus a
@@ -158,7 +163,9 @@ t_{i\rightarrow j}.
 
 The base target angle scales with expected surface spacing,
 \(\sqrt{4\pi/n}\), and is clamped. Edge weight mildly shortens the target and
-strengthens the spring without introducing a singularity.
+strengthens the spring without introducing a singularity. A bounded
+seed-derived multiplier varies otherwise equal target lengths, so the many
+neighbors of one hub do not share one geodesic radius.
 
 ## Repulsion
 
@@ -173,7 +180,9 @@ Above the threshold, an iteration combines:
   movable node.
 
 This makes global pair evaluation \(O(nk)\) for fixed sample count, except for
-genuinely crowded local cells. Refresh skips fixed–fixed force pairs.
+genuinely crowded local cells. At very short angular distance, a bounded smooth
+collision term augments the ordinary cotangent response. Refresh skips
+fixed–fixed force pairs.
 
 ## Coverage regularization
 

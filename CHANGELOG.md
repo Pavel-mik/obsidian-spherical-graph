@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Notes inside directory lobes now start from seeded best-candidate cap samples
+  instead of a visible radial sequence. Equal-weight links also receive small,
+  deterministic target-length variation, preventing hub neighborhoods from
+  settling into concentric rings.
+- Very close nodes receive an additional smooth collision response, while a
+  soft inward territory barrier prevents dense populations from accumulating
+  directly on their hard lobe boundary.
+- Orphan notes now use a seeded random ocean distribution with local
+  separation. They remain fixed during Initialize and Renew instead of being
+  regularized back into a uniform Fibonacci pattern.
+
+### Notes
+
+- The layout algorithm version is now 6. Existing maps receive one automatic
+  Initialize so the organic spacing and orphan distribution take effect.
+
 ## [1.5.0] - 2026-07-29
 
 ### Added

@@ -36,3 +36,6 @@
   territories and multi-scale connected-ocean coastal erosion.
 - [x] Add a directly accessible bottom-rail Auto rotate control that preserves
   the fixed position buffer and stops on manual camera interaction.
+- [x] Replace radial lobe sampling and uniform orphan placement with
+  deterministic organic spacing, short-range collision protection, and soft
+  intrinsic territory barriers.

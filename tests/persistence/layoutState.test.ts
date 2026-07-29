@@ -322,17 +322,17 @@ describe("snapshot reconciliation and migrations", () => {
 		expect(validatePersistedLayoutSnapshot(raw)).toBeUndefined();
 	});
 
-	it("invalidates pre-compound-territory snapshots after the algorithm upgrade", () => {
+	it("invalidates pre-organic-spacing snapshots after the algorithm upgrade", () => {
 		const currentGraph = graph(["a.md"]);
 		const legacySnapshot = createCommittedLayoutSnapshot({
-			snapshotId: "algorithm-4",
+			snapshotId: "algorithm-5",
 			graph: currentGraph,
 			mode: "initialize",
 			effectiveSeed: 42,
 			renewGeneration: 0,
 			completedAt: 10,
 			positions: new Float32Array([1, 0, 0]),
-			algorithmVersion: 4,
+			algorithmVersion: 5,
 		});
 		const currentSnapshot = createCommittedLayoutSnapshot({
 			snapshotId: "algorithm-current",
@@ -344,7 +344,7 @@ describe("snapshot reconciliation and migrations", () => {
 			positions: new Float32Array([1, 0, 0]),
 		});
 
-		expect(CURRENT_ALGORITHM_VERSION).toBe(5);
+		expect(CURRENT_ALGORITHM_VERSION).toBe(6);
 		expect(isSnapshotUsable(legacySnapshot, currentGraph)).toBe(false);
 		expect(isSnapshotUsable(currentSnapshot, currentGraph)).toBe(true);
 	});

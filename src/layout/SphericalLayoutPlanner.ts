@@ -169,7 +169,9 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 		if (context.mode !== 'refresh') {
 			this.latestRefreshPlan = null;
 			const movableMask = new Uint8Array(graph.nodes.length);
-			movableMask.fill(1);
+			for (const node of graph.nodes) {
+				movableMask[node.index] = node.degree === 0 ? 0 : 1;
+			}
 			const initialized = initializeDirectoryLayout(
 				graph,
 				context.effectiveSeed,
@@ -207,6 +209,35 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 			edgeWeights: directoryEdgeWeights,
 			effectiveSeed: context.effectiveSeed,
 		});
+		const newOrphanMask = new Uint8Array(graph.nodes.length);
+		let hasNewOrphans = false;
+		for (const node of graph.nodes) {
+			if (
+				node.degree === 0 &&
+				initialized.newNodeMask[node.index] === 1
+			) {
+				newOrphanMask[node.index] = 1;
+				hasNewOrphans = true;
+			}
+		}
+		if (hasNewOrphans) {
+			const directoryInitialized = initializeDirectoryLayout(
+				graph,
+				context.effectiveSeed,
+			);
+			for (let index = 0; index < graph.nodes.length; index += 1) {
+				if (newOrphanMask[index] !== 1) {
+					continue;
+				}
+				const offset = index * 3;
+				initialized.positions[offset] =
+					directoryInitialized.positions[offset] ?? 0;
+				initialized.positions[offset + 1] =
+					directoryInitialized.positions[offset + 1] ?? 0;
+				initialized.positions[offset + 2] =
+					directoryInitialized.positions[offset + 2] ?? 0;
+			}
+		}
 		const plan = createRefreshPlan({
 			nodeIds: graph.nodes.map((node) => node.id),
 			edgeEndpoints: buffers.edgeEndpoints,
@@ -230,10 +261,19 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 		this.latestRefreshPlan = plan;
 		const existingCount = countOnes(initialized.existingNodeMask);
 		const hardFixedCount = countOnes(plan.hardFixedMask);
+		const newNodeMask = initialized.newNodeMask.slice();
+		const relaxationMovableMask =
+			plan.relaxationMovableMask.slice();
+		for (let index = 0; index < newOrphanMask.length; index += 1) {
+			if (newOrphanMask[index] === 1) {
+				newNodeMask[index] = 0;
+				relaxationMovableMask[index] = 0;
+			}
+		}
 		const refresh: RefreshConstraints = {
 			existingNodeMask: initialized.existingNodeMask,
-			newNodeMask: initialized.newNodeMask,
-			relaxationMovableMask: plan.relaxationMovableMask,
+			newNodeMask,
+			relaxationMovableMask,
 			anchorPositions: initialized.positions.slice(),
 			anchorStrengths: plan.anchorStrengths,
 			maxAnchorDistances: plan.maxAnchorDistances,
