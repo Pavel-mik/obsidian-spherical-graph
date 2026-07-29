@@ -2,7 +2,6 @@ import {
 	deterministicPermutation,
 	hashNumbers,
 	hashString,
-	hashToSignedUnitFloat,
 	hashToUnitFloat,
 } from '../geometry/deterministicHash';
 import {
@@ -25,6 +24,10 @@ import {
 import type { GraphData } from '../graph/graphTypes';
 import { fibonacciSpherePoint } from './initialization';
 import type { LayoutTerritoryConstraints } from './layoutTypes';
+import {
+	organicCapPlacements,
+	randomOceanOrphanPoints,
+} from './organicSampling';
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const CONTINENTAL_LAND_FRACTION = 0.48;
@@ -299,57 +302,6 @@ function folderLobes(
 	});
 }
 
-function organicBoundaryScale(phase: number, seed: number): number {
-	const firstPhase =
-		hashToSignedUnitFloat(seed, 0xb01) * Math.PI;
-	const secondPhase =
-		hashToSignedUnitFloat(seed, 0xb02) * Math.PI;
-	const detailPhase =
-		hashToSignedUnitFloat(seed, 0xb03) * Math.PI;
-	return Math.max(
-		0.52,
-		Math.min(
-			0.96,
-			0.77 +
-				Math.sin(phase * 2 + firstPhase) * 0.1 +
-				Math.sin(phase * 3 + secondPhase) * 0.075 +
-				Math.sin(phase * 7 + detailPhase) * 0.045,
-		),
-	);
-}
-
-function organicCapPlacement(
-	center: Vec3,
-	index: number,
-	count: number,
-	radius: number,
-	seed: number,
-): {
-	readonly position: Vec3;
-	readonly maximumDistance: number;
-} {
-	const radialFraction = Math.sqrt((index + 0.45) / Math.max(1, count));
-	const phase =
-		index * GOLDEN_ANGLE +
-		(hashNumbers(seed, index, 0xc4f) / 0x1_0000_0000) * Math.PI * 2;
-	const maximumDistance = radius * organicBoundaryScale(phase, seed);
-	const angularRadius = maximumDistance * radialFraction * 0.88;
-	const tangentX = orthogonalUnitVec3(center, seed);
-	const tangentY = normalizeVec3(crossVec3(center, tangentX));
-	const direction = normalizeVec3([
-		tangentX[0] * Math.cos(phase) + tangentY[0] * Math.sin(phase),
-		tangentX[1] * Math.cos(phase) + tangentY[1] * Math.sin(phase),
-		tangentX[2] * Math.cos(phase) + tangentY[2] * Math.sin(phase),
-	]);
-	return {
-		position: exponentialMap(
-			center,
-			scaleVec3(direction, angularRadius),
-		),
-		maximumDistance,
-	};
-}
-
 function folderTerritoriesByNode(
 	graph: GraphData,
 	groups: readonly FolderGroup[],
@@ -466,28 +418,29 @@ export function initializeDirectoryLayout(
 				lobe.members.length,
 				hashNumbers(effectiveSeed, folderIndex, lobeIndex, 0x6d1),
 			);
-			for (
-				let memberOffset = 0;
-				memberOffset < lobe.members.length;
-				memberOffset += 1
-			) {
-				const nodeIndex = lobe.members[memberOffset];
-				const pointIndex = permutation[memberOffset];
-				if (nodeIndex === undefined || pointIndex === undefined) {
+			const orderedMembers = Array.from(
+				permutation,
+				(pointIndex) => lobe.members[pointIndex],
+			).filter((nodeIndex): nodeIndex is number =>
+				nodeIndex !== undefined
+			);
+			const placements = organicCapPlacements(
+				lobe.center,
+				orderedMembers,
+				lobe.radius,
+				hashNumbers(
+					effectiveSeed,
+					folderIndex,
+					lobeIndex,
+					0xc4f,
+				),
+			);
+			for (let offset = 0; offset < orderedMembers.length; offset += 1) {
+				const nodeIndex = orderedMembers[offset];
+				const placement = placements[offset];
+				if (nodeIndex === undefined || placement === undefined) {
 					continue;
 				}
-				const placement = organicCapPlacement(
-					lobe.center,
-					pointIndex,
-					lobe.members.length,
-					lobe.radius,
-					hashNumbers(
-						effectiveSeed,
-						folderIndex,
-						lobeIndex,
-						nodeIndex,
-					),
-				);
 				writeVec3(positions, nodeIndex, placement.position);
 				writeVec3(centers, nodeIndex, lobe.center);
 				maximumDistances[nodeIndex] =
@@ -500,8 +453,11 @@ export function initializeDirectoryLayout(
 	const unconstrained = graph.nodes.filter(
 		(node) => (folderIndexByNode[node.index] ?? -1) < 0,
 	);
-	const freePermutation = deterministicPermutation(
-		unconstrained.length,
+	const orphanPositions = randomOceanOrphanPoints(
+		unconstrained
+			.filter((node) => node.degree === 0)
+			.map((node) => node.index),
+		groups,
 		hashNumbers(effectiveSeed, unconstrained.length, 0x0cea),
 	);
 	for (let offset = 0; offset < unconstrained.length; offset += 1) {
@@ -518,10 +474,12 @@ export function initializeDirectoryLayout(
 						groups,
 						effectiveSeed,
 					)
-				: fibonacciSpherePoint(
-						freePermutation[offset] ?? offset,
-						Math.max(1, unconstrained.length),
-					);
+				: (orphanPositions.get(node.index) ??
+					fibonacciSpherePoint(
+						hashNumbers(effectiveSeed, node.index, 0x0a91) %
+							96,
+						96,
+					));
 		writeVec3(positions, node.index, position);
 		writeVec3(centers, node.index, position);
 	}

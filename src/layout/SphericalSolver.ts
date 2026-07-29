@@ -350,6 +350,78 @@ export class SphericalSolver {
 			: this.refresh.relaxationMovableMask;
 	}
 
+	private accumulateTerritoryBarrier(
+		forces: Float64Array,
+		movableMask: Uint8Array,
+	): void {
+		if (this.territory === undefined) {
+			return;
+		}
+		for (let index = 0; index < movableMask.length; index += 1) {
+			if (
+				movableMask[index] !== 1 ||
+				this.territory.assignedNodeMask[index] !== 1
+			) {
+				continue;
+			}
+			const offset = index * 3;
+			const x = this.positions[offset] ?? 0;
+			const y = this.positions[offset + 1] ?? 0;
+			const z = this.positions[offset + 2] ?? 0;
+			const centerX = this.territory.centers[offset] ?? 0;
+			const centerY = this.territory.centers[offset + 1] ?? 0;
+			const centerZ = this.territory.centers[offset + 2] ?? 0;
+			const dot = clamp(
+				x * centerX + y * centerY + z * centerZ,
+				-1,
+				1,
+			);
+			const crossX = y * centerZ - z * centerY;
+			const crossY = z * centerX - x * centerZ;
+			const crossZ = x * centerY - y * centerX;
+			const distance = Math.atan2(
+				Math.hypot(crossX, crossY, crossZ),
+				dot,
+			);
+			const maximumDistance =
+				this.territory.maximumDistances[index] ?? Math.PI;
+			const softStart = maximumDistance * 0.64;
+			if (distance <= softStart) {
+				continue;
+			}
+			let tangentX = centerX - dot * x;
+			let tangentY = centerY - dot * y;
+			let tangentZ = centerZ - dot * z;
+			const tangentLength = Math.hypot(
+				tangentX,
+				tangentY,
+				tangentZ,
+			);
+			if (tangentLength <= 1e-12) {
+				continue;
+			}
+			tangentX /= tangentLength;
+			tangentY /= tangentLength;
+			tangentZ /= tangentLength;
+			const pressure = Math.min(
+				1.35,
+				(distance - softStart) /
+					Math.max(1e-8, maximumDistance - softStart),
+			);
+			const magnitude =
+				this.settings.repulsionCap *
+				0.9 *
+				pressure *
+				pressure;
+			forces[offset] =
+				(forces[offset] ?? 0) + tangentX * magnitude;
+			forces[offset + 1] =
+				(forces[offset + 1] ?? 0) + tangentY * magnitude;
+			forces[offset + 2] =
+				(forces[offset + 2] ?? 0) + tangentZ * magnitude;
+		}
+	}
+
 	private integrate(
 		forces: Float64Array,
 		movableMask: Uint8Array,
@@ -590,6 +662,10 @@ export class SphericalSolver {
 			this.repulsionMode = forceEvaluation.repulsionMode;
 			this.totalRepulsionPairs +=
 				forceEvaluation.evaluatedRepulsionPairs;
+			this.accumulateTerritoryBarrier(
+				forceEvaluation.forces,
+				movableMask,
+			);
 			this.maxAngularDisplacement = this.integrate(
 				forceEvaluation.forces,
 				movableMask,

@@ -252,6 +252,66 @@ describe('SphericalLayoutPlanner integration', () => {
 		).toEqual(initialized.positions);
 	});
 
+	it('keeps orphan notes fixed on a seeded, non-uniform ocean distribution', () => {
+		const nodeCount = 36;
+		const current = graph(
+			Array.from(
+				{ length: nodeCount },
+				(_, index) => `Orphan-${index}.md`,
+			),
+			[],
+		);
+		const planner = new SphericalLayoutPlanner(
+			() => DEFAULT_SPHERICAL_GRAPH_SETTINGS,
+		);
+		const first = planner.createPayload({
+			operationId: 'orphan-layout',
+			mode: 'renew',
+			graph: current,
+			effectiveSeed: 73,
+		});
+		const repeated = planner.createPayload({
+			operationId: 'orphan-layout-repeat',
+			mode: 'renew',
+			graph: current,
+			effectiveSeed: 73,
+		});
+		expect(first.positions).toEqual(repeated.positions);
+		expect(first.movableMask).toEqual(new Uint8Array(nodeCount));
+
+		const sortedY = Array.from(
+			{ length: nodeCount },
+			(_, index) => first.positions[index * 3 + 1] ?? 0,
+		).sort((left, right) => left - right);
+		const gaps = sortedY
+			.slice(1)
+			.map((value, index) => value - (sortedY[index] ?? value));
+		const meanGap =
+			gaps.reduce((sum, value) => sum + value, 0) /
+			Math.max(1, gaps.length);
+		const gapDeviation = Math.sqrt(
+			gaps.reduce(
+				(sum, value) => sum + (value - meanGap) ** 2,
+				0,
+			) / Math.max(1, gaps.length),
+		);
+		expect(gapDeviation / meanGap).toBeGreaterThan(0.28);
+
+		let minimumPairDistance = Math.PI;
+		for (let left = 0; left < nodeCount; left += 1) {
+			for (let right = left + 1; right < nodeCount; right += 1) {
+				minimumPairDistance = Math.min(
+					minimumPairDistance,
+					geodesicDistance(
+						readVec3(first.positions, left),
+						readVec3(first.positions, right),
+					),
+				);
+			}
+		}
+		expect(minimumPairDistance).toBeGreaterThan(0.08);
+	});
+
 	it('starts old nodes at committed positions and new nodes near neighbors', () => {
 		const previous = graph(['a', 'b'], [LINK]);
 		const current = graph(
@@ -298,6 +358,46 @@ describe('SphericalLayoutPlanner integration', () => {
 			payload.positions,
 		);
 		expect('geography' in payload).toBe(false);
+	});
+
+	it('keeps a newly added orphan on its seeded ocean point during Refresh', () => {
+		const previous = graph(['Books/a.md', 'Books/b.md'], [LINK]);
+		const current = graph(
+			['Books/a.md', 'Books/b.md', 'new-orphan.md'],
+			[LINK],
+		);
+		const diff = diffGraphDescriptors(
+			previous.descriptor,
+			current.descriptor,
+			current.signature,
+			[],
+			previous.signature,
+		);
+		const planner = new SphericalLayoutPlanner(
+			() => DEFAULT_SPHERICAL_GRAPH_SETTINGS,
+		);
+		const effectiveSeed = 41;
+		const payload = planner.createPayload({
+			operationId: 'refresh-orphan',
+			mode: 'refresh',
+			graph: current,
+			effectiveSeed,
+			committedSnapshot: snapshot(previous, {
+				'Books/a.md': [1, 0, 0],
+				'Books/b.md': [0, 1, 0],
+			}),
+			diff,
+		});
+		const expected = initializeDirectoryLayout(
+			current,
+			effectiveSeed,
+		).positions;
+
+		expect(payload.refresh?.newNodeMask[2]).toBe(0);
+		expect(payload.refresh?.relaxationMovableMask[2]).toBe(0);
+		expect(readVec3(payload.positions, 2)).toEqual(
+			readVec3(expected, 2),
+		);
 	});
 
 	it('carries a reliable renamed node position through a topology refresh', () => {

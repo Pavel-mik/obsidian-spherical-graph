@@ -86,6 +86,13 @@
   of degree. Linked root notes are islands; all degree-zero notes stay as cities
   over open water. The degree-one/two island rule was removed because it made
   large vaults visually speckled.
+- Lobe initialization uses seeded best-candidate cap samples, and equal-weight
+  springs use bounded deterministic target variation. A soft intrinsic
+  territory barrier prevents boundary pile-ups while the existing hard clamp
+  remains a safety invariant.
+- Degree-zero notes use seeded random ocean samples with local separation and
+  are hard-fixed during full solves. This deliberately favors an organic ocean
+  scatter over globally uniform coverage for nodes with no topology.
 - Refresh continuity preserves compatible continent identity and color through
   full-path and relative-path overlap matching. Current folder names always
   determine labels.

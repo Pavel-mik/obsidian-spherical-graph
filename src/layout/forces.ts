@@ -1,4 +1,7 @@
-import { hashNumbers } from '../geometry/deterministicHash';
+import {
+	hashNumbers,
+	hashToUnitFloat,
+} from '../geometry/deterministicHash';
 import {
 	clamp,
 	orthogonalUnitVec3,
@@ -109,9 +112,24 @@ function applyRepulsionPair(
 	const sine = Math.hypot(crossX, crossY, crossZ);
 	const denominator = Math.max(1e-8, 1 - dot);
 	const cotangentHalfAngle = sine / denominator;
+	const angle = Math.atan2(sine, dot);
+	const nodeCount = input.positions.length / 3;
+	const collisionAngle = clamp(
+		0.58 * Math.sqrt((4 * Math.PI) / Math.max(1, nodeCount)),
+		input.settings.minimumTargetAngle * 0.55,
+		input.settings.localRepulsionAngle * 0.7,
+	);
+	const collisionOverlap = Math.max(
+		0,
+		(collisionAngle - angle) / Math.max(1e-8, collisionAngle),
+	);
 	const magnitude = Math.min(
 		input.settings.repulsionCap,
-		input.settings.repulsionStrength * cotangentHalfAngle * scale,
+		input.settings.repulsionStrength * cotangentHalfAngle * scale +
+			input.settings.repulsionCap *
+				0.72 *
+				collisionOverlap *
+				collisionOverlap,
 	);
 	const salt = hashNumbers(input.effectiveSeed, first, second, 0x5e9);
 	if (input.movableMask[first] === 1) {
@@ -190,8 +208,21 @@ function accumulateSprings(
 		const weight =
 			Number.isFinite(rawWeight) && rawWeight > 0 ? rawWeight : 1;
 		const weightFactor = Math.sqrt(weight);
-		const targetAngle =
-			baseTarget / (1 + 0.12 * Math.log1p(weight));
+		const organicTargetScale =
+			0.7 +
+			hashToUnitFloat(
+				input.effectiveSeed,
+				Math.min(source, target),
+				Math.max(source, target),
+				0x0ed6,
+			) *
+				0.6;
+		const targetAngle = clamp(
+			(baseTarget * organicTargetScale) /
+				(1 + 0.12 * Math.log1p(weight)),
+			input.settings.minimumTargetAngle * 0.72,
+			input.settings.maximumTargetAngle,
+		);
 		const extension = angle - targetAngle;
 		const magnitude =
 			input.settings.springStrength * weightFactor * extension;
