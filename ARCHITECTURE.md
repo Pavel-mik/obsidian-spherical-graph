@@ -48,13 +48,14 @@ flowchart LR
   solver.
 - `src/persistence` validates untrusted stored data, migrates schema versions,
   reconciles current paths with a committed snapshot, and serializes atomic
-  layout commits separately from debounced settings/camera writes.
+  layout and pin commits separately from debounced settings/camera writes.
 - `src/render` owns Three.js resources: the ocean sphere, a batched icosphere
   land mesh, deterministic coastlines and island patches, cartographic region
   labels, one instanced node layer, a muted dashed graticule, batched geodesic
   edges, selected/route ribbons,
-  endpoint rings, an instanced tag-satellite layer with batched spiral links,
-  bounded zoom-gated labels, picking, manual and optional automatic camera
+  endpoint rings, an instanced polished-silver tag-satellite layer with batched
+  spiral links, instanced map pins, a procedural cloud atmosphere, bounded
+  zoom-gated labels and roads, picking, manual and optional automatic camera
   controls, theme and resize handling, and deterministic disposal.
 - `src/view` owns the ItemView, toolbar, fuzzy search, status presentation, and
   responsive selection-details panel, ephemeral route-picking state, and
@@ -195,9 +196,10 @@ The renderer is constructed lazily in `ItemView.onOpen`, using the view's
 `ownerDocument` and `defaultView` so pop-out windows are supported. Rendering
 is invalidation-based: camera changes, an atomic snapshot, selection, visible
 topology, resize, theme, or focus animation schedule a frame. A continuous
-frame loop exists only while the user-enabled **Auto rotate** control is
-active; disabling it or starting a manual camera gesture returns the renderer
-to invalidation-only frames.
+frame loop exists while the user-enabled **Auto rotate** control is active or
+the visible cloud atmosphere advances. A manual camera gesture pauses globe
+rotation and schedules its restart three seconds after the last interaction;
+it does not clear the persistent switch.
 
 The WebGL graticule is a low-contrast dashed `LineDashedMaterial`; document
 links remain continuous geodesic roads with a separate material. `SphereLayer`
@@ -232,13 +234,25 @@ committed visible notes. A metadata-only tag change therefore rebuilds the
 derived renderer snapshot through `GraphChangeTracker.onObservation` without
 creating a layout diff, worker, persistence write, or node movement.
 
-`TagLayer` draws one instanced satellite mesh for every tag and one batched
-line object for all currently relevant note-to-tag links. It owns no carrier
-sphere mesh. Orbit height is a validated appearance setting and rebuilds only
-the derived marker matrices and active spiral batch. The marker shader and DOM
-labels independently test whether the main globe intersects the camera-to-tag
-segment. An optional, default-off camera-axis guard adds the former center-line
-fade when requested; DOM tag labels mirror it and are bounded to 96.
+`TagLayer` draws one smaller polished-silver instanced satellite mesh for every
+tag and one batched silver line object for all currently relevant note-to-tag
+links. It owns no carrier sphere mesh. Orbit height is a validated appearance
+setting and rebuilds only the derived marker matrices and active spiral batch.
+Marker, link, and DOM-label visibility recedes with perspective depth. The
+marker and every link segment independently test whether the main globe blocks
+the camera ray, including when the ocean surface is transparent or hidden. An
+optional, default-off camera-axis guard adds the former center-line fade when
+requested; DOM tag labels mirror it and are bounded to 96.
+
+`AtmosphereLayer` owns one front-sided procedural cloud mesh with no texture
+asset or opaque carrier shell. It appears only at wider zoom while Auto rotate
+is requested, unless fullscreen presentation explicitly forces it. Sparse
+multi-scale cloud alpha and a broken limb avoid a glass-envelope silhouette;
+the shell advances once per ten minutes relative to the graph group.
+
+`PinLayer` renders persistent favourites as instanced radial shafts and heads.
+It consumes stable node IDs, applies the same render-only filters as cities,
+and never changes the committed coordinates or picking topology.
 
 `onClose`/plugin unload cancels owned work, cancels RAF/timers, removes picking
 events, disconnects resize/theme observers, disposes controls, geometries,
@@ -247,13 +261,21 @@ materials and WebGL state, terminates the worker, and revokes its URL.
 ## Persistence
 
 The stored envelope contains schema version, validated settings, one committed
-layout, and camera state. A committed layout contains its algorithm version,
+layout, camera state, and sorted vault-relative pinned-note paths. A committed
+layout contains its algorithm version,
 graph signature/descriptor, path-to-unit-vector map, post-layout spatial
 continents, island IDs, geographic centers/diagnostic extents/colors, mode,
 completion time, effective seed, and committed Renew generation. It never
 stores velocity, temperature, analytical grid cells, watershed state, land
 triangles, working buffers, or a resumable solver.
 
-Settings and camera changes are debounced and merged independently. They cannot
-reconstruct or mutate the position map. A successful Renew increments
+Settings and camera changes are debounced and merged independently. Desired pin
+mutations are serialized atomically so concurrent graph views cannot overwrite
+one another; renames migrate pins, while an actual vault-delete event removes
+the deleted path. Startup deliberately does not prune temporarily missing pins,
+because Obsidian Sync can deliver community-plugin data before note files.
+**Save map** folds every pending field into one complete write. The canonical
+Obsidian plugin `data.json` is therefore sufficient for restart stability and
+for Obsidian Sync when community-plugin data syncing is enabled. These writes
+cannot reconstruct or mutate the position map. A successful Renew increments
 `renewGeneration`; a cancelled or failed Renew cannot.

@@ -1,6 +1,7 @@
 import {
 	BufferAttribute,
 	BufferGeometry,
+	Camera,
 	Color,
 	DoubleSide,
 	Group,
@@ -26,6 +27,7 @@ import {
 	RenderRouteState,
 	RenderTheme,
 } from './renderTypes';
+import { edgesVisibleAtCameraDistance } from './edgeVisibility';
 
 interface EdgeDrawRecord {
 	edge: RenderEdge;
@@ -157,6 +159,22 @@ export class EdgeLayer {
 		if (this.material !== undefined) {
 			this.material.opacity = appearance.edgeOpacity;
 			this.material.needsUpdate = true;
+		}
+	}
+
+	render(camera: Camera): void {
+		const visible = edgesVisibleAtCameraDistance(
+			camera.position.length(),
+			this.appearance.edgeZoomThresholdPercent,
+		);
+		if (this.lines !== undefined) {
+			this.lines.visible = visible;
+		}
+		if (this.selectedRibbon !== undefined) {
+			this.selectedRibbon.visible = visible;
+		}
+		if (this.routeRibbon !== undefined) {
+			this.routeRibbon.visible = visible;
 		}
 	}
 

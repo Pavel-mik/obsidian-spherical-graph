@@ -21,7 +21,7 @@ import {
 	type PersistedContinentalGeography,
 } from "../geography";
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 export const CURRENT_ALGORITHM_VERSION = 8;
 export const DEFAULT_POSITION_NORM_TOLERANCE = 1e-4;
 
@@ -59,6 +59,7 @@ export interface PersistedPluginData<TSettings> {
 	readonly settings: TSettings;
 	readonly committedLayout: PersistedLayoutSnapshot | null;
 	readonly camera: PersistedCameraState;
+	readonly pinnedNotePaths: readonly string[];
 }
 
 export interface CompletedLayoutInput {
@@ -111,6 +112,113 @@ function isNonNegativeInteger(value: unknown): value is number {
 
 function compareCodeUnits(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function normalizeVaultPath(value: string): string | undefined {
+	const normalized = value
+		.trim()
+		.replaceAll("\\", "/")
+		.replace(/\/+/gu, "/")
+		.replace(/^\/|\/$/gu, "");
+	if (
+		normalized.length === 0 ||
+		normalized.split("/").some((segment) => segment === "." || segment === "..")
+	) {
+		return undefined;
+	}
+	return normalized;
+}
+
+/**
+ * Treat pin paths as untrusted vault-relative identifiers. The stable,
+ * deterministic ordering avoids noisy writes and Sync conflicts.
+ */
+export function validatePinnedNotePaths(value: unknown): readonly string[] {
+	if (!Array.isArray(value)) {
+		return Object.freeze([]);
+	}
+	const paths = new Set<string>();
+	for (const entry of value) {
+		if (typeof entry !== "string") {
+			continue;
+		}
+		const normalized = normalizeVaultPath(entry);
+		if (normalized !== undefined) {
+			paths.add(normalized);
+		}
+	}
+	return Object.freeze([...paths].sort(compareCodeUnits));
+}
+
+export function renamePinnedNotePaths(
+	pinnedNotePaths: readonly string[],
+	renames: readonly GraphRename[],
+): readonly string[] {
+	if (renames.length === 0 || pinnedNotePaths.length === 0) {
+		return validatePinnedNotePaths(pinnedNotePaths);
+	}
+	const renameMap = new Map<string, string>();
+	for (const rename of renames) {
+		const oldPath = normalizeVaultPath(rename.oldPath);
+		const newPath = normalizeVaultPath(rename.newPath);
+		if (
+			oldPath !== undefined &&
+			newPath !== undefined &&
+			oldPath !== newPath &&
+			!renameMap.has(oldPath)
+		) {
+			renameMap.set(oldPath, newPath);
+		}
+	}
+	return validatePinnedNotePaths(
+		pinnedNotePaths.map((path) => renameMap.get(path) ?? path),
+	);
+}
+
+export type PinnedPathRenameScope = "file" | "folder";
+
+/**
+ * Applies the path semantics of Obsidian's vault `rename` event. File renames
+ * match one exact note path. Folder renames replace only a segment-delimited
+ * descendant prefix, so `Books/` never captures `Bookshelf/`.
+ */
+export function renamePinnedNotePathsFromVault(
+	pinnedNotePaths: readonly string[],
+	oldPathValue: string,
+	newPathValue: string,
+	scope: PinnedPathRenameScope,
+): readonly string[] {
+	const oldPath = normalizeVaultPath(oldPathValue);
+	const newPath = normalizeVaultPath(newPathValue);
+	if (
+		oldPath === undefined ||
+		newPath === undefined ||
+		oldPath === newPath
+	) {
+		return validatePinnedNotePaths(pinnedNotePaths);
+	}
+	const oldPrefix = `${oldPath}/`;
+	return validatePinnedNotePaths(
+		pinnedNotePaths.map((path) => {
+			if (scope === "file") {
+				return path === oldPath ? newPath : path;
+			}
+			return path.startsWith(oldPrefix)
+				? `${newPath}/${path.slice(oldPrefix.length)}`
+				: path;
+		}),
+	);
+}
+
+export function prunePinnedNotePaths(
+	pinnedNotePaths: readonly string[],
+	existingPaths: ReadonlySet<string>,
+): readonly string[] {
+	return Object.freeze(
+		validatePinnedNotePaths(pinnedNotePaths).filter((path) =>
+			existingPaths.has(path),
+		),
+	);
 }
 
 function finiteTuple(

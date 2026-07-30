@@ -77,6 +77,9 @@ export interface SphericalGraphViewCallbacks {
 	onCameraChange(camera: CameraState): Promise<void> | void;
 	onSurfaceModeChange(mode: SurfaceMode): Promise<void> | void;
 	onContinentsVisibilityChange(visible: boolean): Promise<void> | void;
+	onAtmosphereVisibilityChange(visible: boolean): Promise<void> | void;
+	onPinChange(node: RenderNode, pinned: boolean): Promise<void> | void;
+	onManualSave(camera: CameraState): Promise<void> | void;
 	onClose(): Promise<void> | void;
 }
 
@@ -90,6 +93,7 @@ export interface SphericalGraphViewModel {
 	snapshot?: RenderGraphSnapshot;
 	status: ViewStatusModel;
 	activeNodeId?: string;
+	pinnedNodeIds?: readonly string[];
 }
 
 export interface SphericalGraphSettingsBridge {

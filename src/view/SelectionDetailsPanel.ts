@@ -21,6 +21,8 @@ export interface SelectionDetailsModel {
 		node: RenderNode;
 		connections: readonly RenderNode[];
 		tags: readonly RenderTag[];
+		pinnable: boolean;
+		pinned: boolean;
 	};
 	tag?: {
 		tag: RenderTag;
@@ -35,9 +37,13 @@ export interface SelectionDetailsModel {
 	};
 }
 
-interface SelectionDetailsCallbacks {
+export interface SelectionDetailsCallbacks {
 	onOpen(node: RenderNode, openInNewLeaf: boolean): void;
 	onSelectTag(tag: RenderTag): void;
+	onTogglePin?(
+		node: RenderNode,
+		pinned: boolean,
+	): Promise<void> | void;
 }
 
 let selectionDetailsSequence = 0;
@@ -50,6 +56,8 @@ export class SelectionDetailsPanel {
 	private selectedNodeId: string | undefined;
 	private selectedTagId: string | undefined;
 	private route: DetailsRouteState | undefined;
+	private pinnedNodeIds = new Set<string>();
+	private pendingPinNodeId: string | undefined;
 	private collapsed = false;
 
 	constructor(
@@ -114,6 +122,11 @@ export class SelectionDetailsPanel {
 		this.render();
 	}
 
+	setPinnedNodeIds(nodeIds: ReadonlySet<string>): void {
+		this.pinnedNodeIds = new Set(nodeIds);
+		this.render();
+	}
+
 	setRoute(route: DetailsRouteState | undefined): void {
 		this.route =
 			route === undefined
@@ -134,6 +147,8 @@ export class SelectionDetailsPanel {
 		this.snapshot = undefined;
 		this.selectedTagId = undefined;
 		this.route = undefined;
+		this.pinnedNodeIds.clear();
+		this.pendingPinNodeId = undefined;
 	}
 
 	private setCollapsed(collapsed: boolean): void {
@@ -156,6 +171,7 @@ export class SelectionDetailsPanel {
 						this.selectedNodeId,
 						this.route,
 						this.selectedTagId,
+						this.pinnedNodeIds,
 					);
 		this.content.replaceChildren();
 		if (
@@ -215,6 +231,14 @@ export class SelectionDetailsPanel {
 	): void {
 		const section = this.createSection('Node', 'node');
 		section.append(this.createPrimaryLink(selected.node));
+		if (
+			selected.pinnable &&
+			this.callbacks.onTogglePin !== undefined
+		) {
+			section.append(
+				this.createPinButton(selected.node, selected.pinned),
+			);
+		}
 
 		const metadata = section.createDiv();
 		metadata.className = 'spherical-graph-inspector-meta';
@@ -239,6 +263,57 @@ export class SelectionDetailsPanel {
 			),
 		);
 		this.content.append(section);
+	}
+
+	private createPinButton(
+		node: RenderNode,
+		pinned: boolean,
+	): HTMLButtonElement {
+		const button = this.content.createEl('button');
+		button.type = 'button';
+		button.className =
+			'spherical-graph-inspector-link spherical-graph-inspector-pin';
+		button.dataset.nodeId = node.id;
+		button.dataset.action = pinned ? 'unpin' : 'pin';
+		button.setAttribute('aria-pressed', String(pinned));
+		const pending = this.pendingPinNodeId === node.id;
+		button.disabled = pending;
+		if (pending) {
+			button.setAttribute('aria-busy', 'true');
+		}
+		button.title = pinned
+			? `Remove ${node.basename} from pinned notes`
+			: `Pin ${node.basename} to the globe`;
+		const label = button.createSpan();
+		label.className = 'spherical-graph-inspector-link-name';
+		label.textContent = pinned ? 'Unpin note' : 'Pin note';
+		button.append(label);
+		button.addEventListener('click', (event) => {
+			event.stopPropagation();
+			if (this.pendingPinNodeId !== undefined) {
+				return;
+			}
+			const shouldPin = !this.pinnedNodeIds.has(node.id);
+			this.pendingPinNodeId = node.id;
+			this.render();
+			void Promise.resolve()
+				.then(() =>
+					this.callbacks.onTogglePin?.(node, shouldPin),
+				)
+				.finally(() => {
+				if (this.pendingPinNodeId !== node.id) {
+					return;
+				}
+				this.pendingPinNodeId = undefined;
+				this.render();
+				this.content
+					.querySelector<HTMLButtonElement>(
+						'.spherical-graph-inspector-pin',
+					)
+					?.focus();
+				});
+		});
+		return button;
 	}
 
 	private renderRoute(
@@ -425,6 +500,7 @@ export function buildSelectionDetailsModel(
 	selectedNodeId: string | undefined,
 	routeState: DetailsRouteState | undefined,
 	selectedTagId?: string,
+	pinnedNodeIds: ReadonlySet<string> = new Set(),
 ): SelectionDetailsModel {
 	const selectedNode =
 		selectedNodeId === undefined
@@ -456,6 +532,8 @@ export function buildSelectionDetailsModel(
 					].sort((left, right) =>
 						left.label.localeCompare(right.label),
 					),
+					pinnable: renderNodeKind(selectedNode) === 'note',
+					pinned: pinnedNodeIds.has(selectedNode.id),
 				};
 	const selectedTag =
 		selectedTagId === undefined

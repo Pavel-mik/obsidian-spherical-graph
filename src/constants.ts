@@ -10,12 +10,23 @@ export const NODE_SURFACE_LIFT = 0.08;
 export const EDGE_SURFACE_LIFT = 0.04;
 export const DEFAULT_GLOBE_SIZE = 100;
 export const BASE_NODE_MARKER_SIZE = 0.11;
-export const DEFAULT_TAG_ORBIT_HEIGHT_PERCENT = 30;
+/**
+ * The satellite shell sits one third of a globe radius above the surface.
+ * Keep this as an expression instead of a rounded decimal so derived radii
+ * retain the exact 4 / 3 relationship.
+ */
+export const DEFAULT_TAG_ORBIT_HEIGHT_PERCENT = 100 / 3;
 export const MIN_TAG_ORBIT_HEIGHT_PERCENT = 5;
 export const MAX_TAG_ORBIT_HEIGHT_PERCENT = 100;
 export const DEFAULT_TAG_ORBIT_RADIUS =
 	SPHERE_RADIUS *
 	(1 + DEFAULT_TAG_ORBIT_HEIGHT_PERCENT / 100);
+export const DEFAULT_ATMOSPHERE_HEIGHT_PERCENT = 10;
+export const MIN_ATMOSPHERE_HEIGHT_PERCENT = 1;
+export const MAX_ATMOSPHERE_HEIGHT_PERCENT = 30;
+export const DEFAULT_ATMOSPHERE_RADIUS =
+	SPHERE_RADIUS *
+	(1 + DEFAULT_ATMOSPHERE_HEIGHT_PERCENT / 100);
 export const TAG_LINK_START_RADIUS =
 	SPHERE_RADIUS + NODE_SURFACE_LIFT + 0.025;
 export const BASE_TAG_MARKER_SIZE = 0.14;

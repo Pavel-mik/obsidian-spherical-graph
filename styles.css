@@ -1724,9 +1724,9 @@
 	--sg-route-end: #7eb5c2;
 	--sg-road: #8da4ae;
 	--sg-graticule: #516675;
-	--sg-tag: #d49a43;
-	--sg-tag-soft: #ead2a0;
-	--sg-tag-edge: #a77937;
+	--sg-tag: #b8c3c9;
+	--sg-tag-soft: #edf3f5;
+	--sg-tag-edge: #8b999f;
 	--sg-active: #7eb5c2;
 	--sg-attachment: #b9a26c;
 	--sg-unresolved: #7f8d91;
@@ -1987,9 +1987,9 @@
 }
 
 .spherical-graph-tag-label {
-	border-color: rgba(212, 154, 67, 0.48);
+	border-color: rgba(184, 195, 201, 0.48);
 	border-radius: 3px;
-	background: rgba(35, 29, 20, 0.84);
+	background: rgba(23, 33, 39, 0.86);
 	box-shadow: none;
 	clip-path: none;
 	color: var(--sg-tag-soft);
@@ -2001,9 +2001,9 @@
 .spherical-graph-tag-label[data-connected="true"],
 .spherical-graph-tag-label[data-selected="true"] {
 	border-color: var(--sg-tag);
-	background: #302719;
+	background: #222d33;
 	box-shadow: inset 2px 0 0 var(--sg-tag);
-	color: #f2ddb0;
+	color: #edf3f5;
 }
 
 .spherical-graph-tag-label[data-selected="true"] {
@@ -2149,4 +2149,143 @@
 	border-color: var(--background-modifier-border);
 	border-radius: 4px;
 	background: var(--background-secondary);
+}
+
+/* Persistent map actions and presentation mode */
+.spherical-graph-auto-rotate {
+	position: relative;
+	user-select: none;
+}
+
+.spherical-graph-auto-rotate::before {
+	display: none;
+}
+
+.spherical-graph-auto-rotate-checkbox {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.spherical-graph-auto-rotate-indicator {
+	position: relative;
+	width: 24px;
+	height: 13px;
+	border: 1px solid rgba(129, 150, 159, 0.66);
+	border-radius: 999px;
+	background: rgba(7, 19, 31, 0.86);
+	transition:
+		border-color 140ms ease,
+		background 140ms ease;
+}
+
+.spherical-graph-auto-rotate-indicator::after {
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--sg-muted);
+	content: "";
+	transition:
+		transform 140ms ease,
+		background 140ms ease;
+}
+
+.spherical-graph-auto-rotate-checkbox:checked
+	+ .spherical-graph-auto-rotate-indicator {
+	border-color: var(--sg-coast);
+	background: rgba(212, 181, 114, 0.18);
+}
+
+.spherical-graph-auto-rotate-checkbox:checked
+	+ .spherical-graph-auto-rotate-indicator::after {
+	background: var(--sg-city);
+	transform: translateX(11px);
+}
+
+.spherical-graph-auto-rotate:focus-within {
+	border-color: var(--sg-coast);
+	box-shadow: 0 0 0 2px rgba(212, 181, 114, 0.16);
+	outline: none;
+}
+
+.spherical-graph-auto-rotate:has(
+		.spherical-graph-auto-rotate-checkbox:disabled
+	) {
+	cursor: default;
+	opacity: 0.45;
+}
+
+.spherical-graph-view button.spherical-graph-inspector-pin {
+	margin-block: 6px 2px;
+	border-color: rgba(212, 181, 114, 0.36);
+	background: rgba(212, 181, 114, 0.07);
+	color: var(--sg-coast);
+}
+
+.spherical-graph-view button.spherical-graph-inspector-pin::before {
+	width: 7px;
+	height: 12px;
+	border: 0;
+	border-radius: 50% 50% 45% 45%;
+	background:
+		linear-gradient(
+			90deg,
+			#8d5947 0 35%,
+			#ff806c 36% 64%,
+			#8d5947 65% 100%
+		);
+	box-shadow: 0 0 0 1px rgba(255, 216, 210, 0.42);
+	transform: rotate(16deg);
+}
+
+.spherical-graph-view
+	button.spherical-graph-inspector-pin[aria-pressed="true"] {
+	border-color: var(--sg-selection);
+	background: rgba(255, 107, 87, 0.12);
+	color: #ffd8d2;
+}
+
+.spherical-graph-view[data-presentation="true"] {
+	position: fixed;
+	z-index: 10000;
+	inset: 0;
+	display: grid;
+	width: 100vw;
+	height: 100vh;
+	min-width: 0;
+	min-height: 0;
+	grid-template-rows: minmax(0, 1fr);
+	background: #030a10;
+}
+
+.spherical-graph-view[data-presentation="true"]
+	:is(
+		.spherical-graph-toolbar,
+		.spherical-graph-status-rail,
+		.spherical-graph-state-overlay,
+		.spherical-graph-inspector
+	) {
+	display: none !important;
+}
+
+.spherical-graph-view[data-presentation="true"] .spherical-graph-stage {
+	grid-row: 1;
+	grid-column: 1;
+	border: 0;
+	background:
+		radial-gradient(circle at 50% 48%, #0b2232 0, #030a10 68%);
+}
+
+.spherical-graph-view[data-presentation="true"]
+	.spherical-graph-canvas {
+	width: 100vw;
+	height: 100vh;
 }

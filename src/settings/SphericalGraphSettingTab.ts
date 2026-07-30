@@ -14,7 +14,9 @@ import {
 	SurfaceMode,
 } from './settings';
 import {
+	MAX_ATMOSPHERE_HEIGHT_PERCENT,
 	MAX_TAG_ORBIT_HEIGHT_PERCENT,
+	MIN_ATMOSPHERE_HEIGHT_PERCENT,
 	MIN_TAG_ORBIT_HEIGHT_PERCENT,
 } from '../constants';
 import { ExcludedFolderModal } from './ExcludedFolderModal';
@@ -51,6 +53,9 @@ const COPY = {
 		'Fade tag satellites and the outer ends of their links near the camera axis. Disabled by default.',
 	sizeByDegree: 'Size nodes by degree',
 	edgeOpacity: 'Edge opacity',
+	edgeZoomThreshold: 'Edge zoom-in threshold',
+	edgeZoomThresholdDescription:
+		'Links appear at this zoom level. 0% always shows them; 100% requires the closest zoom.',
 	showLabels: 'Show labels',
 	maxLabels: 'Maximum labels',
 	labelZoomThreshold: 'Label zoom-in threshold',
@@ -59,6 +64,12 @@ const COPY = {
 	showContinents: 'Show continents',
 	showContinentsDescription:
 		'Render folder-owned land, coastlines, root-note islands, and map labels. This never moves the fixed layout.',
+	showAtmosphere: 'Show atmosphere',
+	showAtmosphereDescription:
+		'Render the subtle rotating cloud layer when the graph is viewed from farther away.',
+	atmosphereHeight: 'Atmosphere height',
+	atmosphereHeightDescription:
+		'Distance between the atmosphere and the globe surface, as a percentage of the globe radius.',
 	surfaceMode: 'Sphere surface',
 	surfaceOpacity: 'Surface opacity',
 	followTheme: 'Background follows theme',
@@ -251,6 +262,35 @@ export class SphericalGraphSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(this.containerEl)
+			.setName(COPY.showAtmosphere)
+			.setDesc(COPY.showAtmosphereDescription)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(settings.appearance.showAtmosphere)
+					.onChange((value) =>
+						this.commit(settings, 'appearance', (next) => {
+							next.appearance.showAtmosphere = value;
+						}),
+					),
+			);
+
+		this.addNumberSetting(
+			this.containerEl,
+			COPY.atmosphereHeight,
+			COPY.atmosphereHeightDescription,
+			settings.appearance.atmosphereHeightPercent,
+			{
+				min: MIN_ATMOSPHERE_HEIGHT_PERCENT,
+				max: MAX_ATMOSPHERE_HEIGHT_PERCENT,
+				step: 1,
+			},
+			(value) =>
+				this.commit(settings, 'appearance', (next) => {
+					next.appearance.atmosphereHeightPercent = value;
+				}),
+		);
+
+		new Setting(this.containerEl)
 			.setName(COPY.tagViewProtection)
 			.setDesc(COPY.tagViewProtectionDescription)
 			.addToggle((toggle) =>
@@ -286,6 +326,18 @@ export class SphericalGraphSettingTab extends PluginSettingTab {
 			(value) =>
 				this.commit(settings, 'appearance', (next) => {
 					next.appearance.edgeOpacity = value;
+				}),
+		);
+
+		this.addNumberSetting(
+			this.containerEl,
+			COPY.edgeZoomThreshold,
+			COPY.edgeZoomThresholdDescription,
+			settings.appearance.edgeZoomThresholdPercent,
+			{ min: 0, max: 100, step: 5 },
+			(value) =>
+				this.commit(settings, 'appearance', (next) => {
+					next.appearance.edgeZoomThresholdPercent = value;
 				}),
 		);
 

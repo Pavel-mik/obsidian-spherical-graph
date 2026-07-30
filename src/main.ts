@@ -3,6 +3,7 @@ import {
 	Notice,
 	Plugin,
 	TFile,
+	TFolder,
 	type WorkspaceLeaf,
 } from 'obsidian';
 
@@ -70,6 +71,9 @@ const COMMAND_IDS = {
 	resetCamera: 'reset-camera',
 	search: 'focus-search',
 	route: 'find-route',
+	save: 'save-map',
+	pin: 'toggle-pin',
+	fullscreen: 'toggle-fullscreen',
 } as const;
 
 const CANCEL_NOTICE_DURATION_MS = 1_500;
@@ -236,6 +240,12 @@ export default class SphericalGraphPlugin extends Plugin {
 					this.changeSurfaceMode(mode),
 				onContinentsVisibilityChange: (visible) =>
 					this.changeContinentsVisibility(visible),
+				onAtmosphereVisibilityChange: (visible) =>
+					this.changeAtmosphereVisibility(visible),
+				onPinChange: (node, pinned) =>
+					this.changePin(node, pinned),
+				onManualSave: (camera) =>
+					this.saveMap(camera),
 				onClose: () => {
 					window.setTimeout(() => {
 						if (
@@ -309,7 +319,7 @@ export default class SphericalGraphPlugin extends Plugin {
 			id: COMMAND_IDS.resetCamera,
 			name: UI_STRINGS.resetCamera,
 			checkCallback: (checking) => {
-				const view = this.firstView();
+				const view = this.preferredView();
 				if (!checking) {
 					view?.resetCamera();
 				}
@@ -320,7 +330,7 @@ export default class SphericalGraphPlugin extends Plugin {
 			id: COMMAND_IDS.search,
 			name: 'Focus graph search',
 			checkCallback: (checking) => {
-				const view = this.firstView();
+				const view = this.preferredView();
 				if (!checking) {
 					view?.focusSearch();
 				}
@@ -341,6 +351,44 @@ export default class SphericalGraphPlugin extends Plugin {
 				});
 			},
 		});
+		this.addCommand({
+			id: COMMAND_IDS.save,
+			name: 'Save spherical map',
+			checkCallback: (checking) => {
+				const view = this.preferredView();
+				if (!checking) {
+					view?.saveMap();
+				}
+				return view !== undefined;
+			},
+		});
+		this.addCommand({
+			id: COMMAND_IDS.pin,
+			name: 'Pin or unpin selected note',
+			checkCallback: (checking) => {
+				const view = this.preferredView();
+				const canRun = view?.canToggleSelectedPin() ?? false;
+				if (!checking && canRun) {
+					view?.toggleSelectedPin();
+				}
+				return canRun;
+			},
+		});
+		this.addCommand({
+			id: COMMAND_IDS.fullscreen,
+			name: 'Toggle fullscreen globe',
+			callback: () => {
+				const activeView = this.preferredView();
+				if (activeView !== undefined) {
+					activeView.toggleFullscreen();
+					return;
+				}
+				void this.runAction(async () => {
+					const view = await this.activateGraphView();
+					view.toggleFullscreen();
+				});
+			},
+		});
 	}
 
 	private registerGraphEvents(): void {
@@ -355,11 +403,17 @@ export default class SphericalGraphPlugin extends Plugin {
 			this.app.vault.on('delete', (file) => {
 				if (isMarkdownFile(file)) {
 					this.graphTracker?.markVaultChanged('delete');
+					this.removeDeletedPin(file.path);
 				}
 			}),
 		);
 		this.registerEvent(
 			this.app.vault.on('rename', (file, oldPath) => {
+				if (file instanceof TFile) {
+					this.migrateRenamedPins(oldPath, file.path, 'file');
+				} else if (file instanceof TFolder) {
+					this.migrateRenamedPins(oldPath, file.path, 'folder');
+				}
 				if (isMarkdownFile(file)) {
 					this.graphTracker?.markRenamed(oldPath, file.path);
 				}
@@ -389,7 +443,11 @@ export default class SphericalGraphPlugin extends Plugin {
 	}
 
 	private async activateGraphView(): Promise<SphericalGraphView> {
-		const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
+		const activeView =
+			this.app.workspace.getActiveViewOfType(SphericalGraphView);
+		const existing =
+			activeView?.leaf ??
+			this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
 		const leaf = existing ?? this.app.workspace.getLeaf('tab');
 		if (existing === undefined) {
 			await leaf.setViewState({
@@ -409,6 +467,13 @@ export default class SphericalGraphPlugin extends Plugin {
 
 	private firstView(): SphericalGraphView | undefined {
 		return this.graphViews()[0];
+	}
+
+	private preferredView(): SphericalGraphView | undefined {
+		return (
+			this.app.workspace.getActiveViewOfType(SphericalGraphView) ??
+			this.firstView()
+		);
 	}
 
 	private graphViews(): SphericalGraphView[] {
@@ -595,6 +660,7 @@ export default class SphericalGraphPlugin extends Plugin {
 			observation.graph,
 			observation.diff,
 		);
+		this.broadcastPinnedNotes();
 		this.broadcastStatus();
 	}
 
@@ -741,6 +807,7 @@ export default class SphericalGraphPlugin extends Plugin {
 					}
 				: this.buildStatus(),
 			activeNodeId: this.activeNodeId,
+			pinnedNodeIds: this.dataStore.pinnedNotePaths,
 		});
 	}
 
@@ -777,6 +844,65 @@ export default class SphericalGraphPlugin extends Plugin {
 		const next = cloneSphericalGraphSettings(this.settings);
 		next.appearance.showContinents = visible;
 		void this.updateSettings(next, 'appearance');
+	}
+
+	private changeAtmosphereVisibility(visible: boolean): void {
+		const next = cloneSphericalGraphSettings(this.settings);
+		next.appearance.showAtmosphere = visible;
+		void this.updateSettings(next, 'appearance');
+	}
+
+	private async changePin(
+		node: RenderNode,
+		pinned: boolean,
+	): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(node.path);
+		if (!(file instanceof TFile) || file.extension.toLowerCase() !== 'md') {
+			throw new Error(`The note "${node.path}" no longer exists.`);
+		}
+		await this.dataStore.setPinnedNotePath(file.path, pinned);
+		this.broadcastPinnedNotes();
+	}
+
+	private async saveMap(camera: CameraState): Promise<void> {
+		this.dataStore.scheduleCameraSave(camera);
+		await this.dataStore.saveNow();
+		new Notice('Spherical map saved.');
+	}
+
+	private broadcastPinnedNotes(): void {
+		const pinned = this.dataStore.pinnedNotePaths;
+		for (const view of this.graphViews()) {
+			view.setPinnedNodeIds(pinned);
+		}
+	}
+
+	private migrateRenamedPins(
+		oldPath: string,
+		newPath: string,
+		scope: 'file' | 'folder',
+	): void {
+		void this.dataStore
+			.renamePinnedNotePathsFromVault(oldPath, newPath, scope)
+			.then(() => this.broadcastPinnedNotes())
+			.catch((error: unknown) => {
+				this.reportError(
+					error,
+					'Could not update pinned notes after rename.',
+				);
+			});
+	}
+
+	private removeDeletedPin(path: string): void {
+		void this.dataStore
+			.setPinnedNotePath(path, false)
+			.then(() => this.broadcastPinnedNotes())
+			.catch((error: unknown) => {
+				this.reportError(
+					error,
+					'Could not update pinned notes after deletion.',
+				);
+			});
 	}
 
 	private async openFile(

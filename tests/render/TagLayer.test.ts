@@ -1,4 +1,5 @@
 import {
+	Color,
 	Group,
 	InstancedMesh,
 	LineSegments,
@@ -8,10 +9,15 @@ import {
 	Vector3,
 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TAG_ORBIT_RADIUS } from '../../src/constants';
+import {
+	BASE_TAG_MARKER_SIZE,
+	DEFAULT_TAG_ORBIT_RADIUS,
+} from '../../src/constants';
 import {
 	TagLayer,
+	tagMarkerScaleForGlobe,
 	tagOrbitRadiusForAppearance,
+	tagPerspectiveVisibility,
 } from '../../src/render/TagLayer';
 import {
 	prepareRenderSnapshot,
@@ -97,8 +103,34 @@ describe('TagLayer', () => {
 		).toContain('tagOccludedByGlobe');
 		expect(
 			((satellites as InstancedMesh).material as ShaderMaterial)
+				.fragmentShader,
+		).toContain('polishedSilver');
+		expect(
+			((satellites as InstancedMesh).material as ShaderMaterial)
+				.fragmentShader,
+		).toContain('vPerspectiveVisibility');
+		expect(
+			(
+				(satellites as InstancedMesh).material as ShaderMaterial
+			).uniforms.tagColor?.value as Color,
+		).toBeInstanceOf(Color);
+		expect(
+			(
+				(
+					(satellites as InstancedMesh)
+						.material as ShaderMaterial
+				).uniforms.tagColor?.value as Color
+			).getHexString(),
+		).toBe('d9e2e7');
+		expect(
+			((satellites as InstancedMesh).material as ShaderMaterial)
 				.uniforms.tagViewProtectionEnabled?.value,
 		).toBe(0);
+		expect(
+			tagMarkerScaleForGlobe(
+				DEFAULT_SETTINGS.appearance.globeSize,
+			),
+		).toBeLessThan(BASE_TAG_MARKER_SIZE);
 
 		const matrix = new Matrix4();
 		const position = new Vector3();
@@ -153,6 +185,25 @@ describe('TagLayer', () => {
 		expect(selectedLinks).toBeInstanceOf(LineSegments);
 		const selectedVertexCount = (selectedLinks as LineSegments)
 			.geometry.getAttribute('position').count;
+		const selectedMaterial = (selectedLinks as LineSegments)
+			.material as ShaderMaterial;
+		expect(selectedMaterial.fragmentShader).toContain(
+			'polishedSilver',
+		);
+		expect(selectedMaterial.vertexShader).toContain(
+			'vPerspectiveVisibility',
+		);
+		expect(selectedMaterial.vertexShader).toContain(
+			'tagLinkOccludedByGlobe',
+		);
+		expect(selectedMaterial.vertexShader).toContain(
+			'? 0.0',
+		);
+		expect(
+			(
+				selectedMaterial.uniforms.tagEdgeColor?.value as Color
+			).getHexString(),
+		).toBe('b7c4cb');
 
 		layer.updateRoute({
 			startNodeId: 'A',
@@ -192,5 +243,20 @@ describe('TagLayer', () => {
 			group.getObjectByName('spherical-graph-tag-links')?.visible,
 		).toBe(true);
 		layer.dispose();
+	});
+
+	it('attenuates satellite contrast smoothly with perspective depth', () => {
+		const nearest = tagPerspectiveVisibility(1);
+		const horizon = tagPerspectiveVisibility(0);
+		const farthest = tagPerspectiveVisibility(-1);
+
+		expect(nearest).toBe(1);
+		expect(horizon).toBeGreaterThan(farthest);
+		expect(horizon).toBeLessThan(nearest);
+		expect(farthest).toBeCloseTo(0.34, 10);
+		expect(tagPerspectiveVisibility(Number.NaN)).toBeCloseTo(
+			farthest,
+			10,
+		);
 	});
 });

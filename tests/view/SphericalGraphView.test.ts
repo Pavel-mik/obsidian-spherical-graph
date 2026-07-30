@@ -47,9 +47,12 @@ function createView(): SphericalGraphView {
 			onCancel: vi.fn(),
 			onOpenFile: vi.fn(),
 			onCameraChange: vi.fn(),
-		onSurfaceModeChange: vi.fn(),
-		onContinentsVisibilityChange: vi.fn(),
-		onClose: vi.fn(),
+			onSurfaceModeChange: vi.fn(),
+			onContinentsVisibilityChange: vi.fn(),
+			onAtmosphereVisibilityChange: vi.fn(),
+			onPinChange: vi.fn(),
+			onManualSave: vi.fn(),
+			onClose: vi.fn(),
 		},
 	});
 }

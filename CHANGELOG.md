@@ -6,6 +6,46 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-30
+
+### Added
+
+- Persistent map pins can mark favourite note cities directly on the globe.
+  Pin state follows note renames and is stored with the committed layout,
+  camera, and settings.
+- A thin procedural cloud atmosphere appears at wider zoom levels while
+  automatic rotation is enabled. Its irregular cloud-only limb avoids a glass
+  shell, rotates independently once every ten minutes, and can be disabled.
+- **Save map** immediately commits pending camera, settings, and pin changes;
+  automatic saves continue for completed layouts, camera movement, settings,
+  and pin changes.
+- **Fullscreen** opens a control-free presentation globe with atmosphere and
+  automatic rotation enabled. `Escape` restores the previous rotation state.
+- Configurable edge visibility delays roads until a chosen zoom-in threshold.
+
+### Changed
+
+- Tag satellites and their spiral links now use a smaller polished-silver
+  treatment with perspective-depth attenuation and explicit globe occlusion.
+- **Auto rotate** is a persistent checkbox-style switch. User camera movement
+  pauses rotation and resumes it three seconds after the last adjustment
+  without clearing the switch.
+- New-install defaults use an 80% label zoom-in threshold, a 50% edge zoom-in
+  threshold, and a tag orbit one third of the globe radius above the surface.
+- Plugin data schema version 3 stores pins inside the canonical
+  `.obsidian/plugins/spherical-graph/data.json` envelope so Obsidian Sync can
+  carry the map state when community-plugin data syncing is enabled.
+
+### Fixed
+
+- Concurrent pin actions from multiple graph views are serialized atomically
+  instead of overwriting one another.
+- Stale pin cleanup no longer runs during startup, avoiding accidental loss
+  when Obsidian Sync delivers plugin data before the referenced notes.
+- Tag spirals behind the globe no longer show through transparent or hidden
+  surface modes, and the atmosphere no longer clips against the camera near
+  plane at the closest supported zoom.
+
 ## [1.6.1] - 2026-07-30
 
 ### Changed

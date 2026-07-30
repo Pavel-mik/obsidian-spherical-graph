@@ -43,11 +43,12 @@ vault.
    - Drag the camera through multiple complete revolutions in both directions.
    - Inspect nodes/edges around every apparent longitude.
    - Confirm there is no jump, cut, duplicated boundary, or planar seam.
-   - Select **Auto rotate** in the bottom status rail. Confirm the button becomes
-     pressed, the camera begins a slow steady orbit, and the committed position
-     buffer remains bitwise unchanged.
-   - Select it again to stop. Start it once more and begin a manual drag or
-     wheel gesture; confirm rotation stops and the button returns to unpressed.
+   - Enable **Auto rotate** in the bottom status rail. Confirm the checkbox-style
+     switch remains checked, the camera begins a slow steady orbit, and the
+     committed position buffer remains bitwise unchanged.
+   - Begin a manual drag or wheel gesture. Confirm rotation pauses while the
+     switch remains checked, then resumes three seconds after the last camera
+     adjustment. Disable the switch and confirm it remains stopped.
 
 3. **Zoom and resize**
 
@@ -237,6 +238,9 @@ vault.
       camera, and committed positions stay unchanged.
     - Set **Label zoom-in threshold** to 75. Confirm labels disappear when
       zoomed out and reappear only after zooming in past the threshold.
+    - Set **Edge zoom-in threshold** to 50. Confirm base, selection, and route
+      roads are all hidden below the threshold and reappear without moving any
+      node when the threshold is crossed.
     - Select a highly connected node and confirm its incident coral roads
       remain clearly visible above crossing blue-gray roads.
     - Confirm meridians and parallels are muted and dashed while document
@@ -249,12 +253,15 @@ vault.
       Confirm disconnected notes show **No route**, and selecting the route
       control clears the result.
     - Add several inline and frontmatter tags to disposable test notes. Confirm
-      every unique tag has an amber satellite outside the globe, but no carrier
-      sphere is visible.
+      every unique tag has a small polished-silver satellite outside the globe,
+      its contrast recedes with perspective depth, and no carrier sphere is
+      visible.
     - With no selection, confirm no tag links are rendered. Select a tagged
       note and confirm only its tag spirals appear. Complete a route and confirm
       links are present for tags of every route-union note.
-    - Change **Tag orbit height** from 30% to 60%. Confirm satellites and the
+    - Confirm a new installation defaults to a tag orbit one third of the globe
+      radius above the surface. Change **Tag orbit height** to 60% and confirm
+      satellites and the
       outer spiral endpoints move outward immediately while the committed
       document-position buffer stays bitwise unchanged.
     - Rotate the globe through multiple orientations. Confirm tag markers and
@@ -265,6 +272,20 @@ vault.
       confirm they return; this option is off by default.
     - Resize below 560px and confirm the selection panel becomes a bottom
       drawer without obscuring the center of the globe or blocking scrolling.
+    - At a wide zoom, enable Auto rotate and **Atmosphere**. Confirm sparse
+      procedural clouds and an irregular atmospheric limb appear without a
+      solid glass shell. Confirm clouds disappear when Atmosphere is disabled,
+      and rotate slowly relative to the globe.
+    - Select a note, choose **Pin note**, restart Obsidian, and confirm the
+      physical map pin and **Unpin note** state return at the same fixed city.
+      Rename and then delete the note; confirm the pin follows the rename and
+      is removed only after the actual deletion.
+    - Change the camera, add multiple pins, choose **Save map**, restart, and
+      confirm layout, camera, settings, and pins restore. Repeat with Obsidian
+      Sync community-plugin data enabled on a second device.
+    - Choose **Fullscreen**. Confirm the graph covers the complete screen,
+      controls/details/status are absent, atmosphere and Auto rotate are on,
+      and `Escape` restores the previous Auto rotate state.
 
 21. **Close view during calculation**
 

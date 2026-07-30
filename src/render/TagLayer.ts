@@ -36,6 +36,14 @@ import {
 
 const TAG_SPIRAL_SEGMENTS = 30;
 const MAX_VISIBLE_TAG_LABELS = 96;
+const TAG_MARKER_SCALE_FACTOR = 0.78;
+const TAG_DEPTH_MINIMUM_VISIBILITY = 0.34;
+const TAG_DEPTH_FADE_START = -0.22;
+const TAG_DEPTH_FADE_END = 0.86;
+const DARK_SCENE_SATELLITE_SILVER = '#d9e2e7';
+const DARK_SCENE_LINK_SILVER = '#b7c4cb';
+const LIGHT_SCENE_SATELLITE_SILVER = '#5f6c74';
+const LIGHT_SCENE_LINK_SILVER = '#78868e';
 export const TAG_CAMERA_CLEARANCE_DOT = 0.82;
 
 export class TagLayer {
@@ -45,7 +53,6 @@ export class TagLayer {
 	private linkMaterial: ShaderMaterial | undefined;
 	private snapshot: PreparedRenderSnapshot | undefined;
 	private appearance: AppearanceSettings;
-	private theme: RenderTheme;
 	private selectedNodeId: string | undefined;
 	private selectedTagId: string | undefined;
 	private route: RenderRouteState | undefined;
@@ -69,9 +76,7 @@ export class TagLayer {
 		container?: HTMLElement,
 	) {
 		this.appearance = appearance;
-		this.theme = theme;
-		this.markerColor.set(theme.tag);
-		this.linkColor.set(theme.tagEdge);
+		this.applySilverTheme(theme);
 		if (container !== undefined) {
 			this.labelRoot = container.createDiv();
 			this.labelRoot.className = 'spherical-graph-tag-label-layer';
@@ -109,9 +114,7 @@ export class TagLayer {
 	}
 
 	updateTheme(theme: RenderTheme): void {
-		this.theme = theme;
-		this.markerColor.set(theme.tag);
-		this.linkColor.set(theme.tagEdge);
+		this.applySilverTheme(theme);
 	}
 
 	updateSelection(selectedNodeId: string | undefined): void {
@@ -294,7 +297,13 @@ export class TagLayer {
 			element.dataset.selected = String(
 				tag.id === this.selectedTagId,
 			);
-			element.style.opacity = zoomVisuals.opacity.toFixed(3);
+			const perspectiveVisibility = tagPerspectiveVisibility(
+				this.worldPosition.dot(this.cameraDirection) /
+					Math.max(this.worldPosition.length(), Number.EPSILON),
+			);
+			element.style.opacity = (
+				zoomVisuals.opacity * perspectiveVisibility
+			).toFixed(3);
 			element.style.transform = `translate(${screenX.toFixed(1)}px, ${screenY.toFixed(1)}px) translate(-50%, -50%) scale(${zoomVisuals.scale.toFixed(3)})`;
 			element.hidden = false;
 			visibleIndex += 1;
@@ -524,6 +533,24 @@ export class TagLayer {
 		}
 	}
 
+	private applySilverTheme(theme: RenderTheme): void {
+		const background = new Color(theme.background);
+		const luminance =
+			background.r * 0.2126 +
+			background.g * 0.7152 +
+			background.b * 0.0722;
+		this.markerColor.set(
+			luminance > 0.52
+				? LIGHT_SCENE_SATELLITE_SILVER
+				: DARK_SCENE_SATELLITE_SILVER,
+		);
+		this.linkColor.set(
+			luminance > 0.52
+				? LIGHT_SCENE_LINK_SILVER
+				: DARK_SCENE_LINK_SILVER,
+		);
+	}
+
 	private removeMarkers(): void {
 		const mesh = this.markerMesh;
 		if (mesh === undefined) {
@@ -555,7 +582,36 @@ export function tagMarkerScaleForGlobe(globeSize: number): number {
 			? globeSize
 			: DEFAULT_GLOBE_SIZE;
 	return (
-		(BASE_TAG_MARKER_SIZE * DEFAULT_GLOBE_SIZE) / safeGlobeSize
+		(BASE_TAG_MARKER_SIZE *
+			TAG_MARKER_SCALE_FACTOR *
+			DEFAULT_GLOBE_SIZE) /
+		safeGlobeSize
+	);
+}
+
+/**
+ * Perspective cue shared by DOM labels and the WebGL shaders. Satellites
+ * nearest the viewer remain crisp while those close to, or just beyond, the
+ * globe's limb recede without changing the existing globe-occlusion rule.
+ */
+export function tagPerspectiveVisibility(
+	frontAlignment: number,
+): number {
+	if (!Number.isFinite(frontAlignment)) {
+		return TAG_DEPTH_MINIMUM_VISIBILITY;
+	}
+	const amount = Math.min(
+		1,
+		Math.max(
+			0,
+			(frontAlignment - TAG_DEPTH_FADE_START) /
+				(TAG_DEPTH_FADE_END - TAG_DEPTH_FADE_START),
+		),
+	);
+	const smoothAmount = amount * amount * (3 - 2 * amount);
+	return (
+		TAG_DEPTH_MINIMUM_VISIBILITY +
+		(1 - TAG_DEPTH_MINIMUM_VISIBILITY) * smoothAmount
 	);
 }
 
@@ -588,6 +644,9 @@ function createTagMaterial(
 		vertexShader: `
 			uniform float tagViewProtectionEnabled;
 			varying float vTagVisibility;
+			varying float vPerspectiveVisibility;
+			varying vec3 vViewNormal;
+			varying vec3 vViewDirection;
 
 			bool tagOccludedByGlobe(vec3 tagCenter) {
 				vec3 ray = tagCenter - cameraPosition;
@@ -626,23 +685,61 @@ function createTagMaterial(
 				vTagVisibility = tagOccludedByGlobe(tagCenter.xyz)
 					? 0.0
 					: axisVisibility;
+				float frontAlignment = dot(
+					normalize(tagCenter.xyz),
+					normalize(cameraPosition)
+				);
+				vPerspectiveVisibility = mix(
+					${TAG_DEPTH_MINIMUM_VISIBILITY.toFixed(2)},
+					1.0,
+					smoothstep(
+						${TAG_DEPTH_FADE_START.toFixed(2)},
+						${TAG_DEPTH_FADE_END.toFixed(2)},
+						frontAlignment
+					)
+				);
 				vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
-				gl_Position = projectionMatrix * viewMatrix * worldPosition;
+				vec4 viewPosition = viewMatrix * worldPosition;
+				vViewNormal = normalize(
+					normalMatrix * mat3(instanceMatrix) * normal
+				);
+				vViewDirection = -viewPosition.xyz;
+				gl_Position = projectionMatrix * viewPosition;
 			}
 		`,
 		fragmentShader: `
 			uniform vec3 tagColor;
 			varying float vTagVisibility;
+			varying float vPerspectiveVisibility;
+			varying vec3 vViewNormal;
+			varying vec3 vViewDirection;
 
 			void main() {
 				if (vTagVisibility < 0.025) {
 					discard;
 				}
-				float glow = 0.74 + vTagVisibility * 0.26;
-				gl_FragColor = vec4(
-					tagColor * glow,
-					vTagVisibility * 0.92
+				vec3 normalDirection = normalize(vViewNormal);
+				vec3 viewDirection = normalize(vViewDirection);
+				vec3 lightDirection = normalize(vec3(-0.34, 0.58, 0.74));
+				vec3 halfDirection = normalize(lightDirection + viewDirection);
+				float diffuse = max(dot(normalDirection, lightDirection), 0.0);
+				float facing = max(dot(normalDirection, viewDirection), 0.0);
+				float specular = pow(
+					max(dot(normalDirection, halfDirection), 0.0),
+					24.0
 				);
+				float fresnel = pow(max(0.0, 1.0 - facing), 2.4);
+				vec3 polishedSilver =
+					tagColor * (0.44 + diffuse * 0.48) +
+					vec3(0.86, 0.92, 0.96) * specular * 0.84 +
+					vec3(0.10, 0.14, 0.17) * fresnel;
+				gl_FragColor = vec4(
+					polishedSilver * vPerspectiveVisibility,
+					vTagVisibility *
+						vPerspectiveVisibility *
+						(0.72 + facing * 0.20)
+				);
+				#include <colorspace_fragment>
 			}
 		`,
 	});
@@ -669,6 +766,29 @@ function createTagLinkMaterial(
 			uniform float tagOrbitRadius;
 			uniform float tagViewProtectionEnabled;
 			varying float vLinkVisibility;
+			varying float vPerspectiveVisibility;
+
+			bool tagLinkOccludedByGlobe(vec3 linkPoint) {
+				vec3 ray = linkPoint - cameraPosition;
+				float rayLengthSquared = dot(ray, ray);
+				float twiceProjection = 2.0 * dot(cameraPosition, ray);
+				float cameraDistanceSquared =
+					dot(cameraPosition, cameraPosition);
+				float discriminant =
+					twiceProjection * twiceProjection -
+					4.0 * rayLengthSquared *
+						(cameraDistanceSquared -
+							${SPHERE_RADIUS.toFixed(1)} *
+							${SPHERE_RADIUS.toFixed(1)});
+				if (discriminant <= 0.0 || rayLengthSquared <= 0.000001) {
+					return false;
+				}
+				float nearIntersection =
+					(-twiceProjection - sqrt(discriminant)) /
+					(2.0 * rayLengthSquared);
+				return nearIntersection > 0.000001 &&
+					nearIntersection < 0.999999;
+			}
 
 			void main() {
 				vec4 worldPosition = modelMatrix * vec4(position, 1.0);
@@ -682,10 +802,28 @@ function createTagLinkMaterial(
 					tagOrbitRadius,
 					length(worldPosition.xyz)
 				);
-				vLinkVisibility = mix(
+				float protectedLinkVisibility = mix(
 					1.0,
 					mix(1.0, orbitVisibility, tagViewProtectionEnabled),
 					orbitAmount
+				);
+				vLinkVisibility = tagLinkOccludedByGlobe(
+					worldPosition.xyz
+				)
+					? 0.0
+					: protectedLinkVisibility;
+				float frontAlignment = dot(
+					normalize(worldPosition.xyz),
+					normalize(cameraPosition)
+				);
+				vPerspectiveVisibility = mix(
+					${TAG_DEPTH_MINIMUM_VISIBILITY.toFixed(2)},
+					1.0,
+					smoothstep(
+						${TAG_DEPTH_FADE_START.toFixed(2)},
+						${TAG_DEPTH_FADE_END.toFixed(2)},
+						frontAlignment
+					)
 				);
 				gl_Position = projectionMatrix * viewMatrix * worldPosition;
 			}
@@ -693,15 +831,21 @@ function createTagLinkMaterial(
 		fragmentShader: `
 			uniform vec3 tagEdgeColor;
 			varying float vLinkVisibility;
+			varying float vPerspectiveVisibility;
 
 			void main() {
 				if (vLinkVisibility < 0.025) {
 					discard;
 				}
+				float highlight = pow(vPerspectiveVisibility, 3.0);
+				vec3 polishedSilver =
+					tagEdgeColor * (0.72 + highlight * 0.28) +
+					vec3(0.88, 0.93, 0.96) * highlight * 0.08;
 				gl_FragColor = vec4(
-					tagEdgeColor,
-					vLinkVisibility * 0.66
+					polishedSilver * vPerspectiveVisibility,
+					vLinkVisibility * vPerspectiveVisibility * 0.54
 				);
+				#include <colorspace_fragment>
 			}
 		`,
 	});

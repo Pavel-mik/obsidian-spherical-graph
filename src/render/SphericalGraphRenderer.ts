@@ -30,13 +30,19 @@ import {
 } from './renderTypes';
 import { SphereLayer } from './SphereLayer';
 import { TagLayer } from './TagLayer';
+import { PinLayer } from './PinLayer';
+import { AtmosphereLayer } from './AtmosphereLayer';
 import {
 	DEFAULT_RENDER_FILTERS,
 	renderNodeKind,
 	type RenderFilterState,
 } from './renderFilters';
 import { verticalFovForAspect } from './cameraFraming';
-import { automaticRotationAngle } from './autoRotation';
+import {
+	AutoRotationPauseController,
+	automaticRotationAngle,
+} from './autoRotation';
+import { cameraZoomInPercent } from './labelVisibility';
 
 interface FocusAnimation {
 	startedAt: number;
@@ -54,13 +60,22 @@ interface WindowWithObservers extends Window {
 const CAMERA_TARGET = new Vector3(0, 0, 0);
 const IDENTITY_QUATERNION = new Quaternion();
 const AUTO_ROTATION_AXIS = new Vector3(0, 1, 0);
+export const RENDERER_CAMERA_NEAR_PLANE = 0.25;
+const ATMOSPHERE_MAX_OPACITY = 0.82;
+const ATMOSPHERE_FADE_START_ZOOM_PERCENT = 64;
+const ATMOSPHERE_FULL_OPACITY_ZOOM_PERCENT = 34;
 
 export class SphericalGraphRenderer {
 	private readonly ownerDocument: Document;
 	private readonly ownerWindow: Window;
 	private readonly canvas: HTMLCanvasElement;
 	private readonly scene = new Scene();
-	private readonly camera = new PerspectiveCamera(45, 1, 1, 100);
+	private readonly camera = new PerspectiveCamera(
+		45,
+		1,
+		RENDERER_CAMERA_NEAR_PLANE,
+		100,
+	);
 	private readonly graphGroup = new Group();
 	private readonly webglRenderer: WebGLRenderer;
 	private readonly controls: ArcballControls;
@@ -69,8 +84,11 @@ export class SphericalGraphRenderer {
 	private readonly sphereLayer: SphereLayer;
 	private readonly labelLayer: LabelLayer;
 	private readonly tagLayer: TagLayer;
+	private readonly pinLayer: PinLayer;
+	private readonly atmosphereLayer: AtmosphereLayer;
 	private readonly pickingController: PickingController;
 	private readonly callbacks: RendererCallbacks;
+	private readonly autoRotationPause: AutoRotationPauseController;
 	private appearance: AppearanceSettings;
 	private theme: RenderTheme;
 	private snapshot: PreparedRenderSnapshot | undefined;
@@ -81,7 +99,9 @@ export class SphericalGraphRenderer {
 	private themeObserver: MutationObserver | undefined;
 	private animationFrame: number | undefined;
 	private focusAnimation: FocusAnimation | undefined;
-	private autoRotationEnabled = false;
+	private autoRotationRequested = false;
+	private autoRotationActive = false;
+	private presentationMode = false;
 	private lastAutoRotationTimestamp: number | undefined;
 	private width = 0;
 	private height = 0;
@@ -102,6 +122,20 @@ export class SphericalGraphRenderer {
 		this.callbacks = options.callbacks ?? {};
 		this.appearance = { ...options.appearance };
 		this.theme = this.readTheme();
+		this.autoRotationPause = new AutoRotationPauseController({
+			scheduler: {
+				setTimeout: (callback, delayMs) =>
+					this.ownerWindow.setTimeout(callback, delayMs),
+				clearTimeout: (handle) => {
+					this.ownerWindow.clearTimeout(handle as number);
+				},
+			},
+			onActiveChange: (active) => {
+				this.autoRotationActive = active;
+				this.lastAutoRotationTimestamp = undefined;
+				this.requestRender();
+			},
+		});
 
 		this.canvas = this.container.createEl('canvas');
 		this.canvas.className = 'spherical-graph-canvas';
@@ -152,12 +186,21 @@ export class SphericalGraphRenderer {
 			this.appearance,
 			this.theme,
 		);
+		this.pinLayer = new PinLayer(
+			this.graphGroup,
+			this.appearance,
+			this.theme,
+		);
 		this.tagLayer = new TagLayer(
 			this.graphGroup,
 			this.appearance,
 			this.theme,
 			this.container,
 		);
+		this.atmosphereLayer = new AtmosphereLayer(this.graphGroup, {
+			heightPercent: this.appearance.atmosphereHeightPercent,
+			visible: false,
+		});
 		this.labelLayer = new LabelLayer(
 			this.container,
 			this.graphGroup,
@@ -219,6 +262,7 @@ export class SphericalGraphRenderer {
 		const prepared = prepareRenderSnapshot(snapshot);
 		this.sphereLayer.setSnapshot(prepared);
 		this.nodeLayer.setSnapshot(prepared);
+		this.pinLayer.setSnapshot(prepared);
 		this.edgeLayer.setSnapshot(prepared);
 		this.tagLayer.setSnapshot(prepared);
 		this.labelLayer.setSnapshot(prepared);
@@ -250,9 +294,13 @@ export class SphericalGraphRenderer {
 		this.assertUsable();
 		this.appearance = { ...appearance };
 		this.nodeLayer.updateAppearance(this.appearance);
+		this.pinLayer.updateAppearance(this.appearance);
 		this.edgeLayer.updateAppearance(this.appearance);
 		this.tagLayer.updateAppearance(this.appearance);
 		this.sphereLayer.update(this.appearance, this.theme);
+		this.atmosphereLayer.setHeightPercent(
+			this.appearance.atmosphereHeightPercent,
+		);
 		this.labelLayer.updateAppearance(this.appearance);
 		this.updateClearColor();
 		this.requestRender();
@@ -295,10 +343,11 @@ export class SphericalGraphRenderer {
 	}
 
 	setAutoRotation(enabled: boolean): void {
-		if (this.autoRotationEnabled === enabled) {
+		if (this.autoRotationRequested === enabled) {
 			return;
 		}
-		this.autoRotationEnabled = enabled;
+		this.autoRotationRequested = enabled;
+		this.autoRotationPause.setEnabled(enabled);
 		this.lastAutoRotationTimestamp = undefined;
 		if (!enabled) {
 			this.emitCameraChange();
@@ -306,9 +355,23 @@ export class SphericalGraphRenderer {
 		this.requestRender();
 	}
 
+	setPinnedNodeIds(nodeIds: readonly string[]): void {
+		this.pinLayer.setPinnedNodeIds(nodeIds);
+		this.requestRender();
+	}
+
+	setPresentationMode(enabled: boolean): void {
+		if (this.presentationMode === enabled) {
+			return;
+		}
+		this.presentationMode = enabled;
+		this.requestRender();
+	}
+
 	setFilters(filters: RenderFilterState): void {
 		this.filters = { ...filters };
 		this.nodeLayer.updateFilters(this.filters);
+		this.pinLayer.updateFilters(this.filters);
 		this.edgeLayer.updateFilters(this.filters);
 		this.labelLayer.updateFilters(this.filters);
 		this.tagLayer.setVisible(this.filters.showTags);
@@ -351,6 +414,7 @@ export class SphericalGraphRenderer {
 		if (targetPosition === undefined) {
 			return false;
 		}
+		this.autoRotationPause.noteUserInteraction();
 		const startDirection = this.camera.position.clone().normalize();
 		const endDirection = targetPosition.normalize();
 		const rotation = new Quaternion().setFromUnitVectors(
@@ -383,6 +447,7 @@ export class SphericalGraphRenderer {
 
 	resetCamera(): void {
 		this.cancelFocus();
+		this.autoRotationPause.noteUserInteraction();
 		this.camera.position.set(0, 0, DEFAULT_CAMERA_DISTANCE);
 		this.camera.up.set(0, 1, 0);
 		this.camera.lookAt(CAMERA_TARGET);
@@ -433,8 +498,11 @@ export class SphericalGraphRenderer {
 		this.controls.removeEventListener('end', this.onControlsEnd);
 		this.controls.dispose();
 		this.pickingController.dispose();
+		this.autoRotationPause.dispose();
 		this.labelLayer.dispose();
 		this.tagLayer.dispose();
+		this.atmosphereLayer.dispose();
+		this.pinLayer.dispose();
 		this.nodeLayer.dispose();
 		this.edgeLayer.dispose();
 		this.sphereLayer.dispose();
@@ -451,13 +519,11 @@ export class SphericalGraphRenderer {
 
 	private readonly onControlsStart = (): void => {
 		this.cancelFocus();
-		if (this.autoRotationEnabled) {
-			this.setAutoRotation(false);
-			this.callbacks.onAutoRotationChange?.(false);
-		}
+		this.autoRotationPause.beginUserInteraction();
 	};
 
 	private readonly onControlsEnd = (): void => {
+		this.autoRotationPause.endUserInteraction();
 		this.emitCameraChange();
 	};
 
@@ -562,17 +628,23 @@ export class SphericalGraphRenderer {
 		const focusContinues = this.advanceFocusAnimation(timestamp);
 		const autoRotationContinues =
 			this.advanceAutoRotation(timestamp);
+		const atmosphereContinues = this.advanceAtmosphere(timestamp);
 		this.graphGroup.updateMatrixWorld(true);
+		this.edgeLayer.render(this.camera);
 		this.tagLayer.render(this.camera, this.width, this.height);
 		this.labelLayer.render(this.camera, this.width, this.height);
 		this.webglRenderer.render(this.scene, this.camera);
-		if (focusContinues || autoRotationContinues) {
+		if (
+			focusContinues ||
+			autoRotationContinues ||
+			atmosphereContinues
+		) {
 			this.requestRender();
 		}
 	};
 
 	private advanceAutoRotation(timestamp: number): boolean {
-		if (!this.autoRotationEnabled) {
+		if (!this.autoRotationActive) {
 			return false;
 		}
 		if (this.focusAnimation !== undefined) {
@@ -593,6 +665,25 @@ export class SphericalGraphRenderer {
 			this.controls.update();
 		}
 		return true;
+	}
+
+	private advanceAtmosphere(timestamp: number): boolean {
+		const enabled =
+			this.presentationMode ||
+			(this.appearance.showAtmosphere &&
+				this.autoRotationRequested);
+		if (!enabled) {
+			this.atmosphereLayer.setVisible(false);
+			return false;
+		}
+		const opacity = this.presentationMode
+			? ATMOSPHERE_MAX_OPACITY
+			: atmosphereOpacityForCameraDistance(
+					this.camera.position.length(),
+				);
+		this.atmosphereLayer.setOpacity(opacity);
+		this.atmosphereLayer.setVisible(opacity > 0.004);
+		return this.atmosphereLayer.render(timestamp);
 	}
 
 	private advanceFocusAnimation(timestamp: number): boolean {
@@ -624,6 +715,7 @@ export class SphericalGraphRenderer {
 			this.controls.enabled = true;
 			this.syncControlsToCamera();
 			this.emitCameraChange();
+			this.autoRotationPause.noteUserInteraction();
 			return false;
 		}
 		return true;
@@ -699,6 +791,7 @@ export class SphericalGraphRenderer {
 	private updateTheme(): void {
 		this.theme = this.readTheme();
 		this.nodeLayer.updateTheme(this.theme);
+		this.pinLayer.updateTheme(this.theme);
 		this.edgeLayer.updateTheme(this.theme);
 		this.tagLayer.updateTheme(this.theme);
 		this.sphereLayer.update(this.appearance, this.theme);
@@ -761,6 +854,23 @@ export class SphericalGraphRenderer {
 			throw new Error('SphericalGraphRenderer has been disposed.');
 		}
 	}
+}
+
+export function atmosphereOpacityForCameraDistance(
+	cameraDistance: number,
+): number {
+	const zoomPercent = cameraZoomInPercent(cameraDistance);
+	const amount = Math.max(
+		0,
+		Math.min(
+			1,
+			(ATMOSPHERE_FADE_START_ZOOM_PERCENT - zoomPercent) /
+				(ATMOSPHERE_FADE_START_ZOOM_PERCENT -
+					ATMOSPHERE_FULL_OPACITY_ZOOM_PERCENT),
+		),
+	);
+	const eased = amount * amount * (3 - 2 * amount);
+	return eased * ATMOSPHERE_MAX_OPACITY;
 }
 
 function toFiniteVector(

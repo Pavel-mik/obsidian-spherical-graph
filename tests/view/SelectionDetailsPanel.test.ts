@@ -68,6 +68,69 @@ describe('buildSelectionDetailsModel', () => {
 			'#atlas',
 			'#project',
 		]);
+		expect(model.selected).toMatchObject({
+			pinnable: true,
+			pinned: false,
+		});
+	});
+
+	it('reports externally controlled pin state for a selected note', () => {
+		const model = buildSelectionDetailsModel(
+			snapshot,
+			'Alpha.md',
+			undefined,
+			undefined,
+			new Set(['Alpha.md']),
+		);
+
+		expect(model.selected).toMatchObject({
+			pinnable: true,
+			pinned: true,
+		});
+	});
+
+	it('does not expose pin actions for non-note graph nodes', () => {
+		const nonNotes = prepareRenderSnapshot({
+			snapshotId: 'non-notes',
+			nodes: [
+				{
+					index: 0,
+					id: 'image.png',
+					path: 'image.png',
+					basename: 'image',
+					degree: 0,
+					weightedDegree: 0,
+					kind: 'attachment',
+				},
+				{
+					index: 1,
+					id: 'Missing',
+					path: 'Missing',
+					basename: 'Missing',
+					degree: 0,
+					weightedDegree: 0,
+					kind: 'unresolved',
+				},
+			],
+			edges: [],
+			tags: [],
+			positions: new Float32Array([1, 0, 0, 0, 1, 0]),
+		});
+
+		expect(
+			buildSelectionDetailsModel(
+				nonNotes,
+				'image.png',
+				undefined,
+			).selected?.pinnable,
+		).toBe(false);
+		expect(
+			buildSelectionDetailsModel(
+				nonNotes,
+				'Missing',
+				undefined,
+			).selected?.pinnable,
+		).toBe(false);
 	});
 
 	it('exposes route endpoints and all nodes in the shortest-path union', () => {
