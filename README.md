@@ -9,7 +9,7 @@ becomes its own continent, notes become cities, links become roads across the
 surface, and tags orbit overhead as satellites. Linked notes stored directly
 in the vault root become islands; orphan notes remain cities over open water.
 The cartography reserves approximately half the globe for one connected ocean.
-Compound directory territories and post-layout coastal erosion keep large
+Topology-first city placement and post-layout coastal erosion keep large
 continents irregular rather than circular. Route Finder reveals every shortest
 path between distant notes.
 
@@ -18,10 +18,10 @@ computes positions, validates and saves one complete snapshot, and then stops.
 Normal reading, search, filtering, selection, rotation, zoom, theme changes,
 and resizing do not move notes.
 
-Initialize and Renew first allocate deterministic compound intrinsic spherical
-territories to the top-level folders. Same-folder topology arranges cities
-across overlapping asymmetric lobes; cross-folder links have reduced layout
-weight and can move endpoints without transferring them to another continent.
+Initialize and Renew first place top-level folders and their subdirectory or
+topology districts on the sphere. These areas are starting hints, not circular
+fences. Sparse graph-distance stress, reduced cross-folder springs, relative
+coastal-port bias, and a final render-aware collision pass arrange the cities.
 After the finite solver stops, adaptive land support and multi-scale coastal
 erosion over the fixed positions produce exclusive coastlines, beaches,
 root-note islands, and one broad ocean.
@@ -92,10 +92,14 @@ and a reliable rename keeps the old position under the new path. Select
 - Intrinsic, seam-free spherical layout with deterministic exact and sampled
   repulsion modes.
 - Directory-aware Initialize/Renew placement directly on \(S^2\): each
-  non-orphan top-level folder owns a deterministic compound territory,
+  non-orphan top-level folder receives deterministic irregular districts,
   internal links retain full spring weight, cross-folder links are weaker, and
-  hard geodesic lobe boundaries prevent continental overlap without imposing a
-  circular silhouette.
+  no circular lobe boundary constrains the final city positions.
+- Bounded graph-distance landmark stress breaks hub rings, while a final
+  marker-aware S² collision projection prevents visible node overlap without
+  moving hard-fixed Refresh nodes.
+- Relatively strong, directionally coherent inter-continent endpoints become
+  port cities and can reach the coastline on the side of their strongest roads.
 - Post-layout cartography over fixed positions uses adaptive member and
   same-folder-road support, exclusive land ownership, irregular coastlines,
   and one connected ocean targeting approximately half the globe.

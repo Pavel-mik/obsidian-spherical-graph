@@ -73,10 +73,10 @@
 - Top-level vault folders are authoritative continent owners. This replaces
   inferred graph communities with a stable, explainable mapping users control
   through their existing vault structure.
-- Initialize and Renew receive compact directory territory constraints.
-  A disjoint outer folder extent is decomposed into overlapping asymmetric
-  lobes with per-node centers and varied hard angular limits. This prevents a
-  large folder from inheriting the circular silhouette of one uniform cap;
+- Initialize and Renew use top-level folders plus deterministic subdirectory
+  and topology cohorts only as a starting hierarchy. The worker receives owner
+  indexes, not circular territory centers or hard radial limits. This lets
+  graph topology and collision packing determine the final irregular shape;
   land masks, coastlines, colors, and texture remain downstream render
   products.
 - Same-folder springs retain full strength, cross-folder springs use 14%, and
@@ -86,10 +86,18 @@
   of degree. Linked root notes are islands; all degree-zero notes stay as cities
   over open water. The degree-one/two island rule was removed because it made
   large vaults visually speckled.
-- Lobe initialization uses seeded best-candidate cap samples, and equal-weight
-  springs use bounded deterministic target variation. A soft intrinsic
-  territory barrier prevents boundary pile-ups while the existing hard clamp
-  remains a safety invariant.
+- Region initialization grows asymmetric district centers and uses seeded
+  best-candidate samples. A bounded landmark stress layer adds graph-distance
+  targets inside each region, preventing hub leaves from sharing one radius.
+  No territory barrier or hard folder clamp remains.
+- Global coverage treats each top-level folder centroid as one sample. This
+  prevents a large population from being pulled into a sphere-spanning disc
+  while still distributing continent centers over the globe.
+- Port cities are selected by relative external-link evidence within their own
+  folder and require a coherent destination bearing. Their bearings are
+  recomputed from converged real cross-folder neighbors before the coastward
+  move. A final marker-aware intrinsic collision projection is separate from
+  force convergence and preserves Refresh fixed masks and anchor caps.
 - Degree-zero notes use seeded random ocean samples with local separation and
   are hard-fixed during full solves. This deliberately favors an organic ocean
   scatter over globally uniform coverage for nodes with no topology.

@@ -1,7 +1,10 @@
 import { hashNumbers } from '../geometry/deterministicHash';
 import {
 	computeSphericalCoverage,
+	geodesicClamp,
 	geodesicDistance,
+	sphericalWeightedMean,
+	tangentDirection,
 } from '../geometry/sphericalGeometry';
 import {
 	clamp,
@@ -13,6 +16,8 @@ import {
 import {
 	alignRefreshResultToAnchors,
 } from './anchoring';
+import { applyCoastalPortBias } from './coastalPortLayout';
+import { projectSphericalCollisions } from './collisionProjection';
 import { computeSphericalForces } from './forces';
 import {
 	resolveSolverSettings,
@@ -59,6 +64,8 @@ function defaultYieldControl(): Promise<void> {
 		channel.port2.postMessage(undefined);
 	});
 }
+
+const MAXIMUM_FLOAT32_ANGLE = Math.fround(Math.PI - 1e-6);
 
 function countMask(mask: Uint8Array): number {
 	let count = 0;
@@ -131,9 +138,13 @@ export class SphericalSolver {
 	private readonly velocities: Float64Array;
 	private readonly edgeEndpoints: Uint32Array;
 	private readonly edgeWeights: Float32Array;
+	private readonly edgeTargetAngles: Float32Array | undefined;
+	private readonly folderIndexByNode: Int32Array | undefined;
+	private readonly collisionAngularRadii: Float32Array | undefined;
+	private readonly coastalPortScores: Float32Array | undefined;
+	private readonly coastalPortDirections: Float32Array | undefined;
 	private readonly baseMovableMask: Uint8Array;
 	private readonly refresh: LayoutSolverInput['refresh'];
-	private readonly territory: LayoutSolverInput['territory'];
 	private readonly cappedNodes: Uint8Array;
 	private readonly startedAt: number;
 
@@ -147,6 +158,9 @@ export class SphericalSolver {
 	private finished = false;
 	private cancelled = false;
 	private finalResult: LayoutSolveResult | null = null;
+	private collisionPasses = 0;
+	private collisionRemainingOverlapCount = 0;
+	private collisionMaximumPenetration = 0;
 
 	constructor(input: LayoutSolverInput) {
 		this.operationId = input.operationId;
@@ -169,30 +183,51 @@ export class SphericalSolver {
 		}
 		this.edgeEndpoints = input.edgeEndpoints.slice();
 		this.edgeWeights = input.edgeWeights.slice();
+		if (
+			input.edgeTargetAngles !== undefined &&
+			input.edgeTargetAngles.length !== input.edgeWeights.length
+		) {
+			throw new RangeError(
+				'Edge target angles must contain one value per edge.',
+			);
+		}
+		this.edgeTargetAngles = input.edgeTargetAngles?.slice();
+		if (
+			input.folderIndexByNode !== undefined &&
+			input.folderIndexByNode.length !== nodeCount
+		) {
+			throw new RangeError(
+				'Folder ownership must contain one value per node.',
+			);
+		}
+		this.folderIndexByNode = input.folderIndexByNode?.slice();
+		if (
+			input.collisionAngularRadii !== undefined &&
+			input.collisionAngularRadii.length !== nodeCount
+		) {
+			throw new RangeError(
+				'Collision radii must contain one value per node.',
+			);
+		}
+		this.collisionAngularRadii =
+			input.collisionAngularRadii?.slice();
+		if (
+			(input.coastalPortScores === undefined) !==
+				(input.coastalPortDirections === undefined) ||
+			(input.coastalPortScores !== undefined &&
+				input.coastalPortScores.length !== nodeCount) ||
+			(input.coastalPortDirections !== undefined &&
+				input.coastalPortDirections.length !== nodeCount * 3)
+		) {
+			throw new RangeError(
+				'Coastal port buffers must contain one score and direction per node.',
+			);
+		}
+		this.coastalPortScores = input.coastalPortScores?.slice();
+		this.coastalPortDirections =
+			input.coastalPortDirections?.slice();
 		this.velocities = new Float64Array(this.positions.length);
 		this.cappedNodes = new Uint8Array(nodeCount);
-		if (input.territory !== undefined) {
-			this.validateTerritoryConstraints(input.territory, nodeCount);
-			const centers = new Float32Array(input.territory.centers.length);
-			for (let index = 0; index < nodeCount; index += 1) {
-				writeVec3(
-					centers,
-					index,
-					input.territory.assignedNodeMask[index] === 1
-						? normalizeVec3(readVec3(input.territory.centers, index))
-						: readVec3(this.positions, index),
-				);
-			}
-			this.territory = {
-				centers,
-				maximumDistances:
-					input.territory.maximumDistances.slice(),
-				assignedNodeMask:
-					input.territory.assignedNodeMask.slice(),
-			};
-		} else {
-			this.territory = undefined;
-		}
 
 		if (this.mode === 'refresh') {
 			if (input.refresh === undefined) {
@@ -227,34 +262,6 @@ export class SphericalSolver {
 			);
 		}
 		this.startedAt = defaultNow();
-	}
-
-	private validateTerritoryConstraints(
-		territory: NonNullable<LayoutSolverInput['territory']>,
-		nodeCount: number,
-	): void {
-		if (
-			territory.centers.length !== nodeCount * 3 ||
-			territory.maximumDistances.length !== nodeCount ||
-			territory.assignedNodeMask.length !== nodeCount
-		) {
-			throw new RangeError(
-				'Territory constraints must contain one center and radius per node.',
-			);
-		}
-		for (let index = 0; index < nodeCount; index += 1) {
-			const maximumDistance = territory.maximumDistances[index] ?? 0;
-			if (
-				territory.assignedNodeMask[index] === 1 &&
-				(!Number.isFinite(maximumDistance) ||
-					maximumDistance <= 0 ||
-					maximumDistance > Math.PI)
-			) {
-				throw new RangeError(
-					'Territory radii must be finite and within the sphere.',
-				);
-			}
-		}
 	}
 
 	private validateRefreshConstraints(
@@ -348,78 +355,6 @@ export class SphericalSolver {
 		return this.phase === 'new-node-warmup'
 			? this.refresh.newNodeMask
 			: this.refresh.relaxationMovableMask;
-	}
-
-	private accumulateTerritoryBarrier(
-		forces: Float64Array,
-		movableMask: Uint8Array,
-	): void {
-		if (this.territory === undefined) {
-			return;
-		}
-		for (let index = 0; index < movableMask.length; index += 1) {
-			if (
-				movableMask[index] !== 1 ||
-				this.territory.assignedNodeMask[index] !== 1
-			) {
-				continue;
-			}
-			const offset = index * 3;
-			const x = this.positions[offset] ?? 0;
-			const y = this.positions[offset + 1] ?? 0;
-			const z = this.positions[offset + 2] ?? 0;
-			const centerX = this.territory.centers[offset] ?? 0;
-			const centerY = this.territory.centers[offset + 1] ?? 0;
-			const centerZ = this.territory.centers[offset + 2] ?? 0;
-			const dot = clamp(
-				x * centerX + y * centerY + z * centerZ,
-				-1,
-				1,
-			);
-			const crossX = y * centerZ - z * centerY;
-			const crossY = z * centerX - x * centerZ;
-			const crossZ = x * centerY - y * centerX;
-			const distance = Math.atan2(
-				Math.hypot(crossX, crossY, crossZ),
-				dot,
-			);
-			const maximumDistance =
-				this.territory.maximumDistances[index] ?? Math.PI;
-			const softStart = maximumDistance * 0.64;
-			if (distance <= softStart) {
-				continue;
-			}
-			let tangentX = centerX - dot * x;
-			let tangentY = centerY - dot * y;
-			let tangentZ = centerZ - dot * z;
-			const tangentLength = Math.hypot(
-				tangentX,
-				tangentY,
-				tangentZ,
-			);
-			if (tangentLength <= 1e-12) {
-				continue;
-			}
-			tangentX /= tangentLength;
-			tangentY /= tangentLength;
-			tangentZ /= tangentLength;
-			const pressure = Math.min(
-				1.35,
-				(distance - softStart) /
-					Math.max(1e-8, maximumDistance - softStart),
-			);
-			const magnitude =
-				this.settings.repulsionCap *
-				0.9 *
-				pressure *
-				pressure;
-			forces[offset] =
-				(forces[offset] ?? 0) + tangentX * magnitude;
-			forces[offset + 1] =
-				(forces[offset + 1] ?? 0) + tangentY * magnitude;
-			forces[offset + 2] =
-				(forces[offset + 2] ?? 0) + tangentZ * magnitude;
-		}
 	}
 
 	private integrate(
@@ -547,59 +482,6 @@ export class SphericalSolver {
 					this.cappedNodes[index] = 1;
 				}
 			}
-			if (
-				this.territory?.assignedNodeMask[index] === 1
-			) {
-				const centerX = this.territory.centers[offset] ?? 0;
-				const centerY = this.territory.centers[offset + 1] ?? 0;
-				const centerZ = this.territory.centers[offset + 2] ?? 0;
-				const dot = clamp(
-					centerX * nextX +
-						centerY * nextY +
-						centerZ * nextZ,
-					-1,
-					1,
-				);
-				const crossX = centerY * nextZ - centerZ * nextY;
-				const crossY = centerZ * nextX - centerX * nextZ;
-				const crossZ = centerX * nextY - centerY * nextX;
-				const distance = Math.atan2(
-					Math.hypot(crossX, crossY, crossZ),
-					dot,
-				);
-				const maximumDistance =
-					this.territory.maximumDistances[index] ?? Math.PI;
-				if (distance > maximumDistance + 1e-12) {
-					let tangentX = nextX - dot * centerX;
-					let tangentY = nextY - dot * centerY;
-					let tangentZ = nextZ - dot * centerZ;
-					const tangentNorm = Math.hypot(
-						tangentX,
-						tangentY,
-						tangentZ,
-					);
-					if (tangentNorm > 1e-12) {
-						tangentX /= tangentNorm;
-						tangentY /= tangentNorm;
-						tangentZ /= tangentNorm;
-					} else {
-						const fallback = orthogonalUnitVec3(
-							[centerX, centerY, centerZ],
-							hashNumbers(this.effectiveSeed, index, 0xd1ae),
-						);
-						tangentX = fallback[0];
-						tangentY = fallback[1];
-						tangentZ = fallback[2];
-					}
-					const cosine = Math.cos(maximumDistance);
-					const sine = Math.sin(maximumDistance);
-					nextX = cosine * centerX + sine * tangentX;
-					nextY = cosine * centerY + sine * tangentY;
-					nextZ = cosine * centerZ + sine * tangentZ;
-					this.cappedNodes[index] = 1;
-				}
-			}
-
 			this.positions[offset] = nextX;
 			this.positions[offset + 1] = nextY;
 			this.positions[offset + 2] = nextZ;
@@ -646,6 +528,8 @@ export class SphericalSolver {
 				positions: this.positions,
 				edgeEndpoints: this.edgeEndpoints,
 				edgeWeights: this.edgeWeights,
+				edgeTargetAngles: this.edgeTargetAngles,
+				folderIndexByNode: this.folderIndexByNode,
 				movableMask,
 				settings: this.settings,
 				effectiveSeed: this.effectiveSeed,
@@ -662,10 +546,6 @@ export class SphericalSolver {
 			this.repulsionMode = forceEvaluation.repulsionMode;
 			this.totalRepulsionPairs +=
 				forceEvaluation.evaluatedRepulsionPairs;
-			this.accumulateTerritoryBarrier(
-				forceEvaluation.forces,
-				movableMask,
-			);
 			this.maxAngularDisplacement = this.integrate(
 				forceEvaluation.forces,
 				movableMask,
@@ -742,6 +622,162 @@ export class SphericalSolver {
 		return maximum;
 	}
 
+	private applyCollisionProjection(): void {
+		if (this.collisionAngularRadii === undefined) {
+			return;
+		}
+		const movableMask =
+			this.refresh?.relaxationMovableMask ??
+			this.baseMovableMask;
+		let maximumAngularDisplacements: Float32Array | undefined;
+		if (this.refresh !== undefined) {
+			maximumAngularDisplacements =
+				this.refresh.maxAnchorDistances.slice();
+			for (
+				let index = 0;
+				index < maximumAngularDisplacements.length;
+				index += 1
+			) {
+				if (this.refresh.existingNodeMask[index] !== 1) {
+					maximumAngularDisplacements[index] =
+						MAXIMUM_FLOAT32_ANGLE;
+				}
+			}
+		}
+		const collision = projectSphericalCollisions({
+			positions: this.positions,
+			angularRadii: this.collisionAngularRadii,
+			movableMask,
+			deterministicSeed: hashNumbers(
+				this.effectiveSeed,
+				0xc011,
+			),
+			anchorPositions: this.refresh?.anchorPositions,
+			maximumAngularDisplacements,
+			maxPasses: 48,
+			tolerance: 2e-5,
+			relaxation: 0.92,
+		});
+		this.positions.set(collision.positions);
+		this.collisionPasses = collision.passes;
+		this.collisionRemainingOverlapCount =
+			collision.remainingOverlapCount;
+		this.collisionMaximumPenetration =
+			collision.maximumPenetration;
+	}
+
+	private applyCoastalPorts(): void {
+		if (
+			this.folderIndexByNode === undefined ||
+			this.coastalPortScores === undefined ||
+			this.coastalPortDirections === undefined
+		) {
+			return;
+		}
+		const currentDirections = this.coastalPortDirections.slice();
+		const externalTargets = new Map<
+			number,
+			{ positions: ReturnType<typeof readVec3>[]; weights: number[] }
+		>();
+		const addExternalTarget = (
+			portIndex: number,
+			targetIndex: number,
+			weight: number,
+		): void => {
+			if ((this.coastalPortScores?.[portIndex] ?? 0) <= 0) {
+				return;
+			}
+			let targets = externalTargets.get(portIndex);
+			if (targets === undefined) {
+				targets = { positions: [], weights: [] };
+				externalTargets.set(portIndex, targets);
+			}
+			targets.positions.push(readVec3(this.positions, targetIndex));
+			targets.weights.push(Math.max(1e-6, weight));
+		};
+		for (
+			let edgeIndex = 0;
+			edgeIndex < this.edgeWeights.length;
+			edgeIndex += 1
+		) {
+			if ((this.edgeTargetAngles?.[edgeIndex] ?? 0) > 0) {
+				continue;
+			}
+			const source = this.edgeEndpoints[edgeIndex * 2];
+			const target = this.edgeEndpoints[edgeIndex * 2 + 1];
+			if (source === undefined || target === undefined) {
+				continue;
+			}
+			const sourceOwner = this.folderIndexByNode[source] ?? -1;
+			const targetOwner = this.folderIndexByNode[target] ?? -1;
+			if (
+				sourceOwner < 0 ||
+				targetOwner < 0 ||
+				sourceOwner === targetOwner
+			) {
+				continue;
+			}
+			const weight = this.edgeWeights[edgeIndex] ?? 1;
+			addExternalTarget(source, target, weight);
+			addExternalTarget(target, source, weight);
+		}
+		for (const [portIndex, targets] of externalTargets) {
+			const destination = sphericalWeightedMean(
+				targets.positions,
+				targets.weights,
+			);
+			if (destination === null) {
+				continue;
+			}
+			writeVec3(
+				currentDirections,
+				portIndex,
+				tangentDirection(
+					readVec3(this.positions, portIndex),
+					destination,
+					hashNumbers(
+						this.effectiveSeed,
+						portIndex,
+						0xc0a57,
+					),
+				),
+			);
+		}
+		const biased = applyCoastalPortBias(
+			this.positions,
+			this.folderIndexByNode,
+			{
+				portScores: this.coastalPortScores,
+				portDirections: currentDirections,
+			},
+		);
+		const movableMask =
+			this.refresh?.relaxationMovableMask ??
+			this.baseMovableMask;
+		for (let index = 0; index < movableMask.length; index += 1) {
+			if (movableMask[index] !== 1) {
+				continue;
+			}
+			let position = readVec3(biased, index);
+			if (
+				this.refresh !== undefined &&
+				this.refresh.existingNodeMask[index] === 1
+			) {
+				position = geodesicClamp(
+					position,
+					readVec3(this.refresh.anchorPositions, index),
+					this.refresh.maxAnchorDistances[index] ?? 0,
+					hashNumbers(
+						this.effectiveSeed,
+						index,
+						0xc04a57,
+					),
+				);
+			}
+			writeVec3(this.positions, index, position);
+		}
+	}
+
 	private diagnostics(
 		now: number,
 		finalizing: boolean,
@@ -779,6 +815,11 @@ export class SphericalSolver {
 			converged: this.converged,
 			maximumNormError: this.maximumNormError(),
 			repulsionMode: this.repulsionMode,
+			collisionPasses: this.collisionPasses,
+			collisionRemainingOverlapCount:
+				this.collisionRemainingOverlapCount,
+			collisionMaximumPenetration:
+				this.collisionMaximumPenetration,
 		};
 	}
 
@@ -814,6 +855,8 @@ export class SphericalSolver {
 				}
 			}
 		}
+		this.applyCoastalPorts();
+		this.applyCollisionProjection();
 
 		const maximumNormError = this.maximumNormError();
 		if (!Number.isFinite(maximumNormError) || maximumNormError > 1e-5) {

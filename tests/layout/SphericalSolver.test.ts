@@ -57,6 +57,82 @@ function median(values: readonly number[]): number {
 }
 
 describe('SphericalSolver full layout', () => {
+	it('applies the render-aware collision projection before completing', () => {
+		const result = new SphericalSolver({
+			operationId: 'collision-finalization',
+			mode: 'renew',
+			graphSignature: 'collision-finalization',
+			effectiveSeed: 41,
+			positions: new Float32Array([
+				1, 0, 0,
+				1, 0, 0,
+			]),
+			edgeEndpoints: new Uint32Array(),
+			edgeWeights: new Float32Array(),
+			collisionAngularRadii: new Float32Array([0.08, 0.08]),
+			settings: {
+				maxIterations: 1,
+				convergenceWindow: 2,
+				springStrength: 0,
+				repulsionStrength: 0,
+				centroidStrength: 0,
+				isotropyStrength: 0,
+			},
+		}).solveSync();
+		expect(result.status).toBe('completed');
+		if (result.status !== 'completed') {
+			return;
+		}
+		expect(
+			geodesicDistance(
+				readVec3(result.positions, 0),
+				readVec3(result.positions, 1),
+			),
+		).toBeGreaterThanOrEqual(0.1599);
+		expect(result.diagnostics.collisionPasses).toBeGreaterThan(0);
+		expect(
+			result.diagnostics.collisionRemainingOverlapCount,
+		).toBe(0);
+	});
+
+	it('recomputes a selected port bearing from final external neighbors', () => {
+		const result = new SphericalSolver({
+			operationId: 'final-port-bearing',
+			mode: 'renew',
+			graphSignature: 'final-port-bearing',
+			effectiveSeed: 67,
+			positions: new Float32Array([
+				1, 0, 0,
+				Math.cos(0.5), Math.sin(0.5), 0,
+				0, 1, 0,
+			]),
+			edgeEndpoints: new Uint32Array([0, 2]),
+			edgeWeights: new Float32Array([1]),
+			edgeTargetAngles: new Float32Array([0]),
+			folderIndexByNode: new Int32Array([0, 0, 1]),
+			coastalPortScores: new Float32Array([1, 0, 0]),
+			// Deliberately stale/opposite. Final graph geometry points north.
+			coastalPortDirections: new Float32Array([
+				0, -1, 0,
+				0, 0, 0,
+				0, 0, 0,
+			]),
+			settings: {
+				maxIterations: 1,
+				convergenceWindow: 2,
+				springStrength: 0,
+				repulsionStrength: 0,
+				centroidStrength: 0,
+				isotropyStrength: 0,
+			},
+		}).solveSync();
+		expect(result.status).toBe('completed');
+		if (result.status !== 'completed') {
+			return;
+		}
+		expect(readVec3(result.positions, 0)[1]).toBeGreaterThan(0.1);
+	});
+
 	it('keeps every result on S² after hundreds of intrinsic steps', () => {
 		const result = new SphericalSolver(
 			fullInput(40, 123, {
@@ -103,20 +179,16 @@ describe('SphericalSolver full layout', () => {
 		expect(result.diagnostics.cappedNodeCount).toBe(0);
 	});
 
-	it('enforces intrinsic hard boundaries for assigned directory territories', () => {
+	it('does not clamp directory members to a circular territory radius', () => {
 		const result = new SphericalSolver({
-			operationId: 'directory-territory',
+			operationId: 'directory-hint',
 			mode: 'renew',
-			graphSignature: 'directory-territory',
+			graphSignature: 'directory-hint',
 			effectiveSeed: 91,
 			positions: new Float32Array([0, 1, 0]),
 			edgeEndpoints: new Uint32Array(),
 			edgeWeights: new Float32Array(),
-			territory: {
-				centers: new Float32Array([1, 0, 0]),
-				maximumDistances: new Float32Array([0.25]),
-				assignedNodeMask: new Uint8Array([1]),
-			},
+			folderIndexByNode: new Int32Array([0]),
 			settings: {
 				maxIterations: 1,
 				convergenceWindow: 2,
@@ -128,8 +200,8 @@ describe('SphericalSolver full layout', () => {
 		}
 		expect(
 			geodesicDistance([1, 0, 0], readVec3(result.positions, 0)),
-		).toBeCloseTo(0.25, 5);
-		expect(result.diagnostics.cappedNodeCount).toBe(1);
+		).toBeCloseTo(Math.PI / 2, 5);
+		expect(result.diagnostics.cappedNodeCount).toBe(0);
 	});
 
 	it('keeps dense clusters distinct across sparse bridge links', () => {
@@ -468,6 +540,74 @@ describe('SphericalSolver refresh preservation', () => {
 			geodesicDistance([1, 0, 0], readVec3(result.positions, 0)),
 		).toBeLessThanOrEqual(0.120002);
 		expect(result.diagnostics.hardFixedNodeCount).toBe(1);
+	});
+
+	it('allows the collision finalizer to move new Refresh nodes globally', () => {
+		const input = refreshFixture(0.15);
+		const result = new SphericalSolver({
+			...input,
+			collisionAngularRadii: new Float32Array([0.02, 0.02, 0.02]),
+		}).solveSync();
+		expect(result.status).toBe('completed');
+		if (result.status !== 'completed') {
+			return;
+		}
+		expect(
+			result.diagnostics.collisionRemainingOverlapCount,
+		).toBe(0);
+	});
+
+	it('keeps the coastal-port finalizer inside refresh anchor caps', () => {
+		const anchorPositions = new Float32Array([
+			1, 0, 0,
+			Math.cos(0.5), Math.sin(0.5), 0,
+		]);
+		const result = new SphericalSolver({
+			operationId: 'refresh-port-cap',
+			mode: 'refresh',
+			graphSignature: 'refresh-port-cap',
+			effectiveSeed: 53,
+			positions: anchorPositions,
+			edgeEndpoints: new Uint32Array(),
+			edgeWeights: new Float32Array(),
+			folderIndexByNode: new Int32Array([0, 0]),
+			coastalPortScores: new Float32Array([1, 0]),
+			coastalPortDirections: new Float32Array([
+				0, 1, 0,
+				0, 0, 0,
+			]),
+			refresh: {
+				existingNodeMask: new Uint8Array([1, 1]),
+				newNodeMask: new Uint8Array([0, 0]),
+				relaxationMovableMask: new Uint8Array([1, 0]),
+				anchorPositions,
+				anchorStrengths: new Float32Array([0, 0]),
+				maxAnchorDistances: new Float32Array([0.01, 0]),
+				alignToAnchors: false,
+			},
+			settings: {
+				maxIterations: 1,
+				refreshWarmupIterations: 0,
+				convergenceWindow: 2,
+				springStrength: 0,
+				repulsionStrength: 0,
+				centroidStrength: 0,
+				isotropyStrength: 0,
+			},
+		}).solveSync();
+		expect(result.status).toBe('completed');
+		if (result.status !== 'completed') {
+			return;
+		}
+		expect(
+			geodesicDistance(
+				readVec3(anchorPositions, 0),
+				readVec3(result.positions, 0),
+			),
+		).toBeLessThanOrEqual(0.010002);
+		expect(readVec3(result.positions, 1)).toEqual(
+			readVec3(anchorPositions, 1),
+		);
 	});
 
 	it('anchor energy reduces drift compared with an unanchored refresh', () => {

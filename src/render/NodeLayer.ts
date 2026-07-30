@@ -17,11 +17,13 @@ import {
 	Vector3,
 } from 'three';
 import {
-	BASE_NODE_MARKER_SIZE,
-	DEFAULT_GLOBE_SIZE,
 	NODE_SURFACE_LIFT,
 	SPHERE_RADIUS,
 } from '../constants';
+import {
+	nodeMarkerScale,
+	nodeMarkerScaleForGlobe,
+} from '../geometry/nodeMarkerMetrics';
 import { AppearanceSettings } from '../settings/settings';
 import {
 	DEFAULT_RENDER_FILTERS,
@@ -472,11 +474,11 @@ export class NodeLayer {
 	}
 
 	private baseScaleForNode(node: RenderNode): number {
-		let scale = nodeMarkerScaleForGlobe(this.appearance.globeSize);
-		if (this.appearance.sizeNodesByDegree) {
-			scale *= 1 + Math.min(1.25, Math.log2(node.degree + 1) * 0.22);
-		}
-		return scale;
+		return nodeMarkerScale(
+			this.appearance.globeSize,
+			node.degree,
+			this.appearance.sizeNodesByDegree,
+		);
 	}
 
 	private removeMesh(): void {
@@ -496,15 +498,7 @@ export class NodeLayer {
 	}
 }
 
-export function nodeMarkerScaleForGlobe(globeSize: number): number {
-	const safeGlobeSize =
-		Number.isFinite(globeSize) && globeSize > 0
-			? globeSize
-			: DEFAULT_GLOBE_SIZE;
-	return (
-		(BASE_NODE_MARKER_SIZE * DEFAULT_GLOBE_SIZE) / safeGlobeSize
-	);
-}
+export { nodeMarkerScaleForGlobe };
 
 function createNodeMaterial(glow: boolean): ShaderMaterial {
 	return new ShaderMaterial({

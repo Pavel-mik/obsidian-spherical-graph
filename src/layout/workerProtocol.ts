@@ -138,10 +138,21 @@ export function isLayoutFinalDiagnostics(
 	const converged = value['converged'];
 	const maximumNormError = value['maximumNormError'];
 	const repulsionMode = value['repulsionMode'];
+	const collisionPasses = value['collisionPasses'];
+	const collisionRemainingOverlapCount =
+		value['collisionRemainingOverlapCount'];
+	const collisionMaximumPenetration =
+		value['collisionMaximumPenetration'];
 	return (
 		typeof converged === 'boolean' &&
 		isFiniteNumber(maximumNormError) &&
-		(repulsionMode === 'exact' || repulsionMode === 'sampled')
+		(repulsionMode === 'exact' || repulsionMode === 'sampled') &&
+		(collisionPasses === undefined ||
+			isFiniteNumber(collisionPasses)) &&
+		(collisionRemainingOverlapCount === undefined ||
+			isFiniteNumber(collisionRemainingOverlapCount)) &&
+		(collisionMaximumPenetration === undefined ||
+			isFiniteNumber(collisionMaximumPenetration))
 	);
 }
 
@@ -161,17 +172,6 @@ function isRefreshPayload(value: unknown): boolean {
 	);
 }
 
-function isTerritoryPayload(value: unknown): boolean {
-	if (!isRecord(value)) {
-		return false;
-	}
-	return (
-		value.centers instanceof Float32Array &&
-		value.maximumDistances instanceof Float32Array &&
-		value.assignedNodeMask instanceof Uint8Array
-	);
-}
-
 function isRunPayload(value: unknown): value is LayoutRunPayload {
 	if (!isRecord(value)) {
 		return false;
@@ -180,11 +180,21 @@ function isRunPayload(value: unknown): value is LayoutRunPayload {
 		value.positions instanceof Float32Array &&
 		value.edgeEndpoints instanceof Uint32Array &&
 		value.edgeWeights instanceof Float32Array &&
+		(value.edgeTargetAngles === undefined ||
+			value.edgeTargetAngles instanceof Float32Array) &&
+		(value.folderIndexByNode === undefined ||
+			value.folderIndexByNode instanceof Int32Array) &&
+		(value.regionIndexByNode === undefined ||
+			value.regionIndexByNode instanceof Int32Array) &&
+		(value.collisionAngularRadii === undefined ||
+			value.collisionAngularRadii instanceof Float32Array) &&
+		(value.coastalPortScores === undefined ||
+			value.coastalPortScores instanceof Float32Array) &&
+		(value.coastalPortDirections === undefined ||
+			value.coastalPortDirections instanceof Float32Array) &&
 		(value.movableMask === undefined ||
 			value.movableMask instanceof Uint8Array) &&
 		(value.refresh === undefined || isRefreshPayload(value.refresh)) &&
-		(value.territory === undefined ||
-			isTerritoryPayload(value.territory)) &&
 		value.geography === undefined &&
 		(value.settings === undefined || isRecord(value.settings))
 	);
@@ -289,12 +299,13 @@ export function getRunRequestTransferables(
 	add(request.payload.positions);
 	add(request.payload.edgeEndpoints);
 	add(request.payload.edgeWeights);
+	add(request.payload.edgeTargetAngles);
+	add(request.payload.folderIndexByNode);
+	add(request.payload.regionIndexByNode);
+	add(request.payload.collisionAngularRadii);
+	add(request.payload.coastalPortScores);
+	add(request.payload.coastalPortDirections);
 	add(request.payload.movableMask);
-	if (request.payload.territory !== undefined) {
-		add(request.payload.territory.centers);
-		add(request.payload.territory.maximumDistances);
-		add(request.payload.territory.assignedNodeMask);
-	}
 	if (request.payload.refresh !== undefined) {
 		add(request.payload.refresh.existingNodeMask);
 		add(request.payload.refresh.newNodeMask);

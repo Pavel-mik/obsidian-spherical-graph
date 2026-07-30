@@ -79,22 +79,22 @@ land geometry is still derived only after the solver has produced and
 validated the final unit-vector buffer:
 
 1. group linked notes by their first path segment;
-2. allocate weighted deterministic folder centers and disjoint outer angular
-   extents on \(S^2\);
-3. split each folder into overlapping asymmetric intrinsic lobes and initialize
-   subfolder cohorts across those lobes;
-4. solve with full same-folder springs, reduced cross-folder springs, a smooth
-   inward territory barrier, and a hard intrinsic safety boundary;
-5. validate and fix the completed note positions;
-6. build adaptive land support for each folder and expand one connected ocean
+2. allocate deterministic macro folder centers on \(S^2\);
+3. split each folder into subdirectory and topology cohorts, grow irregular
+   district centers, and create only an unconstrained starting state;
+4. solve with full same-folder springs, reduced cross-folder springs, bounded
+   graph-distance landmark stress, and folder-centroid coverage;
+5. apply relative coastal-port bias and a marker-aware S² collision projection;
+6. validate and fix the completed note positions;
+7. build adaptive land support for each folder and expand one connected ocean
    to approximately half the surface;
-7. derive render-only coast, beach, and linked-root-note island geometry.
+8. derive render-only coast, beach, and linked-root-note island geometry.
 
-The worker receives only compact numeric per-node lobe centers, masks, and
-varied maximum geodesic distances. It never receives rendered coastlines,
-density rasters, colors, labels, or land ownership. Territory enforcement uses
-a smooth intrinsic restoring force before an intrinsic geodesic safety clamp,
-not a planar or latitude/longitude constraint.
+The worker receives compact owner indexes, explicit sparse target angles,
+render-aware marker radii, port hints, and optional Refresh anchor buffers. It
+never receives rendered coastlines, density rasters, colors, labels, or land
+ownership. No folder boundary is enforced in latitude/longitude, tangent space,
+or by an intrinsic cap.
 
 ### Folder ownership and cross-folder roads
 
@@ -106,7 +106,7 @@ Same-folder edges retain their full spring weight. Edges between top-level
 folders use 14% of their graph weight for layout; edges involving a root note
 use 35%. All edges retain their original weight for rendering, selection, and
 Route Finder. Cross-folder endpoints can therefore approach useful coastal
-directions without collapsing or merging their owning territories.
+directions without letting inter-folder topology dominate the internal layout.
 
 ### Fixed-position cartography
 
@@ -127,20 +127,20 @@ the current folder name.
 ## Deterministic initialization
 
 Initialize and Renew distribute folder centers with a deterministically
-permuted Fibonacci sphere. Territory area is proportional to
-\(n_\mathrm{folder}^{0.8}\), so large folders receive more room without
-monopolizing the globe. Each folder receives one to seven overlapping lobes
-according to its population. Subfolder cohorts remain locally coherent while
-oversized cohorts are deterministically spread across adjacent lobes. Lobe
-centers, radii, node angles, and per-node radial limits use independent seeded
-phases. Nodes inside each lobe are chosen from seeded best-candidate spherical
-cap samples with a local proximity index, rather than a radial or Fibonacci
-sequence. The union stays inside the disjoint outer folder extent without
-forming visible rings. Linked root notes start near the weighted mean of the
-continents they reference. Orphans use seeded random ocean samples with local
-separation and remain hard-fixed during the solve, so coverage regularization
-cannot turn them back into a uniform lattice. Changing a Renew generation
-changes all seeded samples.
+permuted Fibonacci sphere. Within each folder, the first two path segments and
+connected components form stable cohorts; oversized cohorts are split by
+balanced chunks along a deterministic strongest-road depth-first sweep. This
+keeps consecutive members topologically local without manufacturing
+breadth-first distance rings, and uses linear memory instead of one full
+distance buffer per cohort. District centers grow through seeded asymmetric
+tangent steps instead of occupying one common radius. Notes use graph-aware
+seeded best-candidate samples around those districts, so no radial sequence or
+circular boundary is introduced. Candidate budgets shrink for unusually large
+folders while preserving the full visual search for ordinary vaults. Linked
+root notes start near the weighted mean of the continents they reference.
+Orphans use seeded random ocean samples with local separation and remain
+hard-fixed during the solve, so coverage regularization cannot turn them back
+into a uniform lattice. Changing a Renew generation changes all seeded samples.
 
 Refresh begins existing nodes exactly at their committed unit vectors. A new
 node with committed neighbors begins near their weighted spherical mean plus a
@@ -163,9 +163,12 @@ t_{i\rightarrow j}.
 
 The base target angle scales with expected surface spacing,
 \(\sqrt{4\pi/n}\), and is clamped. Edge weight mildly shortens the target and
-strengthens the spring without introducing a singularity. A bounded
-seed-derived multiplier varies otherwise equal target lengths, so the many
-neighbors of one hub do not share one geodesic radius.
+strengthens the spring without introducing a singularity. In addition, a
+constant number of deterministic landmark BFS traversals per region adds sparse
+graph-distance targets for non-adjacent pairs. Each node initiates at most three
+such constraints and each region uses at most eight landmarks, keeping work
+bounded while preventing the many leaves of one hub from sharing one geodesic
+radius.
 
 ## Repulsion
 
@@ -187,7 +190,8 @@ fixed–fixed force pairs.
 ## Coverage regularization
 
 Repulsion alone is supplemented by two rotation-invariant surface-coverage
-energies:
+energies evaluated over top-level folder centroids (with root islands as
+individual samples):
 
 \[
 \mu=\frac1n\sum_i u_i,\qquad E_\mu=\lVert\mu\rVert^2
@@ -200,9 +204,28 @@ C=\frac1n\sum_i u_i u_i^\mathsf{T},\qquad
 E_C=\left\lVert C-\frac13I\right\rVert_F^2.
 \]
 
-Their negative tangent gradients discourage hemisphere collapse and a
-degenerate great-circle distribution. Diagnostics report mean-vector norm and
-second-moment values over the complete current graph.
+Their negative tangent gradients translate folder populations as macro bodies,
+discouraging hemisphere collapse without radially expanding every city in a
+large folder. Diagnostics still report mean-vector norm and second-moment values
+over the complete current graph.
+
+## Port bias and final collision projection
+
+For each continent, external link mass, external share, destination diversity,
+and outgoing directional coherence are converted to peer-relative percentiles.
+Only a bounded, angularly separated set of high-scoring candidates becomes
+ports. Immediately after force convergence, each selected bearing is recomputed
+from the final positions of its real cross-folder neighbors; synthetic sparse
+stress pairs are ignored. The city then moves toward a robust directional
+support quantile of its observed folder shape, capped at a small intrinsic
+angle; no shared continent radius is created.
+
+After port placement, a deterministic Gauss-Seidel projection resolves marker
+overlap directly on \(S^2\). Required separation is the sum of angular radii
+derived from rendered disc size, Globe size, and optional degree scaling.
+Refresh fixed nodes never move, and movable old nodes remain inside their
+geodesic anchor caps. Fixed-fixed conflicts are reported but not falsified by
+moving committed anchors.
 
 ## Refresh preservation
 

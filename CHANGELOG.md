@@ -6,6 +6,55 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-30
+
+### Added
+
+- A bounded sparse-stress layer adds deterministic graph-distance constraints
+  inside directory regions. Hub-and-spoke and tree-like neighborhoods no longer
+  force every equally distant note onto one concentric ring.
+- Final layout validation now includes a deterministic intrinsic S² collision
+  projection whose radii match the actual rendered marker size, current Globe
+  size, and optional degree scaling.
+- Cross-continent roads nominate a small relative set of coastal port cities.
+  Port scoring uses per-continent percentiles, external-link share, destination
+  diversity, and coherent outgoing direction rather than an absolute link
+  threshold.
+
+### Changed
+
+- Directory membership now shapes only the deterministic multi-level starting
+  state and macro coverage. Circular lobe barriers and hard territory clamps
+  were removed, so topology and collision packing can produce irregular urban
+  distributions without a uniform empty coastal inset.
+- Coverage regularization operates on top-level folder centroids instead of
+  treating every note as a separate global sample. Large folders therefore stay
+  coherent rather than expanding into sphere-spanning circular discs.
+- Coast generation places water pressure on the outgoing side of selected port
+  cities and keeps only a small city footprint guaranteed as land. Ordinary
+  cities may now sit naturally close to the beach.
+- Orphan notes remain deterministic seeded ocean scatter and do not participate
+  in continent stress or land support.
+
+### Fixed
+
+- Overlapping flat node markers are separated after force convergence while
+  Refresh hard-fixed nodes and anchor displacement limits remain intact.
+- Selected port bearings are recomputed from converged cross-folder neighbors
+  immediately before coastward placement, so a rotated continent cannot use a
+  stale world-space direction from initialization.
+- Worker validation and transfer lists now cover hierarchy, explicit stress
+  targets, render-aware collision radii, and coastal-port buffers.
+- Large directory cohorts now use a linear strongest-road DFS sweep instead of
+  retaining one whole-vault distance array per cohort. Refresh also computes
+  new orphan positions without rebuilding every continental position, and
+  root-island placement reuses adjacency with adaptive candidate budgets.
+
+### Notes
+
+- The layout algorithm version is now 7. Existing maps receive one automatic
+  Initialize so the clamp-free geography and collision packing take effect.
+
 ## [1.5.1] - 2026-07-29
 
 ### Changed
@@ -332,7 +381,9 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.5.0...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.6.0...HEAD
+[1.6.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.5.1...1.6.0
+[1.5.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.5.0...1.5.1
 [1.5.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.4.0...1.5.0
 [1.4.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.3.1...1.4.0
 [1.3.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.3.0...1.3.1

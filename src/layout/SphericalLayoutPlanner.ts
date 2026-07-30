@@ -1,7 +1,12 @@
 import type { GraphDiff } from '../graph/graphDiff';
 import type { GraphData } from '../graph/graphTypes';
+import { nodeCollisionAngularRadius } from '../geometry/nodeMarkerMetrics';
 import { tryNormalizeVec3, writeVec3 } from '../geometry/vector3';
 import type { PersistedLayoutSnapshot } from '../persistence/layoutState';
+import {
+	autoGlobeSizeForNodeCount,
+	shouldAutoSizeGlobe,
+} from '../settings/autoGlobeSize';
 import type { SphericalGraphSettings } from '../settings/settings';
 import type {
 	LayoutOperationPayload,
@@ -18,8 +23,12 @@ import {
 import {
 	directoryAwareEdgeWeights,
 	directoryFolderIndexByNode,
+	directoryRegionIndexByNode,
 	initializeDirectoryLayout,
+	initializeDirectoryOrphanPositions,
 } from './directoryInitialization';
+import { deriveCoastalPortLayout } from './coastalPortLayout';
+import { buildSparseStressConstraints } from './sparseStress';
 import { topLevelFolder } from '../geography/directorySemantics';
 import type {
 	RefreshConstraints,
@@ -65,6 +74,63 @@ function solverSettings(
 			settings.layout.progressReportIntervalMs,
 		refreshWarmupIterations:
 			settings.refresh.newNodeWarmupIterations,
+	};
+}
+
+function collisionAngularRadii(
+	graph: GraphData,
+	settings: SphericalGraphSettings,
+	mode: LayoutPlanContext['mode'],
+): Float32Array {
+	const globeSize = shouldAutoSizeGlobe(mode)
+		? autoGlobeSizeForNodeCount(graph.nodes.length)
+		: settings.appearance.globeSize;
+	return Float32Array.from(graph.nodes, (node) =>
+		nodeCollisionAngularRadius(
+			globeSize,
+			node.degree,
+			settings.appearance.sizeNodesByDegree,
+		),
+	);
+}
+
+function solverGraphBuffers(
+	graph: GraphData,
+	positions: Float32Array,
+	folderIndexByNode: Int32Array,
+	regionIndexByNode: Int32Array,
+	effectiveSeed: number,
+): {
+	readonly edgeEndpoints: Uint32Array;
+	readonly edgeWeights: Float32Array;
+	readonly edgeTargetAngles: Float32Array;
+	readonly coastalPortScores: Float32Array;
+	readonly coastalPortDirections: Float32Array;
+} {
+	const raw = graphBuffers(graph);
+	const sparse = buildSparseStressConstraints({
+		nodeCount: graph.nodes.length,
+		edgeEndpoints: raw.edgeEndpoints,
+		edgeWeights: directoryAwareEdgeWeights(
+			graph,
+			folderIndexByNode,
+		),
+		positions,
+		folderIndexByNode,
+		regionIndexByNode,
+		seed: effectiveSeed,
+	});
+	const ports = deriveCoastalPortLayout(
+		graph,
+		positions,
+		folderIndexByNode,
+	);
+	return {
+		edgeEndpoints: sparse.edgeEndpoints,
+		edgeWeights: sparse.edgeWeights,
+		edgeTargetAngles: sparse.targetAngles,
+		coastalPortScores: ports.portScores,
+		coastalPortDirections: ports.portDirections,
 	};
 }
 
@@ -159,12 +225,12 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 	createPayload(context: LayoutPlanContext): LayoutOperationPayload {
 		const settings = this.getSettings();
 		const { graph } = context;
-		const buffers = graphBuffers(graph);
-		const directoryEdgeWeights = directoryAwareEdgeWeights(
-			graph,
-			directoryFolderIndexByNode(graph),
-		);
 		const resolvedSettings = solverSettings(settings);
+		const collisionRadii = collisionAngularRadii(
+			graph,
+			settings,
+			context.mode,
+		);
 
 		if (context.mode !== 'refresh') {
 			this.latestRefreshPlan = null;
@@ -176,19 +242,38 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 				graph,
 				context.effectiveSeed,
 			);
+			const solverGraph = solverGraphBuffers(
+				graph,
+				initialized.positions,
+				initialized.folderIndexByNode,
+				initialized.regionIndexByNode,
+				context.effectiveSeed,
+			);
 			return {
 				positions: initialized.positions,
-				edgeEndpoints: buffers.edgeEndpoints,
-				edgeWeights: directoryAwareEdgeWeights(
-					graph,
-					initialized.folderIndexByNode,
-				),
+				edgeEndpoints: solverGraph.edgeEndpoints,
+				edgeWeights: solverGraph.edgeWeights,
+				edgeTargetAngles: solverGraph.edgeTargetAngles,
+				folderIndexByNode: initialized.folderIndexByNode,
+				regionIndexByNode: initialized.regionIndexByNode,
+				collisionAngularRadii: collisionRadii,
+				coastalPortScores: solverGraph.coastalPortScores,
+				coastalPortDirections:
+					solverGraph.coastalPortDirections,
 				movableMask,
-				territory: initialized.territory,
 				settings: resolvedSettings,
 			};
 		}
 
+		const buffers = graphBuffers(graph);
+		const folderIndexByNode =
+			directoryFolderIndexByNode(graph);
+		const regionIndexByNode =
+			directoryRegionIndexByNode(graph);
+		const directoryEdgeWeights = directoryAwareEdgeWeights(
+			graph,
+			folderIndexByNode,
+		);
 		const snapshot = context.committedSnapshot;
 		const diff = context.diff;
 		if (
@@ -221,7 +306,7 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 			}
 		}
 		if (hasNewOrphans) {
-			const directoryInitialized = initializeDirectoryLayout(
+			const orphanPositions = initializeDirectoryOrphanPositions(
 				graph,
 				context.effectiveSeed,
 			);
@@ -229,13 +314,10 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 				if (newOrphanMask[index] !== 1) {
 					continue;
 				}
-				const offset = index * 3;
-				initialized.positions[offset] =
-					directoryInitialized.positions[offset] ?? 0;
-				initialized.positions[offset + 1] =
-					directoryInitialized.positions[offset + 1] ?? 0;
-				initialized.positions[offset + 2] =
-					directoryInitialized.positions[offset + 2] ?? 0;
+				const position = orphanPositions.get(index);
+				if (position !== undefined) {
+					writeVec3(initialized.positions, index, position);
+				}
 			}
 		}
 		const plan = createRefreshPlan({
@@ -275,15 +357,29 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 			newNodeMask,
 			relaxationMovableMask,
 			anchorPositions: initialized.positions.slice(),
-			anchorStrengths: plan.anchorStrengths,
-			maxAnchorDistances: plan.maxAnchorDistances,
+			anchorStrengths: plan.anchorStrengths.slice(),
+			maxAnchorDistances: plan.maxAnchorDistances.slice(),
 			alignToAnchors:
 				existingCount > 0 && hardFixedCount === 0,
 		};
+		const solverGraph = solverGraphBuffers(
+			graph,
+			initialized.positions,
+			folderIndexByNode,
+			regionIndexByNode,
+			context.effectiveSeed,
+		);
 		return {
 			positions: initialized.positions,
-			edgeEndpoints: buffers.edgeEndpoints,
-			edgeWeights: directoryEdgeWeights,
+			edgeEndpoints: solverGraph.edgeEndpoints,
+			edgeWeights: solverGraph.edgeWeights,
+			edgeTargetAngles: solverGraph.edgeTargetAngles,
+			folderIndexByNode,
+			regionIndexByNode,
+			collisionAngularRadii: collisionRadii,
+			coastalPortScores: solverGraph.coastalPortScores,
+			coastalPortDirections:
+				solverGraph.coastalPortDirections,
 			refresh,
 			settings: resolvedSettings,
 		};

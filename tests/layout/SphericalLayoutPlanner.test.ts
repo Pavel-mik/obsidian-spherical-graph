@@ -127,9 +127,11 @@ describe('SphericalLayoutPlanner integration', () => {
 		);
 		expect(first.edgeEndpoints).toEqual(new Uint32Array([0, 1, 1, 2]));
 		expect(first.edgeWeights).toEqual(new Float32Array([1, 0.14]));
-		expect(first.territory?.assignedNodeMask).toEqual(
-			new Uint8Array([1, 1, 1]),
+		expect(first.folderIndexByNode).toEqual(
+			new Int32Array([0, 0, 1]),
 		);
+		expect(first.regionIndexByNode).toBeInstanceOf(Int32Array);
+		expect(first.collisionAngularRadii).toHaveLength(3);
 		expect(first.refresh).toBeUndefined();
 		expect('geography' in first).toBe(false);
 
@@ -145,7 +147,7 @@ describe('SphericalLayoutPlanner integration', () => {
 		expect('geography' in initialized).toBe(false);
 	});
 
-	it('keeps directory territories separated by ocean and root notes outside them', () => {
+	it('uses folders and regions as initialization hints while root notes stay ocean islands', () => {
 		const current = graph(
 			[
 				'Books/a.md',
@@ -165,43 +167,19 @@ describe('SphericalLayoutPlanner integration', () => {
 			],
 		);
 		const initialized = initializeDirectoryLayout(current, 17);
-		const territory = initialized.territory;
-		const representatives = [0, 2, 3];
-		for (let left = 0; left < representatives.length; left += 1) {
-			for (let right = left + 1; right < representatives.length; right += 1) {
-				const leftNode = representatives[left];
-				const rightNode = representatives[right];
-				if (leftNode === undefined || rightNode === undefined) {
-					continue;
-				}
-				expect(
-					geodesicDistance(
-						readVec3(territory.centers, leftNode),
-						readVec3(territory.centers, rightNode),
-					),
-				).toBeGreaterThanOrEqual(
-					(territory.maximumDistances[leftNode] ?? 0) +
-						(territory.maximumDistances[rightNode] ?? 0) +
-						0.075,
-				);
-			}
-		}
-
-		const rootPosition = readVec3(initialized.positions, 6);
-		for (const representative of representatives) {
-			expect(
-				geodesicDistance(
-					rootPosition,
-					readVec3(territory.centers, representative),
-				),
-			).toBeGreaterThan(
-				(territory.maximumDistances[representative] ?? 0) + 0.075,
-			);
-		}
-		expect(territory.assignedNodeMask[6]).toBe(0);
+		expect(initialized.folderIndexByNode).toEqual(
+			new Int32Array([0, 0, 2, 1, 1, 1, -1]),
+		);
+		expect(initialized.regionIndexByNode[6]).toBe(-1);
+		expect(
+			geodesicDistance(
+				readVec3(initialized.positions, 0),
+				readVec3(initialized.positions, 3),
+			),
+		).toBeGreaterThan(0.2);
 	});
 
-	it('splits a large folder into an irregular compound territory', () => {
+	it('splits a large folder into deterministic irregular topology regions', () => {
 		const nodeCount = 81;
 		const paths = Array.from(
 			{ length: nodeCount },
@@ -220,33 +198,24 @@ describe('SphericalLayoutPlanner integration', () => {
 			graph(paths, edges),
 			29,
 		);
-		const centers = new Set<string>();
-		let minimumRadius = Number.POSITIVE_INFINITY;
-		let maximumRadius = 0;
+		const regions = new Set<number>();
+		const distances: number[] = [];
 		for (let index = 0; index < nodeCount; index += 1) {
-			const territoryCenter = readVec3(
-				initialized.territory.centers,
-				index,
-			);
-			centers.add(
-				territoryCenter
-					.map((value) => value.toFixed(4))
-					.join('|'),
-			);
-			const radius =
-				initialized.territory.maximumDistances[index] ?? 0;
-			minimumRadius = Math.min(minimumRadius, radius);
-			maximumRadius = Math.max(maximumRadius, radius);
-			expect(
-				geodesicDistance(
-					territoryCenter,
-					readVec3(initialized.positions, index),
-				),
-			).toBeLessThanOrEqual(radius + 1e-6);
+			regions.add(initialized.regionIndexByNode[index] ?? -1);
+			if (index > 0) {
+				distances.push(
+					geodesicDistance(
+						readVec3(initialized.positions, 0),
+						readVec3(initialized.positions, index),
+					),
+				);
+			}
 		}
 
-		expect(centers.size).toBeGreaterThanOrEqual(3);
-		expect(maximumRadius - minimumRadius).toBeGreaterThan(0.035);
+		expect(regions.size).toBeGreaterThanOrEqual(3);
+		expect(
+			new Set(distances.map((distance) => distance.toFixed(3))).size,
+		).toBeGreaterThan(12);
 		expect(
 			initializeDirectoryLayout(graph(paths, edges), 29).positions,
 		).toEqual(initialized.positions);
@@ -356,6 +325,20 @@ describe('SphericalLayoutPlanner integration', () => {
 		);
 		expect(payload.refresh?.anchorPositions).not.toBe(
 			payload.positions,
+		);
+		const refreshPlan = planner.lastRefreshPlan;
+		expect(refreshPlan).not.toBeNull();
+		expect(payload.refresh?.anchorStrengths).not.toBe(
+			refreshPlan?.anchorStrengths,
+		);
+		expect(payload.refresh?.maxAnchorDistances).not.toBe(
+			refreshPlan?.maxAnchorDistances,
+		);
+		expect(payload.refresh?.anchorStrengths).toEqual(
+			refreshPlan?.anchorStrengths,
+		);
+		expect(payload.refresh?.maxAnchorDistances).toEqual(
+			refreshPlan?.maxAnchorDistances,
 		);
 		expect('geography' in payload).toBe(false);
 	});

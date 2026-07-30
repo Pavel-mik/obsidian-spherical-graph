@@ -39,11 +39,13 @@ flowchart LR
   selection regions, linked-root-note islands, and orphan water markers. After
   a completed solve it re-derives centers, diagnostic extents, conductance,
   stable identity/color matching, and the persisted geography descriptor.
-- `src/layout` owns directory-aware intrinsic initialization, reduced
-  cross-folder spring weights, hard geodesic territory constraints, force
-  evaluation, exact and sampled repulsion, Refresh planning and anchoring, the
-  batch solver, worker protocol, worker entry point, and the lifecycle state
-  machine. Render-time land ownership never feeds back into the solver.
+- `src/layout` owns directory-aware multi-level initialization, reduced
+  cross-folder spring weights, bounded sparse graph-distance stress,
+  folder-centroid coverage, relative coastal-port placement, render-aware S²
+  collision projection, exact and sampled repulsion, Refresh planning and
+  anchoring, the batch solver, worker protocol, worker entry point, and the
+  lifecycle state machine. Render-time land ownership never feeds back into the
+  solver.
 - `src/persistence` validates untrusted stored data, migrates schema versions,
   reconciles current paths with a committed snapshot, and serializes atomic
   layout commits separately from debounced settings/camera writes.
@@ -98,10 +100,11 @@ have no active worker or solver.
 
 The renderer and data store reference only the last committed snapshot.
 Starting Initialize, Refresh, or Renew creates independent typed arrays:
-positions, velocities, forces, graph endpoints and weights, movable masks,
-and optional Refresh anchors. Geographic arrays do not exist in the solver
-payload. These working arrays are never written to persistence or passed to
-the renderer.
+positions, velocities, forces, graph endpoints and weights, sparse target
+angles, directory/region indexes, collision radii, port hints, movable masks,
+and optional Refresh anchors. Render-time land rasters and coastlines do not
+exist in the solver payload. These working arrays are never written to
+persistence or passed to the renderer.
 
 Progress contains scalar diagnostics. A `completed` message contains the first
 and only position buffer transfer. The main thread validates:
@@ -158,11 +161,20 @@ cancellation, and validation semantics.
 ## Directory geography pipeline
 
 The first path segment is the authoritative continent key. Initialize and Renew
-allocate deterministic weighted outer spherical territories, decompose each
-folder into one to seven overlapping asymmetric lobes, place subfolder cohorts
-across those lobes, retain full same-folder springs, reduce cross-folder
-springs, and clamp assigned nodes to their per-node lobe after every intrinsic
-integration step. Root notes and orphans are unconstrained.
+allocate deterministic macro centers, split folders into subdirectory and
+topology cohorts with a linear strongest-road DFS sweep, grow irregular district
+centers, and adaptively best-candidate-place notes without emitting any hard
+territory. Same-folder springs retain full weight, cross-folder springs are
+reduced, bounded landmark constraints preserve longer graph distances, and
+coverage acts on folder centroids. Root notes are islands; orphans are seeded
+ocean scatter. Refresh uses an orphan-only initializer when that is the only
+new placement it needs.
+
+After force convergence, relative inter-folder link evidence moves only a small,
+directionally coherent set of port cities toward the observed edge of their
+own folder distribution. A deterministic S² projection then resolves remaining
+marker overlap using radii derived from the current visual Globe size. Refresh
+fixed masks and anchor cones are enforced by both post-processes.
 
 After validation, `postLayoutGeography` groups all linked folder notes by their
 top-level path, makes linked root notes islands, and omits orphans from land.
