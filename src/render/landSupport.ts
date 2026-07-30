@@ -20,17 +20,18 @@ import {
 	selectSeparatedCoastalPorts,
 	type CoastalPortCandidateInput,
 } from '../geography/coastalPorts';
-import { coastalPortSelectionOptions } from '../layout/coastalPortLayout';
 import {
 	createIntrinsicSphericalGrid,
 	gridSubdivisionForSpacing,
 	mapPositionsToGrid,
 	type IntrinsicSphericalGrid,
 } from '../geography/sphericalGrid';
+import { coastalPortSelectionOptions } from '../layout/coastalPortLayout';
 import type {
 	RenderEdge,
 	RenderGeography,
 } from './renderTypes';
+import { adaptiveBandwidths } from './adaptiveBandwidth';
 
 const DENSITY_BUCKET_CELL_SIZE = 0.12;
 const RASTER_BUCKET_CELL_SIZE = 0.08;
@@ -52,9 +53,19 @@ const BOUNDARY_NOISE_BAND = 0.052;
 const BOUNDARY_SEARCH_RADIUS = 0.14;
 const SUPPORT_DISTANCE_CAP = 0.2;
 const TARGET_VISIBLE_OCEAN_FRACTION = 0.52;
+const LAND_PREFILL_OCEAN_BUFFER = 0.05;
+const LAND_EXPANSION_BATCH_SIZE = 128;
+const OCEAN_EROSION_BATCH_SIZE = 64;
+const MAX_LAND_PREFILL_INITIAL_OCEAN_FRACTION = 0.72;
 const APPROXIMATE_ROOT_ISLAND_AREA_FRACTION = 0.0008;
 const MAXIMUM_ISLAND_OCEAN_COMPENSATION = 0.12;
 const ORGANIC_COAST_BIAS_WEIGHT = 0.16;
+const COASTAL_COMPACTNESS_WEIGHT = 0.75;
+const SOFT_PORT_APPROACH_SHIFT = 0.075;
+const SOFT_PORT_INFLUENCE_RADIUS = 0.2;
+const SOFT_PORT_EROSION_BIAS_WEIGHT = 0.9;
+const SOFT_PORT_MINIMUM_FRONTIER_BIAS = 0.045;
+const SOFT_PORT_MAXIMUM_CELLS_PER_PORT = 4;
 
 interface DensityAnchor {
 	readonly direction: Vec3;
@@ -75,6 +86,12 @@ interface MemberNode {
 
 interface WaterSeed {
 	readonly direction: Vec3;
+}
+
+interface CoastalPreference {
+	readonly direction: Vec3;
+	readonly owner: number;
+	readonly score: number;
 }
 
 interface RasterPoint {
@@ -99,13 +116,16 @@ interface MutableBuckets<T> {
 
 interface LandRaster {
 	readonly grid: IntrinsicSphericalGrid;
+	readonly ownerCount: number;
 	readonly ownerByCell: Int32Array;
+	readonly protectedOwnerByCell: Int32Array;
 	readonly connectedOcean: Uint8Array;
 	readonly boundaryBand: Uint8Array;
 	readonly bestDensity: Float32Array;
 	readonly rasterPoints: SpatialBuckets<RasterPoint>;
 	readonly boundaries: readonly BoundarySample[];
 	readonly boundaryBuckets: SpatialBuckets<BoundarySample>;
+	readonly expandedLandCellCount: number;
 }
 
 export interface LandSupportModel {
@@ -132,6 +152,11 @@ export interface LandSupportDiagnostics {
 	readonly connectedOceanCellCount: number;
 	readonly connectedOceanFraction: number;
 	readonly landCellCount: number;
+	readonly protectedLandCellCount: number;
+	readonly expandedLandCellCount: number;
+	readonly enclosedWaterCellCount: number;
+	readonly ownerComponentCounts: readonly number[];
+	readonly disconnectedContinentCount: number;
 }
 
 interface SeaComponent {
@@ -277,17 +302,6 @@ function semanticAssignments(
 	return assignments;
 }
 
-function median(values: readonly number[]): number {
-	if (values.length === 0) {
-		return 0;
-	}
-	const sorted = [...values].sort((left, right) => left - right);
-	const middle = Math.floor(sorted.length / 2);
-	return sorted.length % 2 === 0
-		? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
-		: (sorted[middle] ?? 0);
-}
-
 function ownerMemberDirections(
 	geography: RenderGeography,
 	positions: Float32Array,
@@ -312,35 +326,6 @@ function ownerMemberDirections(
 	);
 }
 
-function adaptiveBandwidth(
-	direction: Vec3,
-	ownerMembers: readonly { readonly direction: Vec3 }[],
-): number {
-	if (ownerMembers.length <= 1) {
-		return SINGLE_NODE_BANDWIDTH;
-	}
-	const distances = ownerMembers
-		.map((member) => geodesicDistance(direction, member.direction))
-		.filter((distance) => distance > 1e-7)
-		.sort((left, right) => left - right);
-	if (distances.length === 0) {
-		return SINGLE_NODE_BANDWIDTH;
-	}
-	if (ownerMembers.length === 2) {
-		return clamp(
-			(distances[0] ?? 0.35) * 0.22,
-			0.068,
-			0.085,
-		);
-	}
-	const retained = distances.slice(0, Math.min(4, distances.length));
-	return clamp(
-		median(retained) * 0.62,
-		MIN_NODE_BANDWIDTH,
-		MAX_NODE_BANDWIDTH,
-	);
-}
-
 function createMemberAnchors(
 	geography: RenderGeography,
 	positions: Float32Array,
@@ -361,8 +346,22 @@ function createMemberAnchors(
 	const bandwidthByNode = new Float64Array(positions.length / 3);
 	for (let owner = 0; owner < ownerMembers.length; owner += 1) {
 		const entries = ownerMembers[owner] ?? [];
-		for (const entry of entries) {
-			const baseBandwidth = adaptiveBandwidth(entry.direction, entries);
+		const baseBandwidths = adaptiveBandwidths(entries, {
+			minimum: MIN_NODE_BANDWIDTH,
+			maximum: MAX_NODE_BANDWIDTH,
+			singleMember: SINGLE_NODE_BANDWIDTH,
+		}).bandwidths;
+		for (
+			let entryOffset = 0;
+			entryOffset < entries.length;
+			entryOffset += 1
+		) {
+			const entry = entries[entryOffset];
+			if (entry === undefined) {
+				continue;
+			}
+			const baseBandwidth =
+				baseBandwidths[entryOffset] ?? SINGLE_NODE_BANDWIDTH;
 			const variation =
 				0.99 +
 				hashToSignedUnitFloat(seed, owner, entry.nodeIndex, 0xb4ad) *
@@ -595,37 +594,65 @@ function createWaterSeeds(
 			});
 		}
 	}
-	const ownerMembers = new Map<number, number[]>();
+	return seeds;
+}
+
+/**
+ * Converts the same relative inter-folder evidence used by the layout port
+ * adapter into a bounded coastline preference. Unlike a water seed, this does
+ * not mark any cell as water: it can only change the order in which the
+ * already connected external ocean consumes removable frontier cells.
+ */
+function createCoastalPreferences(
+	positions: Float32Array,
+	edges: readonly RenderEdge[],
+	assignments: Int32Array,
+): SpatialBuckets<CoastalPreference> {
+	const nodeCount = positions.length / 3;
+	const preferences = createBuckets<CoastalPreference>(
+		DENSITY_BUCKET_CELL_SIZE,
+	);
+	const membersByOwner = new Map<number, number[]>();
 	for (let nodeIndex = 0; nodeIndex < nodeCount; nodeIndex += 1) {
 		const owner = assignments[nodeIndex] ?? -1;
 		if (owner < 0) {
 			continue;
 		}
-		const members = ownerMembers.get(owner);
+		const members = membersByOwner.get(owner);
 		if (members === undefined) {
-			ownerMembers.set(owner, [nodeIndex]);
+			membersByOwner.set(owner, [nodeIndex]);
 		} else {
 			members.push(nodeIndex);
 		}
 	}
-	const ownerCenters = new Map<number, Vec3>();
-	for (const [owner, members] of ownerMembers) {
+	const centerByOwner = new Map<number, Vec3>();
+	for (const [owner, members] of membersByOwner) {
 		const directions = members.map((nodeIndex) =>
 			normalizeVec3(readVec3(positions, nodeIndex)),
 		);
-		ownerCenters.set(
+		centerByOwner.set(
 			owner,
 			sphericalWeightedMean(directions) ??
 				directions[0] ??
 				[1, 0, 0],
 		);
 	}
+
 	const incidentWeights = new Float64Array(nodeCount);
 	const externalTargets = Array.from(
 		{ length: nodeCount },
 		(): CoastalPortCandidateInput['externalTargets'][number][] => [],
 	);
+	let hasCrossOwnerEdge = false;
 	for (const edge of edges) {
+		if (
+			edge.source < 0 ||
+			edge.target < 0 ||
+			edge.source >= nodeCount ||
+			edge.target >= nodeCount
+		) {
+			continue;
+		}
 		const sourceOwner = assignments[edge.source] ?? -1;
 		const targetOwner = assignments[edge.target] ?? -1;
 		const weight = Math.max(0, edge.weight);
@@ -634,61 +661,64 @@ function createWaterSeeds(
 		incidentWeights[edge.target] =
 			(incidentWeights[edge.target] ?? 0) + weight;
 		if (
-			sourceOwner >= 0 &&
-			targetOwner >= 0 &&
-			sourceOwner !== targetOwner
+			sourceOwner < 0 ||
+			targetOwner < 0 ||
+			sourceOwner === targetOwner
 		) {
-			externalTargets[edge.source]?.push({
-				destinationContinentId: targetOwner.toString(),
-				weight,
-				direction:
-					ownerCenters.get(targetOwner) ??
-					normalizeVec3(readVec3(positions, edge.target)),
-			});
-			externalTargets[edge.target]?.push({
-				destinationContinentId: sourceOwner.toString(),
-				weight,
-				direction:
-					ownerCenters.get(sourceOwner) ??
-					normalizeVec3(readVec3(positions, edge.source)),
-			});
+			continue;
 		}
+		hasCrossOwnerEdge = true;
+		externalTargets[edge.source]?.push({
+			destinationContinentId: targetOwner.toString(),
+			weight,
+			direction:
+				centerByOwner.get(targetOwner) ??
+				normalizeVec3(readVec3(positions, edge.target)),
+		});
+		externalTargets[edge.target]?.push({
+			destinationContinentId: sourceOwner.toString(),
+			weight,
+			direction:
+				centerByOwner.get(sourceOwner) ??
+				normalizeVec3(readVec3(positions, edge.source)),
+		});
 	}
-	const portInputs: CoastalPortCandidateInput[] = [];
+	if (!hasCrossOwnerEdge) {
+		return preferences;
+	}
+
+	const inputs: CoastalPortCandidateInput[] = [];
 	for (let nodeIndex = 0; nodeIndex < nodeCount; nodeIndex += 1) {
 		const owner = assignments[nodeIndex] ?? -1;
 		if (owner < 0) {
 			continue;
 		}
-		portInputs.push({
+		inputs.push({
 			nodeId: nodeIndex.toString(),
 			continentId: owner.toString(),
-			position: normalizeVec3(
-				readVec3(positions, nodeIndex),
-			),
+			position: normalizeVec3(readVec3(positions, nodeIndex)),
 			continentCenter:
-				ownerCenters.get(owner) ??
+				centerByOwner.get(owner) ??
 				normalizeVec3(readVec3(positions, nodeIndex)),
-			totalIncidentWeight:
-				incidentWeights[nodeIndex] ?? 0,
+			totalIncidentWeight: incidentWeights[nodeIndex] ?? 0,
 			externalTargets: externalTargets[nodeIndex] ?? [],
 		});
 	}
-	const candidates = scoreCoastalPortCandidates(portInputs);
+
 	const candidatesByOwner = new Map<
 		number,
-		(typeof candidates)[number][]
+		ReturnType<typeof scoreCoastalPortCandidates>[number][]
 	>();
-	for (const candidate of candidates) {
+	for (const candidate of scoreCoastalPortCandidates(inputs)) {
 		const owner = Number(candidate.continentId);
-		const entries = candidatesByOwner.get(owner);
-		if (entries === undefined) {
+		const candidates = candidatesByOwner.get(owner);
+		if (candidates === undefined) {
 			candidatesByOwner.set(owner, [candidate]);
 		} else {
-			entries.push(candidate);
+			candidates.push(candidate);
 		}
 	}
-	for (const [owner, members] of ownerMembers) {
+	for (const [owner, members] of membersByOwner) {
 		const selected = selectSeparatedCoastalPorts(
 			candidatesByOwner.get(owner) ?? [],
 			coastalPortSelectionOptions(members.length),
@@ -697,18 +727,20 @@ function createWaterSeeds(
 			if (port.preferredTangentDirection === null) {
 				continue;
 			}
-			addToBuckets(seeds, {
+			addToBuckets(preferences, {
 				direction: exponentialMap(
 					port.position,
 					scaleVec3(
 						port.preferredTangentDirection,
-						WATER_SEED_RADIUS * 0.92,
+						SOFT_PORT_APPROACH_SHIFT,
 					),
 				),
+				owner,
+				score: clamp(port.score, 0, 1),
 			});
 		}
 	}
-	return seeds;
+	return preferences;
 }
 
 function compactKernelFromChordSquared(
@@ -863,10 +895,12 @@ function forcedOwnersByCell(
 	grid: IntrinsicSphericalGrid,
 	positions: Float32Array,
 	assignments: Int32Array,
-	densities: readonly Float32Array[],
 ): Int32Array {
 	const nodeCells = mapPositionsToGrid(grid, positions);
 	const forced = new Int32Array(grid.vertices.length);
+	const visitMarks = new Uint32Array(grid.vertices.length);
+	const queue = new Int32Array(grid.vertices.length);
+	let visitStamp = 0;
 	forced.fill(-1);
 	for (let nodeIndex = 0; nodeIndex < nodeCells.length; nodeIndex += 1) {
 		const owner = assignments[nodeIndex] ?? -2;
@@ -875,12 +909,39 @@ function forcedOwnersByCell(
 			continue;
 		}
 		const previous = forced[cell] ?? -1;
-		if (
-			previous < 0 ||
-			(densities[owner]?.[cell] ?? 0) >
-				(densities[previous]?.[cell] ?? 0)
-		) {
+		if (previous < 0 || previous === owner) {
 			forced[cell] = owner;
+			continue;
+		}
+		visitStamp += 1;
+		if (visitStamp === 0xffffffff) {
+			visitMarks.fill(0);
+			visitStamp = 1;
+		}
+		let queueLength = 1;
+		queue[0] = cell;
+		visitMarks[cell] = visitStamp;
+		let replacement = -1;
+		for (let cursor = 0; cursor < queueLength; cursor += 1) {
+			const candidate = queue[cursor] ?? -1;
+			if (candidate < 0) {
+				continue;
+			}
+			const candidateOwner = forced[candidate] ?? -1;
+			if (candidateOwner < 0 || candidateOwner === owner) {
+				replacement = candidate;
+				break;
+			}
+			for (const neighbor of grid.neighbors[candidate] ?? []) {
+				if (visitMarks[neighbor] !== visitStamp) {
+					visitMarks[neighbor] = visitStamp;
+					queue[queueLength] = neighbor;
+					queueLength += 1;
+				}
+			}
+		}
+		if (replacement >= 0) {
+			forced[replacement] = owner;
 		}
 	}
 	return forced;
@@ -969,6 +1030,346 @@ function growLandOwners(
 		}
 	}
 	return { owners: separated, waterLocks };
+}
+
+interface PathQueueEntry {
+	readonly cell: number;
+	readonly cost: number;
+}
+
+function pushPathQueue(
+	queue: PathQueueEntry[],
+	entry: PathQueueEntry,
+): void {
+	queue.push(entry);
+	let index = queue.length - 1;
+	while (index > 0) {
+		const parentIndex = Math.floor((index - 1) / 2);
+		const parent = queue[parentIndex];
+		if (
+			parent !== undefined &&
+			(parent.cost < entry.cost ||
+				(parent.cost === entry.cost && parent.cell <= entry.cell))
+		) {
+			break;
+		}
+		queue[index] = parent ?? entry;
+		index = parentIndex;
+	}
+	queue[index] = entry;
+}
+
+function popPathQueue(
+	queue: PathQueueEntry[],
+): PathQueueEntry | undefined {
+	const first = queue[0];
+	const tail = queue.pop();
+	if (first === undefined || tail === undefined || queue.length === 0) {
+		return first;
+	}
+	let index = 0;
+	while (true) {
+		const leftIndex = index * 2 + 1;
+		const rightIndex = leftIndex + 1;
+		const left = queue[leftIndex];
+		const right = queue[rightIndex];
+		if (left === undefined) {
+			break;
+		}
+		const childIndex =
+			right !== undefined &&
+			(right.cost < left.cost ||
+				(right.cost === left.cost && right.cell < left.cell))
+				? rightIndex
+				: leftIndex;
+		const child = queue[childIndex];
+		if (
+			child === undefined ||
+			tail.cost < child.cost ||
+			(tail.cost === child.cost && tail.cell <= child.cell)
+		) {
+			break;
+		}
+		queue[index] = child;
+		index = childIndex;
+	}
+	queue[index] = tail;
+	return first;
+}
+
+function pruneUnanchoredOwnerComponents(
+	grid: IntrinsicSphericalGrid,
+	owners: Int32Array,
+	requiredOwnerByCell: Int32Array,
+): void {
+	const seen = new Uint8Array(owners.length);
+	for (let start = 0; start < owners.length; start += 1) {
+		const owner = owners[start] ?? -1;
+		if (owner < 0 || seen[start] === 1) {
+			continue;
+		}
+		const cells: number[] = [];
+		const queue = [start];
+		let anchored = false;
+		seen[start] = 1;
+		for (let cursor = 0; cursor < queue.length; cursor += 1) {
+			const cell = queue[cursor];
+			if (cell === undefined) {
+				continue;
+			}
+			cells.push(cell);
+			anchored ||= (requiredOwnerByCell[cell] ?? -1) === owner;
+			for (const neighbor of grid.neighbors[cell] ?? []) {
+				if (
+					seen[neighbor] === 0 &&
+					(owners[neighbor] ?? -1) === owner
+				) {
+					seen[neighbor] = 1;
+					queue.push(neighbor);
+				}
+			}
+		}
+		if (!anchored) {
+			for (const cell of cells) {
+				owners[cell] = -1;
+			}
+		}
+	}
+}
+
+function pathStepCost(
+	cell: number,
+	owner: number,
+	owners: Int32Array,
+	ownerDensity: Float32Array | undefined,
+	waterLocks: Uint8Array,
+	seed: number,
+): number {
+	const density = Math.log1p(ownerDensity?.[cell] ?? 0);
+	const organic =
+		(hashNumbers(seed, owner, cell, 0xbac) % 1000) / 1000;
+	if ((owners[cell] ?? -1) === owner) {
+		return 0.08 + 0.16 / (1 + density) + organic * 0.025;
+	}
+	const foreignLandPenalty = (owners[cell] ?? -1) >= 0 ? 2.4 : 0;
+	return (
+		0.9 +
+		0.5 / (1 + density) +
+		foreignLandPenalty +
+		(waterLocks[cell] === 1 ? 4 : 0) +
+		organic * 0.08
+	);
+}
+
+/**
+ * Directory ownership is semantic: every member of one top-level directory
+ * belongs to one continent even when the note graph has disconnected pieces.
+ * A deterministic least-cost tree on the bounded spherical raster turns that
+ * rule into a protected land invariant without imposing a circular cap.
+ */
+function connectDirectoryLand(
+	grid: IntrinsicSphericalGrid,
+	owners: Int32Array,
+	forced: Int32Array,
+	waterLocks: Uint8Array,
+	densities: readonly Float32Array[],
+	ownerCount: number,
+	seed: number,
+): Int32Array {
+	const protectedOwners = new Int32Array(owners.length);
+	protectedOwners.fill(-1);
+	for (let cell = 0; cell < forced.length; cell += 1) {
+		const owner = forced[cell] ?? -1;
+		if (owner >= 0) {
+			protectedOwners[cell] = owner;
+			owners[cell] = owner;
+			waterLocks[cell] = 0;
+		}
+	}
+	for (let owner = 0; owner < ownerCount; owner += 1) {
+		const terminals: number[] = [];
+		for (let cell = 0; cell < forced.length; cell += 1) {
+			if ((forced[cell] ?? -1) === owner) {
+				terminals.push(cell);
+			}
+		}
+		if (terminals.length <= 1) {
+			continue;
+		}
+		const ownerDensity = densities[owner];
+		const distances = new Float64Array(grid.vertices.length);
+		distances.fill(Number.POSITIVE_INFINITY);
+		const parents = new Int32Array(grid.vertices.length);
+		parents.fill(-1);
+		const sourceByCell = new Int32Array(grid.vertices.length);
+		sourceByCell.fill(-1);
+		const queue: PathQueueEntry[] = [];
+		for (let sourceIndex = 0; sourceIndex < terminals.length; sourceIndex += 1) {
+			const terminal = terminals[sourceIndex];
+			if (terminal === undefined) {
+				continue;
+			}
+			distances[terminal] = 0;
+			sourceByCell[terminal] = sourceIndex;
+			pushPathQueue(queue, { cell: terminal, cost: 0 });
+		}
+		while (queue.length > 0) {
+			const current = popPathQueue(queue);
+			if (
+				current === undefined ||
+				current.cost > (distances[current.cell] ?? Infinity) + 1e-12
+			) {
+				continue;
+			}
+			const currentSource = sourceByCell[current.cell] ?? -1;
+			if (currentSource < 0) {
+				continue;
+			}
+			for (const neighbor of grid.neighbors[current.cell] ?? []) {
+				const forcedOwner = forced[neighbor] ?? -1;
+				const protectedOwner = protectedOwners[neighbor] ?? -1;
+				if (
+					(forcedOwner >= 0 && forcedOwner !== owner) ||
+					(protectedOwner >= 0 && protectedOwner !== owner)
+				) {
+					continue;
+				}
+				const nextCost =
+					current.cost +
+					pathStepCost(
+						neighbor,
+						owner,
+						owners,
+						ownerDensity,
+						waterLocks,
+						seed,
+					);
+				const previousCost = distances[neighbor] ?? Infinity;
+				const previousParent = parents[neighbor] ?? -1;
+				const previousSource = sourceByCell[neighbor] ?? -1;
+				if (
+					nextCost < previousCost - 1e-12 ||
+					(Math.abs(nextCost - previousCost) <= 1e-12 &&
+						(currentSource < previousSource ||
+							(currentSource === previousSource &&
+								current.cell < previousParent)))
+				) {
+					distances[neighbor] = nextCost;
+					parents[neighbor] = current.cell;
+					sourceByCell[neighbor] = currentSource;
+					pushPathQueue(queue, {
+						cell: neighbor,
+						cost: nextCost,
+					});
+				}
+			}
+		}
+		const connections: Array<{
+			readonly leftSource: number;
+			readonly rightSource: number;
+			readonly leftCell: number;
+			readonly rightCell: number;
+			readonly cost: number;
+		}> = [];
+		for (let cell = 0; cell < grid.vertices.length; cell += 1) {
+			const leftSource = sourceByCell[cell] ?? -1;
+			if (leftSource < 0) {
+				continue;
+			}
+			for (const neighbor of grid.neighbors[cell] ?? []) {
+				const rightSource = sourceByCell[neighbor] ?? -1;
+				if (neighbor <= cell || rightSource < 0 || rightSource === leftSource) {
+					continue;
+				}
+				connections.push({
+					leftSource,
+					rightSource,
+					leftCell: cell,
+					rightCell: neighbor,
+					cost:
+						(distances[cell] ?? Infinity) +
+						(distances[neighbor] ?? Infinity) +
+						(pathStepCost(
+							cell,
+							owner,
+							owners,
+							ownerDensity,
+							waterLocks,
+							seed,
+						) +
+							pathStepCost(
+								neighbor,
+								owner,
+								owners,
+								ownerDensity,
+								waterLocks,
+								seed,
+							)) /
+							2,
+				});
+			}
+		}
+		connections.sort(
+			(left, right) =>
+				left.cost - right.cost ||
+				Math.min(left.leftSource, left.rightSource) -
+					Math.min(right.leftSource, right.rightSource) ||
+				Math.max(left.leftSource, left.rightSource) -
+					Math.max(right.leftSource, right.rightSource) ||
+				left.leftCell - right.leftCell ||
+				left.rightCell - right.rightCell,
+		);
+		const unionParents = Int32Array.from(
+			{ length: terminals.length },
+			(_, index) => index,
+		);
+		const findUnionRoot = (source: number): number => {
+			let root = source;
+			while ((unionParents[root] ?? root) !== root) {
+				root = unionParents[root] ?? root;
+			}
+			let cursor = source;
+			while ((unionParents[cursor] ?? cursor) !== root) {
+				const parent = unionParents[cursor] ?? cursor;
+				unionParents[cursor] = root;
+				cursor = parent;
+			}
+			return root;
+		};
+		const protectTrace = (start: number): void => {
+			let cell = start;
+			let remaining = grid.vertices.length + 1;
+			while (remaining > 0) {
+				remaining -= 1;
+				owners[cell] = owner;
+				protectedOwners[cell] = owner;
+				waterLocks[cell] = 0;
+				const parent = parents[cell] ?? -1;
+				if (parent < 0 || parent === cell) {
+					break;
+				}
+				cell = parent;
+			}
+		};
+		let remainingConnections = terminals.length - 1;
+		for (const connection of connections) {
+			const leftRoot = findUnionRoot(connection.leftSource);
+			const rightRoot = findUnionRoot(connection.rightSource);
+			if (leftRoot === rightRoot) {
+				continue;
+			}
+			protectTrace(connection.leftCell);
+			protectTrace(connection.rightCell);
+			const low = Math.min(leftRoot, rightRoot);
+			const high = Math.max(leftRoot, rightRoot);
+			unionParents[high] = low;
+			remainingConnections -= 1;
+			if (remainingConnections === 0) {
+				break;
+			}
+		}
+	}
+	return protectedOwners;
 }
 
 function seaComponents(
@@ -1135,6 +1536,284 @@ function connectedOceanTargetFraction(islandCount: number): number {
 	);
 }
 
+interface LandExpansionCandidate {
+	readonly cell: number;
+	readonly owner: number;
+	readonly score: number;
+}
+
+interface LandExpansionResult {
+	readonly connectedOcean: Uint8Array;
+	readonly expandedLandCellCount: number;
+}
+
+function connectedOriginalOcean(
+	grid: IntrinsicSphericalGrid,
+	owners: Int32Array,
+	originalOcean: Uint8Array,
+): {
+	readonly mask: Uint8Array;
+	readonly reachedCount: number;
+	readonly remainingCount: number;
+} {
+	const mask = new Uint8Array(originalOcean.length);
+	let seed = -1;
+	let remainingCount = 0;
+	for (let cell = 0; cell < originalOcean.length; cell += 1) {
+		if (
+			originalOcean[cell] === 1 &&
+			(owners[cell] ?? -1) < 0
+		) {
+			remainingCount += 1;
+			if (seed < 0) {
+				seed = cell;
+			}
+		}
+	}
+	if (seed < 0) {
+		return { mask, reachedCount: 0, remainingCount };
+	}
+	const queue = [seed];
+	mask[seed] = 1;
+	for (let cursor = 0; cursor < queue.length; cursor += 1) {
+		const cell = queue[cursor];
+		if (cell === undefined) {
+			continue;
+		}
+		for (const neighbor of grid.neighbors[cell] ?? []) {
+			if (
+				mask[neighbor] === 0 &&
+				originalOcean[neighbor] === 1 &&
+				(owners[neighbor] ?? -1) < 0
+			) {
+				mask[neighbor] = 1;
+				queue.push(neighbor);
+			}
+		}
+	}
+	return {
+		mask,
+		reachedCount: queue.length,
+		remainingCount,
+	};
+}
+
+function landExpansionFrontier(
+	grid: IntrinsicSphericalGrid,
+	owners: Int32Array,
+	originalOcean: Uint8Array,
+	waterLocks: Uint8Array,
+	densities: readonly Float32Array[],
+	seed: number,
+): readonly LandExpansionCandidate[] {
+	const candidateOwners = new Int32Array(owners.length);
+	candidateOwners.fill(-1);
+	const preliminary: LandExpansionCandidate[] = [];
+	for (let cell = 0; cell < owners.length; cell += 1) {
+		if (
+			originalOcean[cell] !== 1 ||
+			(owners[cell] ?? -1) >= 0 ||
+			waterLocks[cell] === 1
+		) {
+			continue;
+		}
+		let owner = -1;
+		let sameOwnerNeighbors = 0;
+		let contested = false;
+		for (const neighbor of grid.neighbors[cell] ?? []) {
+			const neighborOwner = owners[neighbor] ?? -1;
+			if (neighborOwner < 0) {
+				continue;
+			}
+			if (owner < 0) {
+				owner = neighborOwner;
+				sameOwnerNeighbors = 1;
+			} else if (owner === neighborOwner) {
+				sameOwnerNeighbors += 1;
+			} else {
+				contested = true;
+				break;
+			}
+		}
+		if (owner < 0 || contested) {
+			continue;
+		}
+		candidateOwners[cell] = owner;
+		const density = Math.log1p(densities[owner]?.[cell] ?? 0);
+		const variation =
+			(hashNumbers(seed, owner, cell, 0x1a6d) % 1000) / 1000;
+		preliminary.push({
+			cell,
+			owner,
+			score:
+				sameOwnerNeighbors * 4 +
+				density * 0.15 +
+				variation * 0.05,
+		});
+	}
+
+	const blocked = new Uint8Array(owners.length);
+	for (const candidate of preliminary) {
+		for (const neighbor of grid.neighbors[candidate.cell] ?? []) {
+			const neighborOwner = candidateOwners[neighbor] ?? -1;
+			if (
+				neighborOwner >= 0 &&
+				neighborOwner !== candidate.owner
+			) {
+				blocked[candidate.cell] = 1;
+				blocked[neighbor] = 1;
+			}
+		}
+	}
+	return preliminary
+		.filter((candidate) => blocked[candidate.cell] === 0)
+		.sort(
+			(left, right) =>
+				right.score - left.score ||
+				left.owner - right.owner ||
+				left.cell - right.cell,
+		);
+}
+
+/**
+ * Compact layouts can begin with much more ocean than the visual target.
+ * Grow existing directory land into the connected ocean before coast erosion:
+ *
+ * - every claimed cell touches exactly one owner;
+ * - simultaneous foreign frontiers remain water separators;
+ * - water-lock cells are never claimed;
+ * - every accepted batch preserves connectivity of the original global ocean.
+ *
+ * The slight undershoot gives the regular connected-ocean erosion room to
+ * restore organic bays and settle on the configured target.
+ */
+function expandDirectoryLand(
+	grid: IntrinsicSphericalGrid,
+	owners: Int32Array,
+	initialConnectedOcean: Uint8Array,
+	waterLocks: Uint8Array,
+	densities: readonly Float32Array[],
+	bestDensity: Float32Array,
+	islandCount: number,
+	seed: number,
+): LandExpansionResult {
+	const targetFraction = Math.max(
+		0,
+		connectedOceanTargetFraction(islandCount) -
+			LAND_PREFILL_OCEAN_BUFFER,
+	);
+	const targetCount = Math.max(
+		1,
+		Math.floor(grid.vertices.length * targetFraction),
+	);
+	let connectivity = connectedOriginalOcean(
+		grid,
+		owners,
+		initialConnectedOcean,
+	);
+	let currentCount = connectivity.remainingCount;
+	const initialOceanCount = currentCount;
+	const initialOceanFraction =
+		currentCount / Math.max(1, grid.vertices.length);
+	if (
+		initialOceanFraction >
+			MAX_LAND_PREFILL_INITIAL_OCEAN_FRACTION ||
+		currentCount <= targetCount ||
+		connectivity.reachedCount !== currentCount
+	) {
+		return {
+			connectedOcean: connectivity.mask,
+			expandedLandCellCount: 0,
+		};
+	}
+
+	while (currentCount > targetCount) {
+		const frontier = landExpansionFrontier(
+			grid,
+			owners,
+			initialConnectedOcean,
+			waterLocks,
+			densities,
+			seed,
+		);
+		if (frontier.length === 0) {
+			break;
+		}
+		const batch = frontier.slice(
+			0,
+			Math.min(
+				LAND_EXPANSION_BATCH_SIZE,
+				currentCount - targetCount,
+			),
+		);
+		const ownersBeforeBatch = owners.slice();
+		for (const candidate of batch) {
+			owners[candidate.cell] = candidate.owner;
+		}
+		fillEnclosedHoles(
+			grid,
+			owners,
+			waterLocks,
+			bestDensity,
+		);
+		connectivity = connectedOriginalOcean(
+			grid,
+			owners,
+			initialConnectedOcean,
+		);
+		if (connectivity.reachedCount === connectivity.remainingCount) {
+			currentCount = connectivity.remainingCount;
+			continue;
+		}
+
+		owners.set(ownersBeforeBatch);
+		let accepted = 0;
+		for (const candidate of batch) {
+			const ownersBeforeCandidate = owners.slice();
+			owners[candidate.cell] = candidate.owner;
+			fillEnclosedHoles(
+				grid,
+				owners,
+				waterLocks,
+				bestDensity,
+			);
+			const candidateConnectivity = connectedOriginalOcean(
+				grid,
+				owners,
+				initialConnectedOcean,
+			);
+			if (
+				candidateConnectivity.reachedCount !==
+				candidateConnectivity.remainingCount
+			) {
+				owners.set(ownersBeforeCandidate);
+				continue;
+			}
+			connectivity = candidateConnectivity;
+			currentCount = candidateConnectivity.remainingCount;
+			accepted += 1;
+			if (currentCount <= targetCount) {
+				break;
+			}
+		}
+		if (accepted === 0) {
+			break;
+		}
+	}
+	connectivity = connectedOriginalOcean(
+		grid,
+		owners,
+		initialConnectedOcean,
+	);
+	return {
+		connectedOcean: connectivity.mask,
+		expandedLandCellCount: Math.max(
+			0,
+			initialOceanCount - connectivity.remainingCount,
+		),
+	};
+}
+
 function organicCoastBias(point: Vec3, seed: number): number {
 	const firstAxis = normalizeVec3([
 		hashToSignedUnitFloat(seed, 0xc01, 0),
@@ -1164,18 +1843,79 @@ function organicCoastBias(point: Vec3, seed: number): number {
 	);
 }
 
+function softCoastalPreferenceBias(
+	point: Vec3,
+	owner: number,
+	preferences: SpatialBuckets<CoastalPreference>,
+): number {
+	if (owner < 0) {
+		return 0;
+	}
+	let strongest = 0;
+	forEachNearby(
+		preferences,
+		point,
+		SOFT_PORT_INFLUENCE_RADIUS,
+		(preference) => {
+			if (preference.owner !== owner) {
+				return;
+			}
+			const distance = geodesicDistance(point, preference.direction);
+			if (distance >= SOFT_PORT_INFLUENCE_RADIUS) {
+				return;
+			}
+			const proximity =
+				1 - distance / SOFT_PORT_INFLUENCE_RADIUS;
+			strongest = Math.max(
+				strongest,
+				preference.score * proximity * proximity,
+			);
+		},
+	);
+	return strongest;
+}
+
+function coastalPreferenceCount(
+	preferences: SpatialBuckets<CoastalPreference>,
+): number {
+	let count = 0;
+	for (const values of preferences.cells.values()) {
+		count += values.length;
+	}
+	return count;
+}
+
+function sameOwnerLandNeighborCount(
+	grid: IntrinsicSphericalGrid,
+	owners: Int32Array,
+	cell: number,
+): number {
+	const owner = owners[cell] ?? -1;
+	if (owner < 0) {
+		return 0;
+	}
+	let count = 0;
+	for (const neighbor of grid.neighbors[cell] ?? []) {
+		count += (owners[neighbor] ?? -1) === owner ? 1 : 0;
+	}
+	return count;
+}
+
 /**
  * Expands only the already connected external ocean, one coastal raster ring
  * at a time. Member cells remain protected. A smooth multi-scale spherical
- * bias makes some coastal sectors erode more deeply than others, restoring
- * broad bays and peninsulas instead of reproducing a circular layout cap.
+ * bias makes some coastal sectors erode more deeply than others. Selected
+ * inter-folder ports add a bounded preference near their outgoing bearing,
+ * but never create water independently or remove the protected directory
+ * backbone.
  */
 function expandConnectedOcean(
 	grid: IntrinsicSphericalGrid,
 	owners: Int32Array,
 	initialConnectedOcean: Uint8Array,
-	forced: Int32Array,
+	protectedOwners: Int32Array,
 	bestDensity: Float32Array,
+	coastalPreferences: SpatialBuckets<CoastalPreference>,
 	islandCount: number,
 	seed: number,
 ): Uint8Array {
@@ -1186,6 +1926,13 @@ function expandConnectedOcean(
 	);
 	const coastBias = Float32Array.from(grid.vertices, (point) =>
 		organicCoastBias(point, seed),
+	);
+	const portBias = Float32Array.from(grid.vertices, (point, cell) =>
+		softCoastalPreferenceBias(
+			point,
+			owners[cell] ?? -1,
+			coastalPreferences,
+		),
 	);
 	const targetCount = Math.ceil(
 		grid.vertices.length * connectedOceanTargetFraction(islandCount),
@@ -1203,7 +1950,7 @@ function expandConnectedOcean(
 			for (const neighbor of grid.neighbors[cell] ?? []) {
 				if (
 					(owners[neighbor] ?? -1) >= 0 &&
-					(forced[neighbor] ?? -1) < 0
+					(protectedOwners[neighbor] ?? -1) < 0
 				) {
 					frontier.add(neighbor);
 				}
@@ -1214,17 +1961,34 @@ function expandConnectedOcean(
 		}
 		const ordered = [...frontier].sort(
 			(left, right) =>
-				Math.log1p(bestDensity[left] ?? 0) +
+				sameOwnerLandNeighborCount(
+					grid,
+					owners,
+					left,
+				) *
+					COASTAL_COMPACTNESS_WEIGHT +
+					Math.log1p(bestDensity[left] ?? 0) +
 					(coastBias[left] ?? 0) *
 						ORGANIC_COAST_BIAS_WEIGHT -
-					(Math.log1p(bestDensity[right] ?? 0) +
+					(portBias[left] ?? 0) *
+						SOFT_PORT_EROSION_BIAS_WEIGHT -
+					(sameOwnerLandNeighborCount(
+						grid,
+						owners,
+						right,
+					) *
+						COASTAL_COMPACTNESS_WEIGHT +
+						Math.log1p(bestDensity[right] ?? 0) +
 						(coastBias[right] ?? 0) *
-							ORGANIC_COAST_BIAS_WEIGHT) ||
+							ORGANIC_COAST_BIAS_WEIGHT -
+						(portBias[right] ?? 0) *
+							SOFT_PORT_EROSION_BIAS_WEIGHT) ||
 				left - right,
 		);
 		const removeCount = Math.min(
 			ordered.length,
 			targetCount - connectedCount,
+			OCEAN_EROSION_BATCH_SIZE,
 		);
 		for (let index = 0; index < removeCount; index += 1) {
 			const cell = ordered[index];
@@ -1244,6 +2008,70 @@ function expandConnectedOcean(
 		if (nextCount <= connectedCount) {
 			break;
 		}
+		connectedCount = nextCount;
+	}
+
+	/*
+	 * The globe can already contain more than the target ocean fraction before
+	 * regular erosion begins. Give each selected port a tiny, fixed budget so
+	 * an already-nearby coast can still respond. Candidates must be current
+	 * external-ocean frontier cells; a deeply inland port receives no trench.
+	 */
+	const portCount = coastalPreferenceCount(coastalPreferences);
+	let portBudget =
+		portCount * SOFT_PORT_MAXIMUM_CELLS_PER_PORT;
+	while (portBudget > 0) {
+		const frontier: number[] = [];
+		for (let cell = 0; cell < connectedOcean.length; cell += 1) {
+			if (connectedOcean[cell] !== 1) {
+				continue;
+			}
+			for (const neighbor of grid.neighbors[cell] ?? []) {
+				if (
+					(owners[neighbor] ?? -1) >= 0 &&
+					(protectedOwners[neighbor] ?? -1) < 0 &&
+					(portBias[neighbor] ?? 0) >=
+						SOFT_PORT_MINIMUM_FRONTIER_BIAS
+				) {
+					frontier.push(neighbor);
+				}
+			}
+		}
+		if (frontier.length === 0) {
+			break;
+		}
+		const ordered = [...new Set(frontier)].sort(
+			(left, right) =>
+				(portBias[right] ?? 0) - (portBias[left] ?? 0) ||
+				(bestDensity[left] ?? 0) -
+					(bestDensity[right] ?? 0) ||
+				left - right,
+		);
+		const removeCount = Math.min(
+			portBudget,
+			Math.max(1, portCount),
+			ordered.length,
+		);
+		for (let index = 0; index < removeCount; index += 1) {
+			const cell = ordered[index];
+			if (cell !== undefined) {
+				owners[cell] = -1;
+			}
+		}
+		portBudget -= removeCount;
+		const next = connectedSeaFromExisting(
+			grid,
+			owners,
+			connectedOcean,
+		);
+		const nextCount = next.reduce(
+			(total, value) => total + value,
+			0,
+		);
+		if (nextCount <= connectedCount) {
+			break;
+		}
+		connectedOcean = next;
 		connectedCount = nextCount;
 	}
 	return connectedOcean;
@@ -1337,6 +2165,7 @@ function buildLandRaster(
 	assignments: Int32Array,
 	anchors: SpatialBuckets<DensityAnchor>,
 	waterSeeds: SpatialBuckets<WaterSeed>,
+	coastalPreferences: SpatialBuckets<CoastalPreference>,
 	maximumSupport: number,
 	seed: number,
 ): LandRaster {
@@ -1361,23 +2190,53 @@ function buildLandRaster(
 		grid,
 		positions,
 		assignments,
-		fields.byOwner,
 	);
 	const growth = growLandOwners(grid, fields, forced, waterSeeds);
+	pruneUnanchoredOwnerComponents(grid, growth.owners, forced);
+	const protectedOwners = connectDirectoryLand(
+		grid,
+		growth.owners,
+		forced,
+		growth.waterLocks,
+		fields.byOwner,
+		geography.continents.length,
+		seed,
+	);
 	const initialConnectedOcean = fillEnclosedHoles(
 		grid,
 		growth.owners,
 		growth.waterLocks,
 		fields.best,
 	);
-	const connectedOcean = expandConnectedOcean(
+	const landExpansion = expandDirectoryLand(
 		grid,
 		growth.owners,
 		initialConnectedOcean,
-		forced,
+		growth.waterLocks,
+		fields.byOwner,
 		fields.best,
 		geography.islandNodeIndices.length,
 		seed,
+	);
+	let connectedOcean = expandConnectedOcean(
+		grid,
+		growth.owners,
+		landExpansion.connectedOcean,
+		protectedOwners,
+		fields.best,
+		coastalPreferences,
+		geography.islandNodeIndices.length,
+		seed,
+	);
+	pruneUnanchoredOwnerComponents(
+		grid,
+		growth.owners,
+		protectedOwners,
+	);
+	connectedOcean = connectedSeaFromExisting(
+		grid,
+		growth.owners,
+		connectedOcean,
 	);
 	const boundaries = boundarySamples(
 		grid,
@@ -1397,13 +2256,17 @@ function buildLandRaster(
 	}
 	return {
 		grid,
+		ownerCount: geography.continents.length,
 		ownerByCell: growth.owners,
+		protectedOwnerByCell: protectedOwners,
 		connectedOcean,
 		boundaryBand,
 		bestDensity: fields.best,
 		rasterPoints: fields.rasterPoints,
 		boundaries,
 		boundaryBuckets,
+		expandedLandCellCount:
+			landExpansion.expandedLandCellCount,
 	};
 }
 
@@ -1447,6 +2310,11 @@ export function createLandSupportModel(
 	);
 	const maximumSupportRadius = maximumAnchorSupport(created.anchors);
 	const waterSeeds = createWaterSeeds(positions, edges, assignments);
+	const coastalPreferences = createCoastalPreferences(
+		positions,
+		edges,
+		assignments,
+	);
 	return {
 		raster: buildLandRaster(
 			geography,
@@ -1454,6 +2322,7 @@ export function createLandSupportModel(
 			assignments,
 			created.anchors,
 			waterSeeds,
+			coastalPreferences,
 			maximumSupportRadius,
 			modelSeed,
 		),
@@ -1599,19 +2468,11 @@ function displacedMargin(
 	return baseMargin + boundaryDisplacement(point, owner, seed) * fade;
 }
 
-function queryLand(pointValue: Vec3, model: LandSupportModel): QuerySample {
+function queryRasterLand(
+	pointValue: Vec3,
+	model: LandSupportModel,
+): QuerySample {
 	const point = normalizeVec3(pointValue);
-	const guaranteed = nearestMember(point, model);
-	if (guaranteed !== undefined) {
-		const margin =
-			guaranteed.member.guaranteeRadius -
-			guaranteed.distance;
-		return {
-			owner: guaranteed.member.owner,
-			margin,
-			boundaryOwner: guaranteed.member.owner,
-		};
-	}
 	const cell = nearestRasterCell(point, model.raster);
 	const cellOwner = model.raster.ownerByCell[cell] ?? -1;
 	if (cellOwner >= 0) {
@@ -1671,6 +2532,32 @@ function queryLand(pointValue: Vec3, model: LandSupportModel): QuerySample {
 	};
 }
 
+function queryLand(pointValue: Vec3, model: LandSupportModel): QuerySample {
+	const point = normalizeVec3(pointValue);
+	const raster = queryRasterLand(point, model);
+	const guaranteed = nearestMember(point, model);
+	if (guaranteed === undefined) {
+		return raster;
+	}
+	const guaranteeMargin =
+		guaranteed.member.guaranteeRadius - guaranteed.distance;
+	if (raster.owner === guaranteed.member.owner) {
+		return raster;
+	}
+	const rawRasterOwner =
+		model.raster.ownerByCell[
+			nearestRasterCell(point, model.raster)
+		] ?? -1;
+	if (rawRasterOwner >= 0 && guaranteeMargin > 0) {
+		return {
+			owner: guaranteed.member.owner,
+			margin: guaranteeMargin,
+			boundaryOwner: guaranteed.member.owner,
+		};
+	}
+	return raster;
+}
+
 export function sampleContinentSupport(
 	direction: Vec3,
 	continentIndex: number,
@@ -1683,16 +2570,6 @@ export function sampleContinentSupport(
 		return undefined;
 	}
 	const point = normalizeVec3(direction);
-	const guaranteed = nearestMember(point, model, continentIndex);
-	if (guaranteed !== undefined) {
-		const margin =
-			guaranteed.member.guaranteeRadius -
-			guaranteed.distance;
-		return {
-			margin,
-			normalizedScore: margin / MIN_NODE_BANDWIDTH,
-		};
-	}
 	const query = queryLand(point, model);
 	if (query.owner === continentIndex) {
 		return {
@@ -1733,17 +2610,57 @@ export function continentSupportClearance(
 		: -support.margin;
 }
 
+function countOwnerComponents(raster: LandRaster): readonly number[] {
+	const counts = Array.from(
+		{ length: raster.ownerCount },
+		() => 0,
+	);
+	const seen = new Uint8Array(raster.ownerByCell.length);
+	for (let start = 0; start < raster.ownerByCell.length; start += 1) {
+		const owner = raster.ownerByCell[start] ?? -1;
+		if (owner < 0 || seen[start] === 1) {
+			continue;
+		}
+		counts[owner] = (counts[owner] ?? 0) + 1;
+		const queue = [start];
+		seen[start] = 1;
+		for (let cursor = 0; cursor < queue.length; cursor += 1) {
+			const cell = queue[cursor];
+			if (cell === undefined) {
+				continue;
+			}
+			for (const neighbor of raster.grid.neighbors[cell] ?? []) {
+				if (
+					seen[neighbor] === 0 &&
+					(raster.ownerByCell[neighbor] ?? -1) === owner
+				) {
+					seen[neighbor] = 1;
+					queue.push(neighbor);
+				}
+			}
+		}
+	}
+	return counts;
+}
+
 export function landSupportDiagnostics(
 	model: LandSupportModel,
 ): LandSupportDiagnostics {
 	let connectedOceanCellCount = 0;
 	let landCellCount = 0;
+	let waterCellCount = 0;
+	let protectedLandCellCount = 0;
 	for (const value of model.raster.connectedOcean) {
 		connectedOceanCellCount += value;
 	}
 	for (const owner of model.raster.ownerByCell) {
 		landCellCount += owner >= 0 ? 1 : 0;
+		waterCellCount += owner < 0 ? 1 : 0;
 	}
+	for (const owner of model.raster.protectedOwnerByCell) {
+		protectedLandCellCount += owner >= 0 ? 1 : 0;
+	}
+	const ownerComponentCounts = countOwnerComponents(model.raster);
 	return {
 		rasterCellCount: model.raster.grid.vertices.length,
 		densityAnchorCount: bucketValueCount(model.anchors),
@@ -1752,5 +2669,16 @@ export function landSupportDiagnostics(
 		connectedOceanFraction:
 			connectedOceanCellCount / model.raster.grid.vertices.length,
 		landCellCount,
+		protectedLandCellCount,
+		expandedLandCellCount:
+			model.raster.expandedLandCellCount,
+		enclosedWaterCellCount: Math.max(
+			0,
+			waterCellCount - connectedOceanCellCount,
+		),
+		ownerComponentCounts,
+		disconnectedContinentCount: ownerComponentCounts.filter(
+			(count) => count !== 1,
+		).length,
 	};
 }

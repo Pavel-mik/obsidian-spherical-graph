@@ -9,6 +9,12 @@ const DEFAULT_MINIMUM_GRAPH_DISTANCE = 2;
 const DEFAULT_MINIMUM_TARGET_ANGLE = 0.055;
 const DEFAULT_MAXIMUM_TARGET_ANGLE = 1.35;
 const DEFAULT_STRESS_WEIGHT_SCALE = 0.22;
+const LOCAL_SCAFFOLD_WEIGHT_SCALE = 0.34;
+const REGIONAL_SCAFFOLD_WEIGHT_SCALE = 0.28;
+const LOCAL_SCAFFOLD_NEIGHBORS = 3;
+const REGIONAL_SCAFFOLD_NEIGHBORS = 3;
+const SCAFFOLD_LATITUDE_BANDS = 32;
+const SCAFFOLD_LONGITUDE_BANDS = 64;
 
 export interface SparseStressOptions {
 	/** A constant upper bound keeps landmark BFS work linear in the graph size. */
@@ -65,6 +71,65 @@ interface SparseConstraint {
 interface LandmarkDistance {
 	readonly landmark: number;
 	readonly distances: Int32Array;
+}
+
+interface FolderRegion {
+	readonly index: number;
+	readonly members: readonly number[];
+	readonly representative: number;
+	readonly spatialOrder: number;
+}
+
+interface ScaffoldCandidate {
+	readonly source: number;
+	readonly target: number;
+	readonly distance: number;
+	readonly tieBreak: number;
+}
+
+class DisjointSet {
+	private readonly parent: Int32Array;
+	private readonly rank: Uint8Array;
+
+	public constructor(size: number) {
+		this.parent = new Int32Array(size);
+		this.rank = new Uint8Array(size);
+		for (let index = 0; index < size; index += 1) {
+			this.parent[index] = index;
+		}
+	}
+
+	public find(value: number): number {
+		let root = value;
+		while (this.parent[root] !== root) {
+			root = this.parent[root] ?? root;
+		}
+		let current = value;
+		while (this.parent[current] !== current) {
+			const next = this.parent[current] ?? root;
+			this.parent[current] = root;
+			current = next;
+		}
+		return root;
+	}
+
+	public union(first: number, second: number): boolean {
+		let firstRoot = this.find(first);
+		let secondRoot = this.find(second);
+		if (firstRoot === secondRoot) {
+			return false;
+		}
+		const firstRank = this.rank[firstRoot] ?? 0;
+		const secondRank = this.rank[secondRoot] ?? 0;
+		if (firstRank < secondRank) {
+			[firstRoot, secondRoot] = [secondRoot, firstRoot];
+		}
+		this.parent[secondRoot] = firstRoot;
+		if (firstRank === secondRank) {
+			this.rank[firstRoot] = firstRank + 1;
+		}
+		return true;
+	}
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
@@ -342,6 +407,447 @@ function angularDistance(
 		1,
 	);
 	return Math.acos(dot);
+}
+
+function scaffoldTargetAngle(
+	input: SparseStressInput,
+	options: ResolvedOptions,
+	source: number,
+	target: number,
+): number {
+	return clamp(
+		angularDistance(input.positions, source, target),
+		options.minimumTargetAngle,
+		options.maximumTargetAngle,
+	);
+}
+
+function scaffoldWeight(
+	input: SparseStressInput,
+	meanEdgeWeight: number,
+	source: number,
+	target: number,
+	scale: number,
+	salt: number,
+): number {
+	const low = Math.min(source, target);
+	const high = Math.max(source, target);
+	const organicVariation =
+		0.86 +
+		0.28 *
+			hashToUnitFloat(
+				input.seed,
+				low,
+				high,
+				salt,
+			);
+	return meanEdgeWeight * scale * organicVariation;
+}
+
+function appendScaffoldConstraint(
+	input: SparseStressInput,
+	options: ResolvedOptions,
+	occupiedPairs: Set<string>,
+	meanEdgeWeight: number,
+	constraints: SparseConstraint[],
+	source: number,
+	target: number,
+	weightScale: number,
+	salt: number,
+): boolean {
+	const key = pairKey(source, target);
+	if (source === target || occupiedPairs.has(key)) {
+		return false;
+	}
+	occupiedPairs.add(key);
+	const low = Math.min(source, target);
+	const high = Math.max(source, target);
+	constraints.push({
+		source: low,
+		target: high,
+		weight: scaffoldWeight(
+			input,
+			meanEdgeWeight,
+			low,
+			high,
+			weightScale,
+			salt,
+		),
+		targetAngle: scaffoldTargetAngle(input, options, low, high),
+	});
+	return true;
+}
+
+function regionRepresentative(
+	positions: Float32Array,
+	members: readonly number[],
+): number {
+	let best = members[0] ?? 0;
+	let bestTotalDistance = Number.POSITIVE_INFINITY;
+	for (const candidate of members) {
+		let totalDistance = 0;
+		for (const other of members) {
+			totalDistance += angularDistance(positions, candidate, other);
+		}
+		if (
+			totalDistance < bestTotalDistance ||
+			(totalDistance === bestTotalDistance && candidate < best)
+		) {
+			best = candidate;
+			bestTotalDistance = totalDistance;
+		}
+	}
+	return best;
+}
+
+function sphericalStripBucket(
+	positions: Float32Array,
+	nodeIndex: number,
+): number {
+	const offset = nodeIndex * 3;
+	const x = positions[offset] ?? 0;
+	const y = positions[offset + 1] ?? 0;
+	const z = positions[offset + 2] ?? 0;
+	const length = Math.hypot(x, y, z);
+	if (length <= 1e-12) {
+		return 0;
+	}
+	const normalizedZ = clamp(z / length, -1, 1);
+	const band = Math.min(
+		SCAFFOLD_LATITUDE_BANDS - 1,
+		Math.floor(
+			((normalizedZ + 1) * SCAFFOLD_LATITUDE_BANDS) / 2,
+		),
+	);
+	const longitude = Math.atan2(y, x) + Math.PI;
+	const longitudeBand = Math.min(
+		SCAFFOLD_LONGITUDE_BANDS - 1,
+		Math.floor(
+			(longitude * SCAFFOLD_LONGITUDE_BANDS) /
+				(2 * Math.PI),
+		),
+	);
+	const withinBand =
+		band % 2 === 0
+			? longitudeBand
+			: SCAFFOLD_LONGITUDE_BANDS - 1 - longitudeBand;
+	return band * SCAFFOLD_LONGITUDE_BANDS + withinBand;
+}
+
+function createFolderRegions(
+	input: SparseStressInput,
+): ReadonlyMap<number, readonly FolderRegion[]> {
+	const folderIndexByNode = input.folderIndexByNode;
+	if (folderIndexByNode === undefined) {
+		return new Map();
+	}
+	const membersByFolderAndRegion = new Map<
+		number,
+		Map<number, number[]>
+	>();
+	for (let nodeIndex = 0; nodeIndex < input.nodeCount; nodeIndex += 1) {
+		const folderIndex = folderIndexByNode[nodeIndex] ?? -1;
+		if (folderIndex < 0) {
+			continue;
+		}
+		const rawRegion = input.regionIndexByNode?.[nodeIndex] ?? -1;
+		const regionIndex =
+			rawRegion >= 0 ? rawRegion : -nodeIndex - 2;
+		let membersByRegion = membersByFolderAndRegion.get(folderIndex);
+		if (membersByRegion === undefined) {
+			membersByRegion = new Map();
+			membersByFolderAndRegion.set(folderIndex, membersByRegion);
+		}
+		let members = membersByRegion.get(regionIndex);
+		if (members === undefined) {
+			members = [];
+			membersByRegion.set(regionIndex, members);
+		}
+		members.push(nodeIndex);
+	}
+
+	const regionsByFolder = new Map<number, readonly FolderRegion[]>();
+	for (const [folderIndex, membersByRegion] of membersByFolderAndRegion) {
+		const buckets = Array.from(
+			{
+				length:
+					SCAFFOLD_LATITUDE_BANDS *
+					SCAFFOLD_LONGITUDE_BANDS,
+			},
+			(): FolderRegion[] => [],
+		);
+		for (const [regionIndex, members] of membersByRegion) {
+				const representative = regionRepresentative(
+					input.positions,
+					members,
+				);
+				const region: FolderRegion = {
+					index: regionIndex,
+					members,
+					representative,
+					spatialOrder: sphericalStripBucket(
+						input.positions,
+						representative,
+					),
+				};
+				buckets[region.spatialOrder]?.push(region);
+		}
+		const regions = buckets.flat();
+		regionsByFolder.set(folderIndex, regions);
+	}
+	return regionsByFolder;
+}
+
+function nearestBridge(
+	input: SparseStressInput,
+	first: readonly number[],
+	second: readonly number[],
+	salt: number,
+): ScaffoldCandidate | undefined {
+	let best: ScaffoldCandidate | undefined;
+	for (const source of first) {
+		for (const target of second) {
+			const distance = angularDistance(
+				input.positions,
+				source,
+				target,
+			);
+			const tieBreak = hashNumbers(
+				input.seed,
+				Math.min(source, target),
+				Math.max(source, target),
+				salt,
+			);
+			if (
+				best === undefined ||
+				distance < best.distance ||
+				(distance === best.distance &&
+					tieBreak < best.tieBreak) ||
+				(distance === best.distance &&
+					tieBreak === best.tieBreak &&
+					source < best.source) ||
+				(distance === best.distance &&
+					tieBreak === best.tieBreak &&
+					source === best.source &&
+					target < best.target)
+			) {
+				best = { source, target, distance, tieBreak };
+			}
+		}
+	}
+	return best;
+}
+
+function appendFolderScaffoldConstraints(
+	input: SparseStressInput,
+	options: ResolvedOptions,
+	occupiedPairs: Set<string>,
+	meanEdgeWeight: number,
+	constraints: SparseConstraint[],
+): void {
+	const folderIndexByNode = input.folderIndexByNode;
+	if (folderIndexByNode === undefined) {
+		return;
+	}
+	const regionsByFolder = createFolderRegions(input);
+	const components = new DisjointSet(input.nodeCount);
+	for (
+		let edgeIndex = 0;
+		edgeIndex < input.edgeWeights.length;
+		edgeIndex += 1
+	) {
+		const source = input.edgeEndpoints[edgeIndex * 2];
+		const target = input.edgeEndpoints[edgeIndex * 2 + 1];
+		if (source === undefined || target === undefined) {
+			continue;
+		}
+		const folder = folderIndexByNode[source] ?? -1;
+		const targetFolder = folderIndexByNode[target] ?? -1;
+		const region = input.regionIndexByNode?.[source] ?? -1;
+		const targetRegion = input.regionIndexByNode?.[target] ?? -1;
+		if (
+			folder >= 0 &&
+			folder === targetFolder &&
+			region === targetRegion
+		) {
+			components.union(source, target);
+		}
+	}
+
+	for (const regions of regionsByFolder.values()) {
+		for (const region of regions) {
+			const connectivityCandidates: ScaffoldCandidate[] = [];
+			for (
+				let firstIndex = 0;
+				firstIndex < region.members.length;
+				firstIndex += 1
+			) {
+				const source = region.members[firstIndex];
+				if (source === undefined) {
+					continue;
+				}
+				for (
+					let secondIndex = firstIndex + 1;
+					secondIndex < region.members.length;
+					secondIndex += 1
+				) {
+					const target = region.members[secondIndex];
+					if (
+						target === undefined
+					) {
+						continue;
+					}
+					connectivityCandidates.push({
+						source,
+						target,
+						distance: angularDistance(
+							input.positions,
+							source,
+							target,
+						),
+						tieBreak: hashNumbers(
+							input.seed,
+							source,
+							target,
+							region.index,
+							0x5ca,
+						),
+					});
+				}
+			}
+			connectivityCandidates.sort(
+				(first, second) =>
+					first.distance - second.distance ||
+					first.tieBreak - second.tieBreak ||
+					first.source - second.source ||
+					first.target - second.target,
+			);
+
+			for (const source of region.members) {
+				const nearest = region.members
+					.filter((target) => target !== source)
+					.map(
+						(target): ScaffoldCandidate => ({
+							source,
+							target,
+							distance: angularDistance(
+								input.positions,
+								source,
+								target,
+							),
+							tieBreak: hashNumbers(
+								input.seed,
+								Math.min(source, target),
+								Math.max(source, target),
+								region.index,
+								0x34d,
+							),
+						}),
+					)
+					.sort(
+						(first, second) =>
+							first.distance - second.distance ||
+							first.tieBreak - second.tieBreak ||
+							first.target - second.target,
+					);
+				let supportedNeighborCount = 0;
+				for (const candidate of nearest) {
+					const key = pairKey(
+						candidate.source,
+						candidate.target,
+					);
+					const alreadyOccupied = occupiedPairs.has(key);
+					const added = appendScaffoldConstraint(
+						input,
+						options,
+						occupiedPairs,
+						meanEdgeWeight,
+						constraints,
+						candidate.source,
+						candidate.target,
+						LOCAL_SCAFFOLD_WEIGHT_SCALE,
+						0x1a7,
+					);
+					if (alreadyOccupied || added) {
+						components.union(
+							candidate.source,
+							candidate.target,
+						);
+						supportedNeighborCount += 1;
+					}
+					if (
+						supportedNeighborCount >=
+						LOCAL_SCAFFOLD_NEIGHBORS
+					) {
+						break;
+					}
+				}
+			}
+
+			for (const candidate of connectivityCandidates) {
+				if (
+					!components.union(
+						candidate.source,
+						candidate.target,
+					)
+				) {
+					continue;
+				}
+				appendScaffoldConstraint(
+					input,
+					options,
+					occupiedPairs,
+					meanEdgeWeight,
+					constraints,
+					candidate.source,
+					candidate.target,
+					LOCAL_SCAFFOLD_WEIGHT_SCALE,
+					0x1a7,
+				);
+			}
+		}
+
+		for (
+			let regionIndex = 0;
+			regionIndex < regions.length;
+			regionIndex += 1
+		) {
+			const current = regions[regionIndex];
+			if (current === undefined) {
+				continue;
+			}
+			for (
+				let offset = 1;
+				offset <= REGIONAL_SCAFFOLD_NEIGHBORS;
+				offset += 1
+			) {
+				const neighbor = regions[regionIndex + offset];
+				if (neighbor === undefined) {
+					break;
+				}
+				const bridge = nearestBridge(
+					input,
+					current.members,
+					neighbor.members,
+					0x7e6 + offset,
+				);
+				if (bridge === undefined) {
+					continue;
+				}
+				appendScaffoldConstraint(
+					input,
+					options,
+					occupiedPairs,
+					meanEdgeWeight,
+					constraints,
+					bridge.source,
+					bridge.target,
+					REGIONAL_SCAFFOLD_WEIGHT_SCALE,
+					0x2b9 + offset,
+				);
+			}
+		}
+	}
 }
 
 function chooseLandmarks(
@@ -624,9 +1130,13 @@ function appendGroupConstraints(
  * Adds a bounded set of landmark-to-node graph-distance constraints.
  *
  * The routine performs only a constant number of BFS traversals per group and
- * adds at most `nodeCount * pairsPerNode` constraints. It never introduces a
- * pair across top-level folders, and it prefers the finer region grouping when
- * a region index is available.
+ * adds at most `nodeCount * pairsPerNode` stress constraints. Folder-aware
+ * inputs also receive a bounded local initial-geometry mesh. Three local
+ * neighbors per node keep each bounded region shape-rigid, a connectivity pass
+ * joins any remaining components, and three forward spatial neighbors per
+ * region prevent a folder from folding around a single hinge. This adds at
+ * most `nodeCount * 6` scaffold constraints and uses no centroid or radial
+ * target. No generated pair crosses a top-level folder.
  */
 export function buildSparseStressConstraints(
 	input: SparseStressInput,
@@ -658,6 +1168,13 @@ export function buildSparseStressConstraints(
 			constraints,
 		);
 	}
+	appendFolderScaffoldConstraints(
+		input,
+		options,
+		occupiedPairs,
+		meanEdgeWeight,
+		constraints,
+	);
 	constraints.sort(
 		(first, second) =>
 			first.source - second.source ||

@@ -9,9 +9,10 @@ becomes its own continent, notes become cities, links become roads across the
 surface, and tags orbit overhead as satellites. Linked notes stored directly
 in the vault root become islands; orphan notes remain cities over open water.
 The cartography reserves approximately half the globe for one connected ocean.
-Topology-first city placement and post-layout coastal erosion keep large
-continents irregular rather than circular. Route Finder reveals every shortest
-path between distant notes.
+Topology-first city placement, a bounded non-radial directory mesh, and
+post-layout coastal erosion keep large continents connected and irregular
+rather than circular. Route Finder reveals every shortest path between distant
+notes.
 
 Spherical Graph is designed as a stable spatial map: a finite layout operation
 computes positions, validates and saves one complete snapshot, and then stops.
@@ -22,9 +23,11 @@ Initialize and Renew first place top-level folders and their subdirectory or
 topology districts on the sphere. These areas are starting hints, not circular
 fences. Sparse graph-distance stress, reduced cross-folder springs, relative
 coastal-port bias, and a final render-aware collision pass arrange the cities.
-After the finite solver stops, adaptive land support and multi-scale coastal
-erosion over the fixed positions produce exclusive coastlines, beaches,
-root-note islands, and one broad ocean.
+After the finite solver stops, bounded adaptive land support builds one
+protected backbone per directory and fills coherent interior territory.
+Multi-scale coastal erosion over the fixed positions then produces exclusive
+coastlines, beaches, root-note islands, and one broad ocean without turning
+ordinary inland cities into tiny beach-ringed islands.
 
 ## See your vault as a world
 
