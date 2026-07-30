@@ -83,11 +83,13 @@ validated the final unit-vector buffer:
 3. split each folder into subdirectory and topology cohorts, grow irregular
    district centers, and create only an unconstrained starting state;
 4. solve with full same-folder springs, reduced cross-folder springs, bounded
-   graph-distance landmark stress, and folder-centroid coverage;
+   graph-distance landmark stress, a local initial-geodesic mesh connecting
+   every region of each folder, reduced same-folder long-range repulsion, and
+   folder-centroid coverage;
 5. apply relative coastal-port bias and a marker-aware S² collision projection;
 6. validate and fix the completed note positions;
-7. build adaptive land support for each folder and expand one connected ocean
-   to approximately half the surface;
+7. build adaptive land support plus one protected raster backbone for each
+   folder, then expand one connected ocean to approximately half the surface;
 8. derive render-only coast, beach, and linked-root-note island geometry.
 
 The worker receives compact owner indexes, explicit sparse target angles,
@@ -102,7 +104,15 @@ Every linked note under one top-level folder belongs to that folder's
 continent, including degree-one and degree-two notes. Degree-zero notes do not
 create land. A linked note directly in the vault root becomes an island.
 
-Same-folder edges retain their full spring weight. Edges between top-level
+Same-folder edges retain their full spring weight. A bounded scaffold gives
+each node up to three local initial-geometry neighbors, fills disconnected
+components, and adds a small spatial mesh between regions of the same folder.
+Its targets are initialized intrinsic distances, not a common radius or
+distance from a centroid. At most six scaffold pairs are added per folder node.
+The long-range part of same-folder repulsion is scaled to 24%, while the
+collision term and cross-folder repulsion remain full strength. This keeps a
+two-dimensional, flexible silhouette without recreating a circular territory
+or allowing different folders to overlap. Edges between top-level
 folders use 14% of their graph weight for layout; edges involving a root note
 use 35%. All edges retain their original weight for rendering, selection, and
 Route Finder. Cross-folder endpoints can therefore approach useful coastal
@@ -112,12 +122,22 @@ directions without letting inter-folder topology dominate the internal layout.
 
 After the solver stops, each folder's fixed member directions and short
 same-folder roads seed compact land-support kernels on a subdivided icosphere.
-Support ownership is exclusive; competing owners leave sea between them.
-Enclosed holes are reconciled and only the connected external ocean is
-expanded until its raster fraction reaches 52%, plus bounded compensation for
-the visible area of root-note islands. A smooth deterministic multi-scale
-spherical bias makes erosion advance farther through weak shoreline sectors,
-forming broad bays and headlands. Member cells remain protected.
+A deterministic bounded 3-D spatial index estimates local bandwidth without an
+all-pairs member sort. Support ownership is exclusive; competing owners leave
+sea between them.
+Disconnected support components with the same directory owner are connected
+by a deterministic least-cost tree on the intrinsic icosphere. This narrow
+backbone is protected while detached support without a member is removed.
+When a coherent compact layout starts with too much water, topology-aware
+multi-owner dilation fills concavities and single-owner pockets while
+preserving a sea separator between competing owners. Only the connected
+external ocean is then eroded to 52%, plus bounded compensation for the visible
+area of root-note islands. A smooth deterministic multi-scale spherical bias
+makes erosion advance farther through weak shoreline sectors, forming broad
+bays and headlands. Coastal-port scores affect only a bounded number of cells
+on this connected-ocean frontier. Raster clearance remains authoritative in
+the interior; a sub-cell member Voronoi override can resolve competing land
+owners but never turns water into a false beach-ringed island.
 
 Previous geography is matched using both complete paths and paths relative to
 their top-level folder. This preserves continent identity and color through

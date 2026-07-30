@@ -14,6 +14,8 @@ import type {
 	SolverSettings,
 } from './layoutTypes';
 
+const SAME_FOLDER_LONG_RANGE_REPULSION_SCALE = 0.24;
+
 export interface ForceEvaluationInput {
 	readonly positions: Float32Array;
 	readonly edgeEndpoints: Uint32Array;
@@ -125,9 +127,18 @@ function applyRepulsionPair(
 		0,
 		(collisionAngle - angle) / Math.max(1e-8, collisionAngle),
 	);
+	const firstFolder = input.folderIndexByNode?.[first] ?? -1;
+	const secondFolder = input.folderIndexByNode?.[second] ?? -1;
+	const longRangeScale =
+		firstFolder >= 0 && firstFolder === secondFolder
+			? SAME_FOLDER_LONG_RANGE_REPULSION_SCALE
+			: 1;
 	const magnitude = Math.min(
 		input.settings.repulsionCap,
-		input.settings.repulsionStrength * cotangentHalfAngle * scale +
+		input.settings.repulsionStrength *
+			cotangentHalfAngle *
+			scale *
+			longRangeScale +
 			input.settings.repulsionCap *
 				0.72 *
 				collisionOverlap *

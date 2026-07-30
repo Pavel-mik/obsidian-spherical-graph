@@ -22,7 +22,7 @@ import {
 } from "../geography";
 
 export const CURRENT_SCHEMA_VERSION = 2;
-export const CURRENT_ALGORITHM_VERSION = 7;
+export const CURRENT_ALGORITHM_VERSION = 8;
 export const DEFAULT_POSITION_NORM_TOLERANCE = 1e-4;
 
 export type Vector3Tuple = readonly [number, number, number];

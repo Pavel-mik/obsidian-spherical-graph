@@ -6,6 +6,47 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-07-30
+
+### Changed
+
+- Every top-level directory now receives a bounded local 3-nearest-neighbor
+  mesh plus region bridges. Its targets use initialized geodesic distances,
+  so the mesh preserves a two-dimensional irregular shape without pulling
+  cities toward a common center or radius.
+- Long-range repulsion inside one directory is reduced while marker-collision
+  separation and repulsion between directories remain at full strength.
+  Continents therefore stay compact without returning to concentric rings.
+- Post-layout land generation builds a deterministic protected raster backbone
+  for every directory, fills single-owner water pockets, and expands compact
+  land before shoreline erosion. The result settles near 52% connected ocean
+  without splitting one directory into beach-ringed islands.
+- Coastal-port hints no longer create hard water disks beside their cities.
+  They act only as a bounded preference on the frontier of the already
+  connected ocean, so a port cannot manufacture an inland lake.
+- Adaptive land bandwidth now uses a deterministic bounded spatial index
+  instead of sorting every member against every other member.
+
+### Fixed
+
+- Inland cities no longer receive a false beach ring. Raster clearance is
+  authoritative; a member-level Voronoi override is used only to resolve
+  competing directory owners over existing land, never to turn water into a
+  tiny island.
+- Sparse or disconnected note communities inside one root directory remain one
+  connected continent while the globe still reserves approximately 52% of its
+  raster for a single ocean.
+- Compact one-directory vaults and multi-directory vaults both grow coherent
+  land toward the ocean target, while truly sparse notes remain small islands.
+- Detached density fragments without a directory member are discarded instead
+  of surviving as accidental islands.
+
+### Notes
+
+- The layout algorithm version is now 8. Existing maps receive one automatic
+  Initialize so the directory scaffold and corrected continent support take
+  effect.
+
 ## [1.6.0] - 2026-07-30
 
 ### Added
@@ -381,7 +422,8 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.6.0...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.6.1...HEAD
+[1.6.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.6.0...1.6.1
 [1.6.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.5.1...1.6.0
 [1.5.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.5.0...1.5.1
 [1.5.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.4.0...1.5.0

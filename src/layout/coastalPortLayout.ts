@@ -247,9 +247,9 @@ function selectionOptions(
 }
 
 /**
- * Shared NMS policy for both post-layout port placement and coastline water
- * seeds. Keeping one policy prevents a city from moving to the coast while
- * the renderer independently rejects it as a port.
+ * Shared NMS policy for both post-layout port placement and the renderer's
+ * soft coastline preference. Keeping one policy prevents a city from moving
+ * to the coast while the renderer independently rejects it as a port.
  */
 export function coastalPortSelectionOptions(
 	memberCount: number,

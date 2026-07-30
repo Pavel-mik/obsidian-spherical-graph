@@ -1,5 +1,48 @@
 # Validation
 
+## Connected directory continents release validation (1.6.1)
+
+- Date: 2026-07-30
+- Environment: Windows 11 x64, Node.js 24.12.0, npm 11.6.2
+- `npm run check`: PASS
+- ESLint and strict TypeScript: PASS
+- Vitest: PASS; 49 files, 278 tests
+- Production build and release metadata validation: PASS
+
+Automated regressions cover deterministic bounded local folder meshes,
+same-folder-only long-range repulsion attenuation with full collision
+separation, foreign-owner raster belts, owners quantized to one raster cell,
+single- and multi-folder land prefill, connected-ocean-only coastal-port
+preferences, hole-free directory land, and one connected component per
+directory. The adaptive-bandwidth index matches the former exact calculation
+on a representative fixture and bounds candidate work for 5,000 members. The
+636-note raster fixture completed in 1.54 seconds in the final focused run.
+
+A disposable browser QA atlas executed the actual planner, synchronous
+spherical solver, post-layout geography, land support, and production-detail
+land triangulation over 234 notes, 364 links, and four top-level directories.
+All directory owner component counts were `1 · 1 · 1 · 1`; folder angular
+extents were `0.49 · 0.65 · 0.60 · 0.55` radians; connected ocean was 52.4%;
+zero members were classified over water; and one member was inside the actual
+beach band. The visible rotating globe showed broad connected continents,
+irregular coastlines, and open ocean without node-centered beach rings.
+The coast diagnostic toggle hid and restored the layer, and a fresh browser
+session reported no console errors or warnings. This atlas is not a full
+Obsidian Electron-shell session; corresponding manual checks remain in
+`MANUAL_TEST_PLAN.md`.
+
+The layout algorithm version is 8, forcing one safe Initialize for snapshots
+created by earlier algorithms.
+
+### Release artifacts (1.6.1)
+
+- `main.js`: 913,675 bytes;
+  SHA-256 `A9EB5A741E4C40B228BADDF650D0CB8B92D648712D102EB389AAE5FDAD195BC2`
+- `manifest.json`: 364 bytes, plugin 1.6.1;
+  SHA-256 `798E52DD663C064F8C4ED49B2FDFA3DB87683DF6551069E7022C0AD2C09E007C`
+- `styles.css`: 49,224 bytes;
+  SHA-256 `6CF48EC62FD6FB70C54DADEA56DE7FC1878AC6D25394B146FEE9626E789E00C9`
+
 ## Geographic stress and collision release validation (1.6.0)
 
 - Date: 2026-07-30

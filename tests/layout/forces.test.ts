@@ -46,6 +46,56 @@ describe('intrinsic spherical forces', () => {
 		).toBeLessThan(1e-7);
 	});
 
+	it('attenuates only same-folder long-range repulsion and preserves collision separation', () => {
+		const magnitude = (
+			angle: number,
+			folders: Int32Array,
+			repulsionStrength: number,
+		): number => {
+			const evaluation = computeSphericalForces({
+				positions: new Float32Array([
+					1, 0, 0,
+					Math.cos(angle), Math.sin(angle), 0,
+				]),
+				edgeEndpoints: new Uint32Array(),
+				edgeWeights: new Float32Array(),
+				movableMask: new Uint8Array([1, 1]),
+				folderIndexByNode: folders,
+				settings: resolveSolverSettings({
+					repulsionStrength,
+					repulsionCap: 1,
+					centroidStrength: 0,
+					isotropyStrength: 0,
+				}),
+				effectiveSeed: 19,
+				iteration: 0,
+			});
+			return Math.hypot(...readVec3(evaluation.forces, 0));
+		};
+
+		const sameFolder = new Int32Array([3, 3]);
+		const differentFolders = new Int32Array([3, 8]);
+		const longRangeSame = magnitude(0.8, sameFolder, 0.02);
+		const longRangeDifferent = magnitude(
+			0.8,
+			differentFolders,
+			0.02,
+		);
+		expect(longRangeSame / longRangeDifferent).toBeCloseTo(
+			0.24,
+			6,
+		);
+
+		const collisionSame = magnitude(0.01, sameFolder, 0);
+		const collisionDifferent = magnitude(
+			0.01,
+			differentFolders,
+			0,
+		);
+		expect(collisionSame).toBeGreaterThan(0.5);
+		expect(collisionSame).toBeCloseTo(collisionDifferent, 8);
+	});
+
 	it('has rotation-invariant intrinsic energy', () => {
 		const positions = initializeFullLayout(10, 55);
 		const edgeEndpoints = new Uint32Array([
