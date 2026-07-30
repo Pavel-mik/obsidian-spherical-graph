@@ -9,11 +9,16 @@ import {
 	PersistedCameraState,
 	PersistedLayoutSnapshot,
 	PersistedPluginData,
+	PinnedPathRenameScope,
 	createCommittedLayoutSnapshot,
 	isRecord,
+	prunePinnedNotePaths,
 	pruneSnapshotPaths,
+	renamePinnedNotePaths,
+	renamePinnedNotePathsFromVault,
 	renameSnapshotPaths,
 	validateCameraState,
+	validatePinnedNotePaths,
 	validatePersistedLayoutSnapshot,
 } from "./layoutState";
 
@@ -46,6 +51,19 @@ export interface CommitCompletedResultInput {
 	readonly expectedSnapshotId: string | null;
 	readonly algorithmVersion?: number;
 	readonly normTolerance?: number;
+}
+
+export interface ReplacePersistedStateInput {
+	readonly schemaVersion?: unknown;
+	readonly settings: unknown;
+	readonly committedLayout: unknown;
+	readonly camera: unknown;
+	readonly pinnedNotePaths: unknown;
+}
+
+export interface ReplacePersistedStateOptions {
+	readonly existingPaths?: ReadonlySet<string>;
+	readonly renames?: readonly GraphRename[];
 }
 
 const DEFAULT_SCHEDULER: PersistenceScheduler = {
@@ -156,7 +174,18 @@ function freezeEnvelope<TSettings>(
 		settings: data.settings,
 		committedLayout: data.committedLayout,
 		camera: data.camera,
+		pinnedNotePaths: validatePinnedNotePaths(data.pinnedNotePaths),
 	});
+}
+
+function equalStringArrays(
+	left: readonly string[],
+	right: readonly string[],
+): boolean {
+	return (
+		left.length === right.length &&
+		left.every((value, index) => value === right[index])
+	);
 }
 
 export class PluginDataStore<TSettings> {
@@ -167,6 +196,7 @@ export class PluginDataStore<TSettings> {
 	private writeQueue: Promise<void> = Promise.resolve();
 	private pendingSettings: TSettings | undefined;
 	private pendingCamera: PersistedCameraState | undefined;
+	private pendingPinnedNotePaths: readonly string[] | undefined;
 	private debounceTimer: unknown;
 	private disposed = false;
 
@@ -182,6 +212,7 @@ export class PluginDataStore<TSettings> {
 			settings: this.parseSettings(undefined),
 			committedLayout: null,
 			camera: options.defaultCamera ?? DEFAULT_CAMERA_STATE,
+			pinnedNotePaths: [],
 		});
 	}
 
@@ -191,6 +222,19 @@ export class PluginDataStore<TSettings> {
 
 	get committedSnapshot(): PersistedLayoutSnapshot | undefined {
 		return this.data.committedLayout ?? undefined;
+	}
+
+	get pinnedNotePaths(): readonly string[] {
+		return this.data.pinnedNotePaths;
+	}
+
+	/**
+	 * Returns the complete versioned data.json envelope. It contains the
+	 * committed positions, camera, validated settings, and pins required for
+	 * a stable restart or a manual copy through Obsidian Sync.
+	 */
+	exportState(): PersistedPluginData<TSettings> {
+		return cloneJsonValue(this.data) as PersistedPluginData<TSettings>;
 	}
 
 	async load(): Promise<PersistedPluginData<TSettings>> {
@@ -209,8 +253,87 @@ export class PluginDataStore<TSettings> {
 				migrated.camera,
 				this.options.defaultCamera ?? DEFAULT_CAMERA_STATE,
 			),
+			pinnedNotePaths: validatePinnedNotePaths(
+				migrated.pinnedNotePaths,
+			),
 		});
 		return this.data;
+	}
+
+	/**
+	 * Applies a manually loaded Sync document with one validated plugin-data
+	 * write. A malformed non-null snapshot is rejected instead of erasing the
+	 * last good layout.
+	 */
+	async replaceState(
+		input: ReplacePersistedStateInput,
+		options: ReplacePersistedStateOptions = {},
+	): Promise<PersistedPluginData<TSettings> | undefined> {
+		if (
+			this.disposed ||
+			(typeof input.schemaVersion === "number" &&
+				input.schemaVersion > CURRENT_SCHEMA_VERSION)
+		) {
+			return undefined;
+		}
+		const migrated = migratePluginData(input);
+		const parsedSnapshot =
+			migrated.committedLayout === null
+				? null
+				: validatePersistedLayoutSnapshot(
+						migrated.committedLayout,
+					);
+		if (
+			migrated.committedLayout !== null &&
+			parsedSnapshot === undefined
+		) {
+			return undefined;
+		}
+		let snapshot: PersistedLayoutSnapshot | null =
+			parsedSnapshot ?? null;
+		const settings = this.parseSettings(migrated.settings);
+		const camera = validateCameraState(
+			migrated.camera,
+			this.options.defaultCamera ?? DEFAULT_CAMERA_STATE,
+		);
+		let pinnedNotePaths = validatePinnedNotePaths(
+			migrated.pinnedNotePaths,
+		);
+		for (const rename of options.renames ?? []) {
+			if (snapshot !== null) {
+				snapshot =
+					renameSnapshotPaths(snapshot, [rename]) ?? snapshot;
+			}
+			pinnedNotePaths = renamePinnedNotePaths(
+				pinnedNotePaths,
+				[rename],
+			);
+		}
+		if (options.existingPaths !== undefined) {
+			snapshot =
+				snapshot === null
+					? null
+					: pruneSnapshotPaths(
+							snapshot,
+							options.existingPaths,
+						);
+			pinnedNotePaths = prunePinnedNotePaths(
+				pinnedNotePaths,
+				options.existingPaths,
+			);
+		}
+		return this.enqueue(async () => {
+			const next = freezeEnvelope({
+				schemaVersion: CURRENT_SCHEMA_VERSION,
+				settings,
+				committedLayout: snapshot ?? null,
+				camera,
+				pinnedNotePaths,
+			});
+			await this.adapter.saveData(next);
+			this.data = next;
+			return next;
+		});
 	}
 
 	async commitCompletedResult(
@@ -298,20 +421,32 @@ export class PluginDataStore<TSettings> {
 		}
 		return this.enqueue(async () => {
 			const current = this.data.committedLayout;
-			if (current === null) {
-				return undefined;
+			let renamed = current;
+			for (const rename of renames) {
+				if (renamed === null) {
+					break;
+				}
+				renamed =
+					renameSnapshotPaths(renamed, [rename]) ?? renamed;
 			}
-			const renamed = renameSnapshotPaths(current, renames);
-			if (renamed === undefined || renamed === current) {
-				return renamed;
+			const renamedPins = renamePinnedNotePaths(
+				this.data.pinnedNotePaths,
+				renames,
+			);
+			if (
+				renamed === current &&
+				equalStringArrays(renamedPins, this.data.pinnedNotePaths)
+			) {
+				return renamed ?? undefined;
 			}
 			const next = freezeEnvelope({
 				...this.data,
 				committedLayout: renamed,
+				pinnedNotePaths: renamedPins,
 			});
 			await this.adapter.saveData(next);
 			this.data = next;
-			return renamed;
+			return renamed ?? undefined;
 		});
 	}
 
@@ -323,23 +458,30 @@ export class PluginDataStore<TSettings> {
 		}
 		return this.enqueue(async () => {
 			const current = this.data.committedLayout;
-			if (current === null) {
-				return undefined;
-			}
-			const pruned = pruneSnapshotPaths(current, existingPaths);
+			const pruned =
+				current === null
+					? null
+					: pruneSnapshotPaths(current, existingPaths);
+			const prunedPins = prunePinnedNotePaths(
+				this.data.pinnedNotePaths,
+				existingPaths,
+			);
 			if (
-				pruned.graphDescriptor.nodeIds.length ===
-				current.graphDescriptor.nodeIds.length
+				(pruned === null ||
+					pruned.graphDescriptor.nodeIds.length ===
+						current?.graphDescriptor.nodeIds.length) &&
+				equalStringArrays(prunedPins, this.data.pinnedNotePaths)
 			) {
-				return current;
+				return current ?? undefined;
 			}
 			const next = freezeEnvelope({
 				...this.data,
 				committedLayout: pruned,
+				pinnedNotePaths: prunedPins,
 			});
 			await this.adapter.saveData(next);
 			this.data = next;
-			return pruned;
+			return pruned ?? undefined;
 		});
 	}
 
@@ -371,6 +513,132 @@ export class PluginDataStore<TSettings> {
 		return parsed;
 	}
 
+	async savePinnedNotePaths(value: unknown): Promise<readonly string[]> {
+		const pinnedNotePaths = validatePinnedNotePaths(value);
+		await this.enqueue(async () => {
+			if (
+				equalStringArrays(
+					pinnedNotePaths,
+					this.data.pinnedNotePaths,
+				)
+			) {
+				return;
+			}
+			const next = freezeEnvelope({
+				...this.data,
+				pinnedNotePaths,
+			});
+			await this.adapter.saveData(next);
+			this.data = next;
+		});
+		return pinnedNotePaths;
+	}
+
+	async setPinnedNotePath(
+		path: string,
+		pinned: boolean,
+	): Promise<readonly string[]> {
+		const normalized = validatePinnedNotePaths([path])[0];
+		if (normalized === undefined || this.disposed) {
+			return this.data.pinnedNotePaths;
+		}
+		return this.enqueue(async () => {
+			const next = new Set(this.data.pinnedNotePaths);
+			if (pinned) {
+				next.add(normalized);
+			} else {
+				next.delete(normalized);
+			}
+			const pinnedNotePaths = validatePinnedNotePaths([...next]);
+			if (
+				equalStringArrays(
+					pinnedNotePaths,
+					this.data.pinnedNotePaths,
+				)
+			) {
+				return this.data.pinnedNotePaths;
+			}
+			const envelope = freezeEnvelope({
+				...this.data,
+				pinnedNotePaths,
+			});
+			await this.adapter.saveData(envelope);
+			this.data = envelope;
+			return pinnedNotePaths;
+		});
+	}
+
+	/**
+	 * Migrates pins immediately from a public vault rename event. This write
+	 * is independent of graph diffing and layout lifecycle reconciliation.
+	 */
+	async renamePinnedNotePathsFromVault(
+		oldPath: string,
+		newPath: string,
+		scope: PinnedPathRenameScope,
+	): Promise<readonly string[]> {
+		if (this.disposed) {
+			return this.data.pinnedNotePaths;
+		}
+		if (this.pendingPinnedNotePaths !== undefined) {
+			this.pendingPinnedNotePaths =
+				renamePinnedNotePathsFromVault(
+					this.pendingPinnedNotePaths,
+					oldPath,
+					newPath,
+					scope,
+				);
+		}
+		return this.enqueue(async () => {
+			const pinnedNotePaths =
+				renamePinnedNotePathsFromVault(
+					this.data.pinnedNotePaths,
+					oldPath,
+					newPath,
+					scope,
+				);
+			if (
+				equalStringArrays(
+					pinnedNotePaths,
+					this.data.pinnedNotePaths,
+				)
+			) {
+				return this.data.pinnedNotePaths;
+			}
+			const envelope = freezeEnvelope({
+				...this.data,
+				pinnedNotePaths,
+			});
+			await this.adapter.saveData(envelope);
+			this.data = envelope;
+			return pinnedNotePaths;
+		});
+	}
+
+	async togglePinnedNotePath(path: string): Promise<readonly string[]> {
+		const normalized = validatePinnedNotePaths([path])[0];
+		if (normalized === undefined || this.disposed) {
+			return this.data.pinnedNotePaths;
+		}
+		return this.enqueue(async () => {
+			const next = new Set(this.data.pinnedNotePaths);
+			const pinned = !next.has(normalized);
+			if (pinned) {
+				next.add(normalized);
+			} else {
+				next.delete(normalized);
+			}
+			const pinnedNotePaths = validatePinnedNotePaths([...next]);
+			const envelope = freezeEnvelope({
+				...this.data,
+				pinnedNotePaths,
+			});
+			await this.adapter.saveData(envelope);
+			this.data = envelope;
+			return pinnedNotePaths;
+		});
+	}
+
 	scheduleSettingsSave(settings: unknown): void {
 		if (this.disposed) {
 			return;
@@ -387,13 +655,27 @@ export class PluginDataStore<TSettings> {
 		this.scheduleDebouncedSave();
 	}
 
+	schedulePinnedNotePathsSave(value: unknown): void {
+		if (this.disposed) {
+			return;
+		}
+		this.pendingPinnedNotePaths = validatePinnedNotePaths(value);
+		this.scheduleDebouncedSave();
+	}
+
 	async flushDebounced(): Promise<void> {
 		this.clearDebounceTimer();
 		const settings = this.pendingSettings;
 		const camera = this.pendingCamera;
+		const pinnedNotePaths = this.pendingPinnedNotePaths;
 		this.pendingSettings = undefined;
 		this.pendingCamera = undefined;
-		if (settings === undefined && camera === undefined) {
+		this.pendingPinnedNotePaths = undefined;
+		if (
+			settings === undefined &&
+			camera === undefined &&
+			pinnedNotePaths === undefined
+		) {
 			return;
 		}
 		await this.enqueue(async () => {
@@ -401,9 +683,38 @@ export class PluginDataStore<TSettings> {
 				...this.data,
 				settings: settings ?? this.data.settings,
 				camera: camera ?? this.data.camera,
+				pinnedNotePaths:
+					pinnedNotePaths ?? this.data.pinnedNotePaths,
 			});
 			await this.adapter.saveData(next);
 			this.data = next;
+		});
+	}
+
+	/**
+	 * Manual save primitive. It folds all pending automatic changes into one
+	 * adapter write; with no pending changes it still persists the current
+	 * complete envelope.
+	 */
+	async saveNow(): Promise<PersistedPluginData<TSettings>> {
+		this.clearDebounceTimer();
+		const settings = this.pendingSettings;
+		const camera = this.pendingCamera;
+		const pinnedNotePaths = this.pendingPinnedNotePaths;
+		this.pendingSettings = undefined;
+		this.pendingCamera = undefined;
+		this.pendingPinnedNotePaths = undefined;
+		return this.enqueue(async () => {
+			const next = freezeEnvelope({
+				...this.data,
+				settings: settings ?? this.data.settings,
+				camera: camera ?? this.data.camera,
+				pinnedNotePaths:
+					pinnedNotePaths ?? this.data.pinnedNotePaths,
+			});
+			await this.adapter.saveData(next);
+			this.data = next;
+			return next;
 		});
 	}
 
@@ -415,6 +726,7 @@ export class PluginDataStore<TSettings> {
 		this.clearDebounceTimer();
 		this.pendingSettings = undefined;
 		this.pendingCamera = undefined;
+		this.pendingPinnedNotePaths = undefined;
 	}
 
 	private parseSettings(value: unknown): TSettings {

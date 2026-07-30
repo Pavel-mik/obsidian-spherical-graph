@@ -83,8 +83,12 @@ export class SphericalGraphView extends ItemView {
 	private toolbar: ViewToolbar | undefined;
 	private detailsPanel: SelectionDetailsPanel | undefined;
 	private statusPresenter: LayoutStatusPresenter | undefined;
-	private autoRotateButton: HTMLButtonElement | undefined;
+	private autoRotateToggle: HTMLInputElement | undefined;
+	private autoRotateLabel: HTMLLabelElement | undefined;
 	private autoRotationEnabled = false;
+	private autoRotationBeforePresentation = false;
+	private presentationMode = false;
+	private presentationRequestToken = 0;
 	private root: HTMLElement | undefined;
 	private stage: HTMLElement | undefined;
 	private stateOverlay: HTMLElement | undefined;
@@ -99,6 +103,7 @@ export class SphericalGraphView extends ItemView {
 	private opened = false;
 	private selectedNodeId: string | undefined;
 	private selectedTagId: string | undefined;
+	private pinnedNodeIds = new Set<string>();
 	private displayFilters: RenderFilterState = DEFAULT_RENDER_FILTERS;
 	private routeSelection: RouteSelectionState = { kind: 'idle' };
 	private renderRoute: RenderRouteState | undefined;
@@ -110,6 +115,11 @@ export class SphericalGraphView extends ItemView {
 		super(leaf);
 		this.scope = new Scope(this.app.scope);
 		this.scope.register([], 'Escape', (event) => {
+			if (this.presentationMode) {
+				event.stopPropagation();
+				this.exitPresentationMode();
+				return false;
+			}
 			const search = this.toolbar?.search;
 			if (
 				search === undefined ||
@@ -188,6 +198,15 @@ export class SphericalGraphView extends ItemView {
 				onContinentsVisibilityChange: (visible) => {
 					this.changeContinentsVisibility(visible);
 				},
+				onAtmosphereVisibilityChange: (visible) => {
+					this.changeAtmosphereVisibility(visible);
+				},
+				onManualSave: () => {
+					this.saveMap();
+				},
+				onFullscreen: () => {
+					this.toggleFullscreen();
+				},
 				onSelect: (node) => {
 					this.handleNodeSelection(node, true);
 				},
@@ -209,31 +228,47 @@ export class SphericalGraphView extends ItemView {
 			this.currentSettings.appearance.surfaceMode,
 			this.displayFilters,
 			this.currentSettings.appearance.showContinents,
+			this.currentSettings.appearance.showAtmosphere,
 		);
 		this.root.append(this.stage);
+		this.root.ownerDocument.addEventListener(
+			'fullscreenchange',
+			this.onFullscreenChange,
+		);
 
 		const statusRail = this.root.createDiv();
 		statusRail.className = 'spherical-graph-status-rail';
 		this.root.append(statusRail);
 		this.statusPresenter = new LayoutStatusPresenter(statusRail);
-		this.autoRotateButton = statusRail.createEl('button');
-		this.autoRotateButton.type = 'button';
-		this.autoRotateButton.className =
-			'spherical-graph-auto-rotate';
-		this.autoRotateButton.textContent =
-			VIEW_CONTROL_COPY.autoRotate;
-		this.autoRotateButton.disabled = true;
-		this.autoRotateButton.title =
+		this.autoRotateLabel = statusRail.createEl('label');
+		this.autoRotateLabel.className = 'spherical-graph-auto-rotate';
+		this.autoRotateLabel.title =
 			'Start automatic globe rotation';
-		this.autoRotateButton.setAttribute(
+		this.autoRotateToggle = this.autoRotateLabel.createEl('input');
+		this.autoRotateToggle.type = 'checkbox';
+		this.autoRotateToggle.className =
+			'spherical-graph-auto-rotate-checkbox';
+		this.autoRotateToggle.disabled = true;
+		this.autoRotateToggle.setAttribute(
 			'aria-label',
 			VIEW_CONTROL_COPY.autoRotate,
 		);
-		this.autoRotateButton.addEventListener(
-			'click',
+		const autoRotateIndicator = this.autoRotateLabel.createSpan();
+		autoRotateIndicator.className =
+			'spherical-graph-auto-rotate-indicator';
+		const autoRotateText = this.autoRotateLabel.createSpan();
+		autoRotateText.className = 'spherical-graph-auto-rotate-label';
+		autoRotateText.textContent = VIEW_CONTROL_COPY.autoRotate;
+		this.autoRotateLabel.append(
+			this.autoRotateToggle,
+			autoRotateIndicator,
+			autoRotateText,
+		);
+		this.autoRotateToggle.addEventListener(
+			'change',
 			this.onAutoRotateToggle,
 		);
-		this.updateAutoRotateButton();
+		this.updateAutoRotateControl();
 
 		this.stateOverlay = this.root.createDiv();
 		this.stateOverlay.className = 'spherical-graph-state-overlay';
@@ -265,9 +300,6 @@ export class SphericalGraphView extends ItemView {
 							this.options.callbacks.onCameraChange(camera),
 						);
 					},
-					onAutoRotationChange: (enabled) => {
-						this.setAutoRotation(enabled, false);
-					},
 					onContextError: (message) => {
 						this.runtimeError = message;
 						this.updateStateOverlay();
@@ -279,7 +311,8 @@ export class SphericalGraphView extends ItemView {
 				},
 			});
 			this.renderer.setFilters(this.displayFilters);
-			this.autoRotateButton.disabled = false;
+			this.renderer.setPinnedNodeIds([...this.pinnedNodeIds]);
+			this.autoRotateToggle.disabled = false;
 		} catch (error) {
 			this.runtimeError = errorMessage(
 				error,
@@ -295,20 +328,30 @@ export class SphericalGraphView extends ItemView {
 			onSelectTag: (tag) => {
 				this.handleTagSelection(tag, true);
 			},
+			onTogglePin: (node, pinned) => {
+				return this.changePin(node, pinned);
+			},
 		});
+		this.detailsPanel.setPinnedNodeIds(this.pinnedNodeIds);
 
 		this.renderModel();
 	}
 
 	async onClose(): Promise<void> {
 		this.opened = false;
+		this.exitPresentationMode();
+		this.root?.ownerDocument.removeEventListener(
+			'fullscreenchange',
+			this.onFullscreenChange,
+		);
 		this.renderer?.dispose();
 		this.renderer = undefined;
-		this.autoRotateButton?.removeEventListener(
-			'click',
+		this.autoRotateToggle?.removeEventListener(
+			'change',
 			this.onAutoRotateToggle,
 		);
-		this.autoRotateButton = undefined;
+		this.autoRotateToggle = undefined;
+		this.autoRotateLabel = undefined;
 		this.autoRotationEnabled = false;
 		this.toolbar?.dispose();
 		this.toolbar = undefined;
@@ -327,6 +370,7 @@ export class SphericalGraphView extends ItemView {
 	setModel(model: SphericalGraphViewModel): void {
 		const previousSnapshot = this.model.snapshot;
 		this.model = model;
+		this.pinnedNodeIds = new Set(model.pinnedNodeIds ?? []);
 		if (!this.opened) {
 			return;
 		}
@@ -337,6 +381,8 @@ export class SphericalGraphView extends ItemView {
 			this.applySnapshot(model.snapshot);
 		}
 		this.renderer?.setActiveNode(model.activeNodeId);
+		this.renderer?.setPinnedNodeIds([...this.pinnedNodeIds]);
+		this.detailsPanel?.setPinnedNodeIds(this.pinnedNodeIds);
 		this.updateStatus();
 		this.updateStateOverlay();
 	}
@@ -379,6 +425,19 @@ export class SphericalGraphView extends ItemView {
 		this.toolbar?.setContinentsVisible(
 			this.currentSettings.appearance.showContinents,
 		);
+		this.toolbar?.setAtmosphereVisible(
+			this.currentSettings.appearance.showAtmosphere,
+		);
+	}
+
+	setPinnedNodeIds(nodeIds: readonly string[]): void {
+		this.pinnedNodeIds = new Set(nodeIds);
+		this.model = {
+			...this.model,
+			pinnedNodeIds: [...this.pinnedNodeIds],
+		};
+		this.renderer?.setPinnedNodeIds([...this.pinnedNodeIds]);
+		this.detailsPanel?.setPinnedNodeIds(this.pinnedNodeIds);
 	}
 
 	focusSearch(): void {
@@ -447,6 +506,43 @@ export class SphericalGraphView extends ItemView {
 		return this.renderer?.getPositionBufferCopy();
 	}
 
+	saveMap(): boolean {
+		const camera = this.renderer?.getCameraState();
+		if (camera === undefined) {
+			return false;
+		}
+		this.invoke(() => this.options.callbacks.onManualSave(camera));
+		return true;
+	}
+
+	toggleSelectedPin(): boolean {
+		const selected = this.selectedPinnableNode();
+		if (selected === undefined) {
+			return false;
+		}
+		void this.changePin(
+			selected,
+			!this.pinnedNodeIds.has(selected.id),
+		);
+		return true;
+	}
+
+	canToggleSelectedPin(): boolean {
+		return this.selectedPinnableNode() !== undefined;
+	}
+
+	toggleFullscreen(): boolean {
+		if (this.root === undefined) {
+			return false;
+		}
+		if (this.presentationMode) {
+			this.exitPresentationMode();
+		} else {
+			this.enterPresentationMode();
+		}
+		return true;
+	}
+
 	/**
 	 * Opens the same transactional Renew confirmation used by the toolbar.
 	 * Commands can call this method without duplicating modal copy or behavior.
@@ -469,6 +565,8 @@ export class SphericalGraphView extends ItemView {
 			this.applySnapshot(this.model.snapshot);
 		}
 		this.renderer?.setActiveNode(this.model.activeNodeId);
+		this.renderer?.setPinnedNodeIds([...this.pinnedNodeIds]);
+		this.detailsPanel?.setPinnedNodeIds(this.pinnedNodeIds);
 		this.updateStatus();
 		this.updateStateOverlay();
 	}
@@ -476,11 +574,13 @@ export class SphericalGraphView extends ItemView {
 	private applySnapshot(snapshot: RenderGraphSnapshot): void {
 		try {
 			this.renderer?.setSnapshot(snapshot);
+			this.renderer?.setPinnedNodeIds([...this.pinnedNodeIds]);
 			this.syncVisibleNodes(snapshot);
 			this.toolbar?.setTagsAvailable(snapshot.tags?.length ?? 0);
 			this.toolbar?.setFilterState(this.displayFilters);
 			this.renderer?.setFilters(this.displayFilters);
 			this.detailsPanel?.setSnapshot(snapshot);
+			this.detailsPanel?.setPinnedNodeIds(this.pinnedNodeIds);
 			if (
 				this.selectedNodeId !== undefined &&
 				!snapshot.nodes.some(
@@ -829,7 +929,7 @@ export class SphericalGraphView extends ItemView {
 	}
 
 	private readonly onAutoRotateToggle = (): void => {
-		this.setAutoRotation(!this.autoRotationEnabled);
+		this.setAutoRotation(this.autoRotateToggle?.checked ?? false);
 	};
 
 	private setAutoRotation(
@@ -840,23 +940,140 @@ export class SphericalGraphView extends ItemView {
 		if (updateRenderer) {
 			this.renderer?.setAutoRotation(enabled);
 		}
-		this.updateAutoRotateButton();
+		this.updateAutoRotateControl();
 	}
 
-	private updateAutoRotateButton(): void {
-		const button = this.autoRotateButton;
-		if (button === undefined) {
+	private updateAutoRotateControl(): void {
+		const toggle = this.autoRotateToggle;
+		const label = this.autoRotateLabel;
+		if (toggle === undefined || label === undefined) {
 			return;
 		}
-		button.dataset.active = String(this.autoRotationEnabled);
-		button.setAttribute(
-			'aria-pressed',
-			String(this.autoRotationEnabled),
-		);
-		button.title = this.autoRotationEnabled
+		toggle.checked = this.autoRotationEnabled;
+		label.dataset.active = String(this.autoRotationEnabled);
+		label.title = this.autoRotationEnabled
 			? 'Stop automatic globe rotation'
 			: 'Start automatic globe rotation';
 	}
+
+	private selectedPinnableNode(): RenderNode | undefined {
+		if (this.selectedNodeId === undefined) {
+			return undefined;
+		}
+		const node = this.model.snapshot?.nodes.find(
+			(candidate) => candidate.id === this.selectedNodeId,
+		);
+		return node !== undefined && renderNodeKind(node) === 'note'
+			? node
+			: undefined;
+	}
+
+	private async changePin(
+		node: RenderNode,
+		pinned: boolean,
+	): Promise<void> {
+		if (renderNodeKind(node) !== 'note') {
+			return;
+		}
+		const previous = new Set(this.pinnedNodeIds);
+		if (pinned) {
+			this.pinnedNodeIds.add(node.id);
+		} else {
+			this.pinnedNodeIds.delete(node.id);
+		}
+		this.renderer?.setPinnedNodeIds([...this.pinnedNodeIds]);
+		this.detailsPanel?.setPinnedNodeIds(this.pinnedNodeIds);
+		try {
+			await this.options.callbacks.onPinChange(node, pinned);
+			this.runtimeError = undefined;
+			this.updateStateOverlay();
+		} catch (error: unknown) {
+			this.pinnedNodeIds = previous;
+			this.renderer?.setPinnedNodeIds([...this.pinnedNodeIds]);
+			this.detailsPanel?.setPinnedNodeIds(this.pinnedNodeIds);
+			this.runtimeError = errorMessage(
+				error,
+				'The pin could not be saved.',
+			);
+			this.updateStateOverlay();
+		}
+	}
+
+	private enterPresentationMode(): void {
+		const root = this.root;
+		if (root === undefined || this.presentationMode) {
+			return;
+		}
+		const requestToken = ++this.presentationRequestToken;
+		this.presentationMode = true;
+		this.autoRotationBeforePresentation = this.autoRotationEnabled;
+		root.dataset.presentation = 'true';
+		this.toolbar?.setFullscreenActive(true);
+		this.renderer?.setPresentationMode(true);
+		this.setAutoRotation(true);
+		if (typeof root.requestFullscreen === 'function') {
+			void root
+				.requestFullscreen({ navigationUI: 'hide' })
+				.then(() => {
+					if (
+						requestToken !== this.presentationRequestToken ||
+						!this.presentationMode ||
+						this.root !== root
+					) {
+						const ownerDocument = root.ownerDocument;
+						if (
+							ownerDocument.fullscreenElement === root &&
+							typeof ownerDocument.exitFullscreen === 'function'
+						) {
+							void ownerDocument
+								.exitFullscreen()
+								.catch(() => undefined);
+						}
+					}
+				})
+				.catch(() => {
+					// Keep the CSS presentation fallback active when native
+					// fullscreen is unavailable or the browser denies it.
+				});
+		}
+	}
+
+	private exitPresentationMode(): void {
+		const root = this.root;
+		if (!this.presentationMode) {
+			return;
+		}
+		this.presentationRequestToken += 1;
+		this.presentationMode = false;
+		if (root !== undefined) {
+			delete root.dataset.presentation;
+		}
+		this.toolbar?.setFullscreenActive(false);
+		this.renderer?.setPresentationMode(false);
+		this.setAutoRotation(this.autoRotationBeforePresentation);
+		if (root !== undefined) {
+			const ownerDocument = root.ownerDocument;
+			if (
+				ownerDocument.fullscreenElement === root &&
+				typeof ownerDocument.exitFullscreen === 'function'
+			) {
+				void ownerDocument
+					.exitFullscreen()
+					.catch(() => undefined);
+			}
+		}
+	}
+
+	private readonly onFullscreenChange = (): void => {
+		const root = this.root;
+		if (
+			this.presentationMode &&
+			root !== undefined &&
+			root.ownerDocument.fullscreenElement !== root
+		) {
+			this.exitPresentationMode();
+		}
+	};
 
 	private updateStateOverlay(): void {
 		const overlay = this.stateOverlay;
@@ -912,9 +1129,24 @@ export class SphericalGraphView extends ItemView {
 		);
 	}
 
+	private changeAtmosphereVisibility(visible: boolean): void {
+		this.currentSettings = cloneSphericalGraphSettings(
+			this.currentSettings,
+		);
+		this.currentSettings.appearance.showAtmosphere = visible;
+		this.renderer?.updateAppearance(this.currentSettings.appearance);
+		this.invoke(() =>
+			this.options.callbacks.onAtmosphereVisibilityChange(visible),
+		);
+	}
+
 	private invoke(callback: () => Promise<void> | void): void {
 		void Promise.resolve()
 			.then(callback)
+			.then(() => {
+				this.runtimeError = undefined;
+				this.updateStateOverlay();
+			})
 			.catch((error: unknown) => {
 				this.runtimeError = errorMessage(
 					error,

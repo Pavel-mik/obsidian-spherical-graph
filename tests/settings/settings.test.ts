@@ -33,8 +33,11 @@ describe('parseSphericalGraphSettings', () => {
 				tagOrbitHeightPercent: 500,
 				tagViewProtectionEnabled: 'yes',
 				edgeOpacity: -1,
+				edgeZoomThresholdPercent: -20,
 				maxLabels: 19.7,
 				labelZoomThresholdPercent: 500,
+				showAtmosphere: 'yes',
+				atmosphereHeightPercent: 500,
 				surfaceMode: 'wireframe',
 				surfaceOpacity: Number.NaN,
 				focusAnimationDurationMs: Infinity,
@@ -63,8 +66,11 @@ describe('parseSphericalGraphSettings', () => {
 		expect(parsed.appearance.tagOrbitHeightPercent).toBe(100);
 		expect(parsed.appearance.tagViewProtectionEnabled).toBe(false);
 		expect(parsed.appearance.edgeOpacity).toBe(0);
+		expect(parsed.appearance.edgeZoomThresholdPercent).toBe(0);
 		expect(parsed.appearance.maxLabels).toBe(20);
 		expect(parsed.appearance.labelZoomThresholdPercent).toBe(100);
+		expect(parsed.appearance.showAtmosphere).toBe(true);
+		expect(parsed.appearance.atmosphereHeightPercent).toBe(30);
 		expect(parsed.appearance.surfaceMode).toBe('solid');
 		expect(parsed.appearance.surfaceOpacity).toBe(
 			DEFAULT_SPHERICAL_GRAPH_SETTINGS.appearance.surfaceOpacity,
@@ -78,6 +84,17 @@ describe('parseSphericalGraphSettings', () => {
 		expect(parsed.refresh.affectedNodeAnchorMultiplier).toBe(0);
 		expect(parsed.refresh.maxOldNodeDisplacementDegrees).toBe(90);
 		expect(parsed.refresh.largeChangeWarningRatio).toBe(1);
+	});
+
+	it('uses the presentation defaults for labels, edges, orbit, and atmosphere', () => {
+		const appearance =
+			parseSphericalGraphSettings(undefined).appearance;
+
+		expect(appearance.labelZoomThresholdPercent).toBe(80);
+		expect(appearance.edgeZoomThresholdPercent).toBe(50);
+		expect(appearance.tagOrbitHeightPercent).toBe(100 / 3);
+		expect(appearance.showAtmosphere).toBe(true);
+		expect(appearance.atmosphereHeightPercent).toBe(10);
 	});
 
 	it('uses percentage orbit height and defaults the optional tag-view guard to disabled', () => {

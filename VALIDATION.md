@@ -1,5 +1,45 @@
 # Validation
 
+## Atmosphere, satellites, pins, and presentation release validation (1.7.0)
+
+- Date: 2026-07-30
+- Environment: Windows 11 x64, Node.js 24.12.0, npm 11.6.2
+- `RELEASE_TAG=1.7.0 npm run check`: PASS
+- ESLint and strict TypeScript: PASS
+- Vitest: PASS; 53 files, 308 tests
+- Production build and release metadata validation: PASS
+- `npm audit --omit=dev --audit-level=moderate`: PASS; 0 vulnerabilities
+- `git diff --check`: PASS; only Windows line-ending notices
+
+Automated regressions cover silver depth-attenuated tag satellites and their
+globe occlusion, the independently rotating ten-minute procedural cloud shell,
+camera near-plane clearance, zoom-dependent edge visibility, the three-second
+auto-rotation resume delay, instanced physical map pins, schema-v3 pin
+migrations, concurrent pin mutations, exact note renames, segment-safe folder
+renames, manual complete-envelope saves, and the new-install defaults for
+labels, edges, tag orbit, and atmosphere height. The layout algorithm remains
+version 8, so this visual and interaction release does not invalidate an
+existing committed map.
+
+A disposable browser QA harness imported the production
+`SphericalGraphRenderer`, `ViewToolbar`, `SelectionDetailsPanel`, and release
+stylesheet. It rendered 42 notes, 64 links, and eight satellites. The silver
+satellite treatment, atmospheric cloud bands and broken limb, Map disclosure,
+Atmosphere toggle, Auto rotate checkbox, Pin/Unpin action, and clean fullscreen
+presentation were exercised. Escape restored the regular view, the control
+surfaces were absent during presentation, and the browser console reported no
+errors or warnings. This harness is not a full Obsidian Electron-shell session;
+the corresponding vault and Sync checks remain in `MANUAL_TEST_PLAN.md`.
+
+### Release artifacts (1.7.0)
+
+- `main.js`: 944,304 bytes;
+  SHA-256 `97FEE6765415D726AE03DAF81747B2D67D8032D28F164EACCE958A815F9A0FE7`
+- `manifest.json`: 365 bytes, plugin 1.7.0;
+  SHA-256 `F695519218C5164634D7148F6B3114D51F9323097CC794916EBCB7C95B9F0D23`
+- `styles.css`: 52,160 bytes;
+  SHA-256 `93ACC7079633DEF84B2AE3ADCB59667DA916775F381A5BF802F9BFC2613E08C9`
+
 ## Connected directory continents release validation (1.6.1)
 
 - Date: 2026-07-30

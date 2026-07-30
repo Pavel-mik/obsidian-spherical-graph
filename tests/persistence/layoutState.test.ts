@@ -8,11 +8,15 @@ import {
 	createCommittedLayoutSnapshot,
 	deriveEffectiveSeed,
 	isSnapshotUsable,
+	prunePinnedNotePaths,
 	pruneSnapshotPaths,
 	reconcileCommittedLayout,
+	renamePinnedNotePaths,
+	renamePinnedNotePathsFromVault,
 	renameSnapshotPaths,
 	validateAndNormalizePosition,
 	validateCompletedPositions,
+	validatePinnedNotePaths,
 	validatePersistedLayoutSnapshot,
 } from "../../src/persistence/layoutState";
 
@@ -35,6 +39,66 @@ function graph(paths: readonly string[]) {
 }
 
 describe("layout state validation", () => {
+	it("normalizes, deduplicates, renames, and prunes pin paths", () => {
+		const pins = validatePinnedNotePaths([
+			" Folder\\old.md ",
+			"Folder/old.md",
+			"../outside.md",
+			"",
+			42,
+		]);
+		expect(pins).toEqual(["Folder/old.md"]);
+		const renamed = renamePinnedNotePaths(pins, [
+			{
+				oldPath: "Folder/old.md",
+				newPath: "Folder/new.md",
+			},
+		]);
+		expect(renamed).toEqual(["Folder/new.md"]);
+		expect(
+			prunePinnedNotePaths(
+				[...renamed, "deleted.md"],
+				new Set(["Folder/new.md"]),
+			),
+		).toEqual(["Folder/new.md"]);
+	});
+
+	it("applies exact file and segment-safe folder rename semantics to pins", () => {
+		expect(
+			renamePinnedNotePathsFromVault(
+				[
+					"Books/index.md",
+					"Bookshelf/index.md",
+					"Library/index.md",
+				],
+				"Books/index.md",
+				"Library/index.md",
+				"file",
+			),
+		).toEqual([
+			"Bookshelf/index.md",
+			"Library/index.md",
+		]);
+
+		expect(
+			renamePinnedNotePathsFromVault(
+				[
+					"Books/a.md",
+					"Books/sub/b.md",
+					"Bookshelf/c.md",
+					"Library/a.md",
+				],
+				"Books",
+				"Library",
+				"folder",
+			),
+		).toEqual([
+			"Bookshelf/c.md",
+			"Library/a.md",
+			"Library/sub/b.md",
+		]);
+	});
+
 	it("rejects non-finite and zero positions and normalizes valid positions", () => {
 		expect(validateAndNormalizePosition([Number.NaN, 0, 1])).toBeUndefined();
 		expect(

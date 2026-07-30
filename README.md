@@ -126,20 +126,32 @@ and a reliable rename keeps the old position under the new path. Select
   active-note emphasis,
   search/focus, open-note actions, camera reset, keyboard controls, and a
   translucent selection panel with clickable direct neighbors.
-- A persistent **Auto rotate** push button in the bottom rail starts or stops a
-  slow camera orbit; manual camera interaction stops it immediately.
+- A persistent **Auto rotate** switch in the bottom rail starts or stops a
+  slow camera orbit. Manual camera interaction pauses it and resumes it three
+  seconds after the last adjustment without clearing the switch.
+- A procedural cloud atmosphere appears only at wider zoom levels while Auto
+  rotate is enabled. The cloud-only shell has an irregular limb, rotates once
+  every ten minutes relative to the globe, and can be hidden independently.
+- Persistent map pins mark favourite note cities. Pins, the committed layout,
+  camera, and settings share one versioned plugin-data envelope with automatic
+  and explicit **Save map** persistence.
+- A control-free **Fullscreen** presentation mode forces atmosphere and Auto
+  rotate on temporarily, then restores the previous rotation state on exit.
 - Searchable excluded-folder picker in settings. Selecting a folder excludes
   its entire subtree after an explicit Refresh without moving the current map
   immediately.
 - Offline route finding that highlights every shortest path between two notes
   over the existing links, including all equally short alternatives, explicit
   `Start` and `Dest` markers, and clickable route details.
-- Intrinsically packed, render-only tag satellites on an adjustable, invisible
-  concentric orbit. Their positions are anchored to the final locations of the
-  notes that carry them.
-  Thin amber spherical spirals connect tags to the selected note, every note
+- Intrinsically packed, polished-silver tag satellites on an adjustable,
+  invisible concentric orbit. Their size and contrast recede with perspective,
+  and their positions are anchored to the final locations of the notes that
+  carry them.
+  Thin silver spherical spirals connect tags to the selected note, every note
   in the active shortest-path union, or every note carrying a selected tag.
-  Satellites hidden behind the globe are culled geometrically.
+  Satellites and link segments hidden behind the globe are culled geometrically.
+- Configurable zoom thresholds independently reveal labels and roads only when
+  the camera is close enough, reducing clutter in large vaults.
 - Solid, transparent, and hidden sphere-surface modes.
 - Render-only visibility filters for tags, attachments, unresolved links, and
   orphan notes. Filters hide markers and incident links without moving the map.
@@ -152,21 +164,25 @@ and a reliable rename keeps the old position under the new path. Select
 | Action | Control |
 | --- | --- |
 | Rotate | Drag empty canvas space |
-| Start or stop automatic rotation | Use **Auto rotate** in the bottom status rail |
+| Start or stop automatic rotation | Toggle **Auto rotate** in the bottom status rail |
 | Zoom | Wheel or supported pinch gesture |
 | Inspect | Hover a node |
 | Select | Click a node |
-| Select a tag and show its links | Click an amber tag satellite |
+| Pin or unpin a favourite city | Select a note, then use **Pin note** / **Unpin note** in Selection details |
+| Select a tag and show its links | Click a silver tag satellite |
 | Clear selection | Click empty canvas space or press `Escape` |
 | Open note | Double-click a node or press `Enter` on a selected search result |
 | Open in new tab | `Ctrl`/`Cmd` + click |
 | Open from selection details | Click a selected, linked, endpoint, or route note; hold `Ctrl`/`Cmd` for a new tab |
 | Hide or show selection details | Select the **Selection details** header |
-| Find and focus | Type in **Find a note…** and choose a result |
+| Find and focus | Type in **Find a note or tag…** and choose a result |
 | Find all shortest routes | Select an origin, open **Map**, choose **Find route**, then select a destination |
 | Clear a route | Choose **Clear route** in **Map** |
 | Hide categories without moving the map | Use **Filters** in **Map** |
 | Hide or show geography | Toggle **Continents** in **Map → Appearance** |
+| Hide or show the cloud layer | Toggle **Atmosphere** in **Map → Appearance** |
+| Save the complete map state now | Choose **Save map** in **Map** |
+| Enter the control-free presentation globe | Choose **Fullscreen** in **Map**; press `Escape` to exit |
 | Change globe surface | Use **Appearance** in **Map** |
 | Include pending changes | Choose **Refresh layout** in **Map** |
 | Build a new world | Choose **Renew layout** in **Map**, then confirm |
@@ -189,12 +205,14 @@ Manual or automatic rotation changes only the camera and never a node position.
   markers and the coral selection frame smaller without moving the layout.
   Initialize and Renew automatically choose this value from the vault's note
   count; Refresh preserves the current value
-- tag-orbit height as a percentage of the globe radius (30% by default), plus
-  an optional camera-axis protection guard, disabled by default
-- edge opacity
-- labels, maximum pooled labels, and a zoom-in threshold (0–100%); note and
-  tag labels fade and scale smoothly around that threshold
-- continent, coastline, island, and cartographic-label visibility
+- tag-orbit height as a percentage of the globe radius (one third by default),
+  plus an optional camera-axis protection guard, disabled by default
+- edge opacity and an independent zoom-in visibility threshold (50% by
+  default)
+- labels, maximum pooled labels, and a zoom-in threshold (80% by default);
+  note and tag labels fade and scale smoothly around that threshold
+- continent, coastline, island, cartographic-label, and atmosphere visibility;
+  atmosphere height is expressed as a percentage of the globe radius
 - sphere surface mode and opacity
 - theme-following background
 - focus-animation duration
@@ -220,6 +238,20 @@ tags, attachments, unresolved links, and orphan notes are also render-only.
 Data exclusions can create pending changes. Layout settings apply to the next
 relevant explicit operation; changing them alone does not move the current
 map.
+
+## Saving and Obsidian Sync
+
+Completed layouts are saved automatically. Camera changes and settings are
+debounced; pin changes are committed immediately. **Map → Save map** flushes
+the current camera, settings, and pins into the same complete state on demand.
+
+The only authoritative state file is Obsidian's standard
+`.obsidian/plugins/spherical-graph/data.json`. To carry the same layout and
+pins between devices, enable community-plugin data in
+[Obsidian Sync settings](https://obsidian.md/help/sync/settings) for the vault.
+No extra file is written into the vault root. If Sync updates plugin data while
+Obsidian is already running, reload the plugin or restart Obsidian before
+judging the restored map.
 
 ## Installation
 
@@ -283,9 +315,9 @@ Spherical Graph is designed for private, offline vault use:
 - It never modifies note contents and never accesses files outside the vault.
 - It stores plugin settings, vault-relative note paths, normalized layout
   positions, graph descriptors, post-layout continent membership, diagnostic
-  centers/extents, and camera state through Obsidian's plugin-data API. Tag
-  satellites and analytical spherical-grid cells are derived at runtime and
-  are not persisted.
+  centers/extents, camera state, and pinned-note paths through Obsidian's
+  plugin-data API. Tag satellites, atmosphere clouds, and analytical
+  spherical-grid cells are derived at runtime and are not persisted.
 - It performs no runtime network requests, telemetry, remote-code loading,
   advertising, or automatic plugin updates.
 - It requires no account, payment, external key, or remote service.

@@ -11,6 +11,7 @@ export interface MigratedPluginData {
 	readonly settings: unknown;
 	readonly committedLayout: unknown;
 	readonly camera: unknown;
+	readonly pinnedNotePaths: unknown;
 }
 
 function migrateSnapshot(value: unknown): unknown {
@@ -52,6 +53,7 @@ export function migratePluginData(raw: unknown): MigratedPluginData {
 			settings: undefined,
 			committedLayout: null,
 			camera: undefined,
+			pinnedNotePaths: [],
 		};
 	}
 	const rawVersion =
@@ -62,6 +64,7 @@ export function migratePluginData(raw: unknown): MigratedPluginData {
 			settings: raw.settings,
 			committedLayout: null,
 			camera: raw.camera,
+			pinnedNotePaths: raw.pinnedNotePaths ?? raw.pins ?? [],
 		};
 	}
 	const committedLayout =
@@ -77,5 +80,6 @@ export function migratePluginData(raw: unknown): MigratedPluginData {
 				? null
 				: migrateSnapshot(committedLayout),
 		camera: raw.camera ?? raw.cameraState,
+		pinnedNotePaths: raw.pinnedNotePaths ?? raw.pins ?? [],
 	};
 }

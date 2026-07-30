@@ -20,6 +20,9 @@ export interface ViewToolbarCallbacks extends SearchControllerCallbacks {
 	onFiltersChange(filters: RenderFilterState): void;
 	onSurfaceModeChange(mode: SurfaceMode): void;
 	onContinentsVisibilityChange(visible: boolean): void;
+	onAtmosphereVisibilityChange(visible: boolean): void;
+	onManualSave(): void;
+	onFullscreen(): void;
 }
 
 export type RouteToolbarState =
@@ -51,12 +54,15 @@ export class ViewToolbar {
 	private readonly renewButton: HTMLButtonElement;
 	private readonly cancelButton: HTMLButtonElement;
 	private readonly resetButton: HTMLButtonElement;
+	private readonly saveButton: HTMLButtonElement;
+	private readonly fullscreenButton: HTMLButtonElement;
 	private readonly routeButton: HTMLButtonElement;
 	private readonly tagsToggle: FilterToggle;
 	private readonly attachmentsToggle: FilterToggle;
 	private readonly existingFilesToggle: FilterToggle;
 	private readonly orphansToggle: FilterToggle;
 	private readonly continentsToggle: FilterToggle;
+	private readonly atmosphereToggle: FilterToggle;
 	private readonly surfaceSelect: HTMLSelectElement;
 
 	constructor(
@@ -65,6 +71,7 @@ export class ViewToolbar {
 		initialSurfaceMode: SurfaceMode,
 		initialFilters: RenderFilterState = DEFAULT_RENDER_FILTERS,
 		initialContinentsVisible = true,
+		initialAtmosphereVisible = true,
 	) {
 		this.element = parent.createDiv();
 		this.element.className = 'spherical-graph-toolbar';
@@ -113,6 +120,18 @@ export class ViewToolbar {
 			VIEW_CONTROL_COPY.resetCamera,
 			'spherical-graph-action-reset',
 		);
+		this.saveButton = createButton(
+			actionGrid,
+			VIEW_CONTROL_COPY.saveMap,
+			'spherical-graph-action-save',
+		);
+		this.fullscreenButton = createButton(
+			actionGrid,
+			VIEW_CONTROL_COPY.fullscreen,
+			'spherical-graph-action-fullscreen',
+		);
+		this.fullscreenButton.dataset.active = 'false';
+		this.fullscreenButton.setAttribute('aria-pressed', 'false');
 		this.routeButton = createButton(
 			actionGrid,
 			VIEW_CONTROL_COPY.findRoute,
@@ -126,6 +145,8 @@ export class ViewToolbar {
 			this.cancelButton,
 			this.routeButton,
 			this.resetButton,
+			this.saveButton,
+			this.fullscreenButton,
 		);
 
 		const filters = createSection(
@@ -202,7 +223,17 @@ export class ViewToolbar {
 			'continents',
 		);
 		this.continentsToggle.input.checked = initialContinentsVisible;
-		appearance.append(this.continentsToggle.label, surfaceLabel);
+		this.atmosphereToggle = createFilterToggle(
+			appearance,
+			VIEW_CONTROL_COPY.atmosphere,
+			'atmosphere',
+		);
+		this.atmosphereToggle.input.checked = initialAtmosphereVisible;
+		appearance.append(
+			this.continentsToggle.label,
+			this.atmosphereToggle.label,
+			surfaceLabel,
+		);
 
 		panel.append(actions, filters, appearance);
 		this.menu.append(summary, panel);
@@ -215,6 +246,11 @@ export class ViewToolbar {
 		this.cancelButton.addEventListener('click', this.onCancel);
 		this.resetButton.addEventListener('click', this.onReset);
 		this.routeButton.addEventListener('click', this.onRoute);
+		this.saveButton.addEventListener('click', this.onSave);
+		this.fullscreenButton.addEventListener(
+			'click',
+			this.onFullscreen,
+		);
 		this.tagsToggle.input.addEventListener(
 			'change',
 			this.onFiltersChange,
@@ -235,6 +271,10 @@ export class ViewToolbar {
 		this.continentsToggle.input.addEventListener(
 			'change',
 			this.onContinentsChange,
+		);
+		this.atmosphereToggle.input.addEventListener(
+			'change',
+			this.onAtmosphereChange,
 		);
 	}
 
@@ -278,6 +318,19 @@ export class ViewToolbar {
 
 	setContinentsVisible(visible: boolean): void {
 		this.continentsToggle.input.checked = visible;
+	}
+
+	setAtmosphereVisible(visible: boolean): void {
+		this.atmosphereToggle.input.checked = visible;
+	}
+
+	setFullscreenActive(active: boolean): void {
+		this.fullscreenButton.dataset.active = String(active);
+		this.fullscreenButton.setAttribute('aria-pressed', String(active));
+		this.fullscreenButton.textContent = active
+			? 'Exit fullscreen'
+			: VIEW_CONTROL_COPY.fullscreen;
+		this.fullscreenButton.title = this.fullscreenButton.textContent;
 	}
 
 	setRouteState(state: RouteToolbarState): void {
@@ -328,6 +381,11 @@ export class ViewToolbar {
 		this.cancelButton.removeEventListener('click', this.onCancel);
 		this.resetButton.removeEventListener('click', this.onReset);
 		this.routeButton.removeEventListener('click', this.onRoute);
+		this.saveButton.removeEventListener('click', this.onSave);
+		this.fullscreenButton.removeEventListener(
+			'click',
+			this.onFullscreen,
+		);
 		this.tagsToggle.input.removeEventListener(
 			'change',
 			this.onFiltersChange,
@@ -351,6 +409,10 @@ export class ViewToolbar {
 		this.continentsToggle.input.removeEventListener(
 			'change',
 			this.onContinentsChange,
+		);
+		this.atmosphereToggle.input.removeEventListener(
+			'change',
+			this.onAtmosphereChange,
 		);
 		this.search.dispose();
 		this.element.remove();
@@ -393,6 +455,16 @@ export class ViewToolbar {
 		}
 	};
 
+	private readonly onSave = (): void => {
+		this.closeMenu();
+		this.callbacks.onManualSave();
+	};
+
+	private readonly onFullscreen = (): void => {
+		this.closeMenu();
+		this.callbacks.onFullscreen();
+	};
+
 	private readonly onFiltersChange = (): void => {
 		this.callbacks.onFiltersChange({
 			showTags: this.tagsToggle.input.checked,
@@ -416,6 +488,12 @@ export class ViewToolbar {
 	private readonly onContinentsChange = (): void => {
 		this.callbacks.onContinentsVisibilityChange(
 			this.continentsToggle.input.checked,
+		);
+	};
+
+	private readonly onAtmosphereChange = (): void => {
+		this.callbacks.onAtmosphereVisibilityChange(
+			this.atmosphereToggle.input.checked,
 		);
 	};
 }

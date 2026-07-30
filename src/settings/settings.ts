@@ -1,10 +1,13 @@
 import {
 	BASE_NODE_MARKER_SIZE,
+	DEFAULT_ATMOSPHERE_HEIGHT_PERCENT,
 	DEFAULT_GLOBE_SIZE,
 	DEFAULT_TAG_ORBIT_HEIGHT_PERCENT,
 	GRAPH_CHANGE_DEBOUNCE_MAX_MS,
 	GRAPH_CHANGE_DEBOUNCE_MIN_MS,
+	MAX_ATMOSPHERE_HEIGHT_PERCENT,
 	MAX_TAG_ORBIT_HEIGHT_PERCENT,
+	MIN_ATMOSPHERE_HEIGHT_PERCENT,
 	MIN_TAG_ORBIT_HEIGHT_PERCENT,
 	SPHERE_RADIUS,
 } from '../constants';
@@ -30,10 +33,13 @@ export interface AppearanceSettings {
 	tagViewProtectionEnabled: boolean;
 	sizeNodesByDegree: boolean;
 	edgeOpacity: number;
+	edgeZoomThresholdPercent: number;
 	showLabels: boolean;
 	maxLabels: number;
 	labelZoomThresholdPercent: number;
 	showContinents: boolean;
+	showAtmosphere: boolean;
+	atmosphereHeightPercent: number;
 	surfaceMode: SurfaceMode;
 	surfaceOpacity: number;
 	backgroundFollowsTheme: boolean;
@@ -91,10 +97,13 @@ export const DEFAULT_SPHERICAL_GRAPH_SETTINGS: SphericalGraphSettings = {
 		tagViewProtectionEnabled: false,
 		sizeNodesByDegree: true,
 		edgeOpacity: 0.28,
+		edgeZoomThresholdPercent: 50,
 		showLabels: true,
 		maxLabels: 80,
-		labelZoomThresholdPercent: 50,
+		labelZoomThresholdPercent: 80,
 		showContinents: true,
+		showAtmosphere: true,
+		atmosphereHeightPercent: DEFAULT_ATMOSPHERE_HEIGHT_PERCENT,
 		surfaceMode: 'solid',
 		surfaceOpacity: 0.92,
 		backgroundFollowsTheme: true,
@@ -338,6 +347,11 @@ export function parseSphericalGraphSettings(
 				defaults.appearance.edgeOpacity,
 				{ min: 0, max: 1 },
 			),
+			edgeZoomThresholdPercent: numberValue(
+				appearance.edgeZoomThresholdPercent,
+				defaults.appearance.edgeZoomThresholdPercent,
+				{ min: 0, max: 100 },
+			),
 			showLabels: booleanValue(
 				appearance.showLabels,
 				defaults.appearance.showLabels,
@@ -355,6 +369,18 @@ export function parseSphericalGraphSettings(
 			showContinents: booleanValue(
 				appearance.showContinents,
 				defaults.appearance.showContinents,
+			),
+			showAtmosphere: booleanValue(
+				appearance.showAtmosphere,
+				defaults.appearance.showAtmosphere,
+			),
+			atmosphereHeightPercent: numberValue(
+				appearance.atmosphereHeightPercent,
+				defaults.appearance.atmosphereHeightPercent,
+				{
+					min: MIN_ATMOSPHERE_HEIGHT_PERCENT,
+					max: MAX_ATMOSPHERE_HEIGHT_PERCENT,
+				},
 			),
 			surfaceMode: surfaceModeValue(
 				appearance.surfaceMode,
