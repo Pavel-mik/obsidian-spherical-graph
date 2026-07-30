@@ -18,6 +18,8 @@ export interface ForceEvaluationInput {
 	readonly positions: Float32Array;
 	readonly edgeEndpoints: Uint32Array;
 	readonly edgeWeights: Float32Array;
+	readonly edgeTargetAngles?: Float32Array;
+	readonly folderIndexByNode?: Int32Array;
 	readonly movableMask: Uint8Array;
 	readonly settings: SolverSettings;
 	readonly effectiveSeed: number;
@@ -217,12 +219,21 @@ function accumulateSprings(
 				0x0ed6,
 			) *
 				0.6;
-		const targetAngle = clamp(
-			(baseTarget * organicTargetScale) /
-				(1 + 0.12 * Math.log1p(weight)),
-			input.settings.minimumTargetAngle * 0.72,
-			input.settings.maximumTargetAngle,
-		);
+		const explicitTarget =
+			input.edgeTargetAngles?.[edgeIndex] ?? 0;
+		const targetAngle =
+			Number.isFinite(explicitTarget) && explicitTarget > 0
+				? clamp(
+						explicitTarget,
+						input.settings.minimumTargetAngle * 0.5,
+						input.settings.maximumTargetAngle,
+					)
+				: clamp(
+						(baseTarget * organicTargetScale) /
+							(1 + 0.12 * Math.log1p(weight)),
+						input.settings.minimumTargetAngle * 0.72,
+						input.settings.maximumTargetAngle,
+					);
 		const extension = angle - targetAngle;
 		const magnitude =
 			input.settings.springStrength * weightFactor * extension;
@@ -351,6 +362,50 @@ function accumulateCoverageRegularizers(
 	if (nodeCount === 0) {
 		return 0;
 	}
+	/*
+	 * Directory continents are the macro bodies that should cover the globe.
+	 * Treating every note as an independent coverage sample pulls one large
+	 * folder into a sphere-spanning disc and recreates the concentric rings we
+	 * are trying to remove. Folder centroids therefore vote once each, while
+	 * root notes remain individual islands.
+	 */
+	const ownerByNode = new Int32Array(nodeCount);
+	const ownerMembers = new Map<number, number[]>();
+	for (let index = 0; index < nodeCount; index += 1) {
+		const folder = input.folderIndexByNode?.[index] ?? -1;
+		const owner = folder >= 0 ? folder : -(index + 1);
+		ownerByNode[index] = owner;
+		const members = ownerMembers.get(owner);
+		if (members === undefined) {
+			ownerMembers.set(owner, [index]);
+		} else {
+			members.push(index);
+		}
+	}
+	const groupCenters = new Map<number, Vec3>();
+	for (const [owner, members] of ownerMembers) {
+		let sumX = 0;
+		let sumY = 0;
+		let sumZ = 0;
+		for (const index of members) {
+			const offset = index * 3;
+			sumX += input.positions[offset] ?? 0;
+			sumY += input.positions[offset + 1] ?? 0;
+			sumZ += input.positions[offset + 2] ?? 0;
+		}
+		const norm = Math.hypot(sumX, sumY, sumZ);
+		groupCenters.set(
+			owner,
+			norm > 1e-10
+				? [sumX / norm, sumY / norm, sumZ / norm]
+				: readVec3(input.positions, members[0] ?? 0),
+		);
+	}
+	const centers = [...groupCenters.values()];
+	const sampleCount = centers.length;
+	if (sampleCount <= 1) {
+		return 0;
+	}
 	let meanX = 0;
 	let meanY = 0;
 	let meanZ = 0;
@@ -360,11 +415,7 @@ function accumulateCoverageRegularizers(
 	let c11 = 0;
 	let c12 = 0;
 	let c22 = 0;
-	for (let index = 0; index < nodeCount; index += 1) {
-		const offset = index * 3;
-		const x = input.positions[offset] ?? 0;
-		const y = input.positions[offset + 1] ?? 0;
-		const z = input.positions[offset + 2] ?? 0;
+	for (const [x, y, z] of centers) {
 		meanX += x;
 		meanY += y;
 		meanZ += z;
@@ -375,7 +426,7 @@ function accumulateCoverageRegularizers(
 		c12 += y * z;
 		c22 += z * z;
 	}
-	const inverseCount = 1 / nodeCount;
+	const inverseCount = 1 / sampleCount;
 	meanX *= inverseCount;
 	meanY *= inverseCount;
 	meanZ *= inverseCount;
@@ -394,33 +445,62 @@ function accumulateCoverageRegularizers(
 		const x = input.positions[offset] ?? 0;
 		const y = input.positions[offset + 1] ?? 0;
 		const z = input.positions[offset + 2] ?? 0;
+		const center =
+			groupCenters.get(ownerByNode[index] ?? -(index + 1)) ??
+			([x, y, z] as Vec3);
+		const centerX = center[0];
+		const centerY = center[1];
+		const centerZ = center[2];
 
-		const meanRadial = x * meanX + y * meanY + z * meanZ;
-		forces[offset] =
-			(forces[offset] ?? 0) -
-			input.settings.centroidStrength * (meanX - meanRadial * x);
-		forces[offset + 1] =
-			(forces[offset + 1] ?? 0) -
-			input.settings.centroidStrength * (meanY - meanRadial * y);
-		forces[offset + 2] =
-			(forces[offset + 2] ?? 0) -
-			input.settings.centroidStrength * (meanZ - meanRadial * z);
+		const meanRadial =
+			centerX * meanX + centerY * meanY + centerZ * meanZ;
+		const meanForceX = -input.settings.centroidStrength *
+			(meanX - meanRadial * centerX);
+		const meanForceY = -input.settings.centroidStrength *
+			(meanY - meanRadial * centerY);
+		const meanForceZ = -input.settings.centroidStrength *
+			(meanZ - meanRadial * centerZ);
 
-		const gradientX = c00 * x + c01 * y + c02 * z;
-		const gradientY = c01 * x + c11 * y + c12 * z;
-		const gradientZ = c02 * x + c12 * y + c22 * z;
+		const gradientX =
+			c00 * centerX + c01 * centerY + c02 * centerZ;
+		const gradientY =
+			c01 * centerX + c11 * centerY + c12 * centerZ;
+		const gradientZ =
+			c02 * centerX + c12 * centerY + c22 * centerZ;
 		const gradientRadial =
-			x * gradientX + y * gradientY + z * gradientZ;
+			centerX * gradientX +
+			centerY * gradientY +
+			centerZ * gradientZ;
 		const isotropyScale = 4 * input.settings.isotropyStrength;
+		const centerForceX =
+			meanForceX -
+			isotropyScale *
+				(gradientX - gradientRadial * centerX);
+		const centerForceY =
+			meanForceY -
+			isotropyScale *
+				(gradientY - gradientRadial * centerY);
+		const centerForceZ =
+			meanForceZ -
+			isotropyScale *
+				(gradientZ - gradientRadial * centerZ);
+		/*
+		 * Convert the desired center tangent into one angular-velocity field
+		 * for the whole folder. omega × u is a rigid infinitesimal rotation,
+		 * so macro coverage does not radially inflate or shear the continent.
+		 */
+		const omegaX =
+			centerY * centerForceZ - centerZ * centerForceY;
+		const omegaY =
+			centerZ * centerForceX - centerX * centerForceZ;
+		const omegaZ =
+			centerX * centerForceY - centerY * centerForceX;
 		forces[offset] =
-			(forces[offset] ?? 0) -
-			isotropyScale * (gradientX - gradientRadial * x);
+			(forces[offset] ?? 0) + omegaY * z - omegaZ * y;
 		forces[offset + 1] =
-			(forces[offset + 1] ?? 0) -
-			isotropyScale * (gradientY - gradientRadial * y);
+			(forces[offset + 1] ?? 0) + omegaZ * x - omegaX * z;
 		forces[offset + 2] =
-			(forces[offset + 2] ?? 0) -
-			isotropyScale * (gradientZ - gradientRadial * z);
+			(forces[offset + 2] ?? 0) + omegaX * y - omegaY * x;
 	}
 
 	const meanEnergy = meanX * meanX + meanY * meanY + meanZ * meanZ;
@@ -514,7 +594,11 @@ export function computeSphericalForces(
 	if (
 		input.positions.length % 3 !== 0 ||
 		input.movableMask.length !== nodeCount ||
-		input.edgeEndpoints.length !== input.edgeWeights.length * 2
+		input.edgeEndpoints.length !== input.edgeWeights.length * 2 ||
+		(input.edgeTargetAngles !== undefined &&
+			input.edgeTargetAngles.length !== input.edgeWeights.length) ||
+		(input.folderIndexByNode !== undefined &&
+			input.folderIndexByNode.length !== nodeCount)
 	) {
 		throw new RangeError('Force-evaluation buffers have inconsistent lengths.');
 	}

@@ -344,7 +344,7 @@ describe("snapshot reconciliation and migrations", () => {
 			positions: new Float32Array([1, 0, 0]),
 		});
 
-		expect(CURRENT_ALGORITHM_VERSION).toBe(6);
+		expect(CURRENT_ALGORITHM_VERSION).toBe(7);
 		expect(isSnapshotUsable(legacySnapshot, currentGraph)).toBe(false);
 		expect(isSnapshotUsable(currentSnapshot, currentGraph)).toBe(true);
 	});

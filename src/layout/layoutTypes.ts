@@ -75,15 +75,6 @@ export interface RefreshConstraints {
 	readonly alignToAnchors?: boolean;
 }
 
-export interface LayoutTerritoryConstraints {
-	/** One normalized territory center per node. Unassigned entries are ignored. */
-	readonly centers: Float32Array;
-	/** Per-node hard geodesic distance from its owning territory center. */
-	readonly maximumDistances: Float32Array;
-	/** One value per node; 1 means the hard directory territory applies. */
-	readonly assignedNodeMask: Uint8Array;
-}
-
 export interface LayoutSolverInput {
 	readonly operationId: string;
 	readonly mode: LayoutOperationMode;
@@ -92,9 +83,23 @@ export interface LayoutSolverInput {
 	readonly positions: Float32Array;
 	readonly edgeEndpoints: Uint32Array;
 	readonly edgeWeights: Float32Array;
+	/**
+	 * Optional explicit spring lengths. A non-positive value keeps the normal
+	 * edge target; positive values are intrinsic angular distances on S².
+	 */
+	readonly edgeTargetAngles?: Float32Array;
+	/** Stable top-level directory owner per node; -1 means ocean/root. */
+	readonly folderIndexByNode?: Int32Array;
+	/** Stable subdirectory/topology district owner per node; -1 means none. */
+	readonly regionIndexByNode?: Int32Array;
+	/** Render-aware angular marker radius used by the final collision pass. */
+	readonly collisionAngularRadii?: Float32Array;
+	/** Relative strength of selected coastal-port nodes. */
+	readonly coastalPortScores?: Float32Array;
+	/** Preferred tangent departure direction for each port, as a 3N buffer. */
+	readonly coastalPortDirections?: Float32Array;
 	readonly movableMask?: Uint8Array;
 	readonly refresh?: RefreshConstraints;
-	readonly territory?: LayoutTerritoryConstraints;
 	readonly settings?: Partial<SolverSettings>;
 }
 
@@ -123,6 +128,9 @@ export interface LayoutFinalDiagnostics extends LayoutProgress {
 	readonly converged: boolean;
 	readonly maximumNormError: number;
 	readonly repulsionMode: RepulsionMode;
+	readonly collisionPasses?: number;
+	readonly collisionRemainingOverlapCount?: number;
+	readonly collisionMaximumPenetration?: number;
 }
 
 export interface LayoutCompletedResult {

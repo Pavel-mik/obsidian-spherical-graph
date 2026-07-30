@@ -3,13 +3,24 @@ import {
 	hashToSignedUnitFloat,
 } from '../geometry/deterministicHash';
 import { sampleGeodesicArc } from '../geometry/geodesicArc';
-import { geodesicDistance } from '../geometry/sphericalGeometry';
+import {
+	exponentialMap,
+	geodesicDistance,
+	sphericalWeightedMean,
+} from '../geometry/sphericalGeometry';
 import {
 	dotVec3,
 	normalizeVec3,
 	readVec3,
+	scaleVec3,
 	type Vec3,
 } from '../geometry/vector3';
+import {
+	scoreCoastalPortCandidates,
+	selectSeparatedCoastalPorts,
+	type CoastalPortCandidateInput,
+} from '../geography/coastalPorts';
+import { coastalPortSelectionOptions } from '../layout/coastalPortLayout';
 import {
 	createIntrinsicSphericalGrid,
 	gridSubdivisionForSpacing,
@@ -581,6 +592,119 @@ function createWaterSeeds(
 		) {
 			addToBuckets(seeds, {
 				direction: normalizeVec3(readVec3(positions, nodeIndex)),
+			});
+		}
+	}
+	const ownerMembers = new Map<number, number[]>();
+	for (let nodeIndex = 0; nodeIndex < nodeCount; nodeIndex += 1) {
+		const owner = assignments[nodeIndex] ?? -1;
+		if (owner < 0) {
+			continue;
+		}
+		const members = ownerMembers.get(owner);
+		if (members === undefined) {
+			ownerMembers.set(owner, [nodeIndex]);
+		} else {
+			members.push(nodeIndex);
+		}
+	}
+	const ownerCenters = new Map<number, Vec3>();
+	for (const [owner, members] of ownerMembers) {
+		const directions = members.map((nodeIndex) =>
+			normalizeVec3(readVec3(positions, nodeIndex)),
+		);
+		ownerCenters.set(
+			owner,
+			sphericalWeightedMean(directions) ??
+				directions[0] ??
+				[1, 0, 0],
+		);
+	}
+	const incidentWeights = new Float64Array(nodeCount);
+	const externalTargets = Array.from(
+		{ length: nodeCount },
+		(): CoastalPortCandidateInput['externalTargets'][number][] => [],
+	);
+	for (const edge of edges) {
+		const sourceOwner = assignments[edge.source] ?? -1;
+		const targetOwner = assignments[edge.target] ?? -1;
+		const weight = Math.max(0, edge.weight);
+		incidentWeights[edge.source] =
+			(incidentWeights[edge.source] ?? 0) + weight;
+		incidentWeights[edge.target] =
+			(incidentWeights[edge.target] ?? 0) + weight;
+		if (
+			sourceOwner >= 0 &&
+			targetOwner >= 0 &&
+			sourceOwner !== targetOwner
+		) {
+			externalTargets[edge.source]?.push({
+				destinationContinentId: targetOwner.toString(),
+				weight,
+				direction:
+					ownerCenters.get(targetOwner) ??
+					normalizeVec3(readVec3(positions, edge.target)),
+			});
+			externalTargets[edge.target]?.push({
+				destinationContinentId: sourceOwner.toString(),
+				weight,
+				direction:
+					ownerCenters.get(sourceOwner) ??
+					normalizeVec3(readVec3(positions, edge.source)),
+			});
+		}
+	}
+	const portInputs: CoastalPortCandidateInput[] = [];
+	for (let nodeIndex = 0; nodeIndex < nodeCount; nodeIndex += 1) {
+		const owner = assignments[nodeIndex] ?? -1;
+		if (owner < 0) {
+			continue;
+		}
+		portInputs.push({
+			nodeId: nodeIndex.toString(),
+			continentId: owner.toString(),
+			position: normalizeVec3(
+				readVec3(positions, nodeIndex),
+			),
+			continentCenter:
+				ownerCenters.get(owner) ??
+				normalizeVec3(readVec3(positions, nodeIndex)),
+			totalIncidentWeight:
+				incidentWeights[nodeIndex] ?? 0,
+			externalTargets: externalTargets[nodeIndex] ?? [],
+		});
+	}
+	const candidates = scoreCoastalPortCandidates(portInputs);
+	const candidatesByOwner = new Map<
+		number,
+		(typeof candidates)[number][]
+	>();
+	for (const candidate of candidates) {
+		const owner = Number(candidate.continentId);
+		const entries = candidatesByOwner.get(owner);
+		if (entries === undefined) {
+			candidatesByOwner.set(owner, [candidate]);
+		} else {
+			entries.push(candidate);
+		}
+	}
+	for (const [owner, members] of ownerMembers) {
+		const selected = selectSeparatedCoastalPorts(
+			candidatesByOwner.get(owner) ?? [],
+			coastalPortSelectionOptions(members.length),
+		);
+		for (const port of selected) {
+			if (port.preferredTangentDirection === null) {
+				continue;
+			}
+			addToBuckets(seeds, {
+				direction: exponentialMap(
+					port.position,
+					scaleVec3(
+						port.preferredTangentDirection,
+						WATER_SEED_RADIUS * 0.92,
+					),
+				),
 			});
 		}
 	}
@@ -1481,8 +1605,7 @@ function queryLand(pointValue: Vec3, model: LandSupportModel): QuerySample {
 	if (guaranteed !== undefined) {
 		const margin =
 			guaranteed.member.guaranteeRadius -
-			guaranteed.distance +
-			MIN_NODE_BANDWIDTH;
+			guaranteed.distance;
 		return {
 			owner: guaranteed.member.owner,
 			margin,
@@ -1564,8 +1687,7 @@ export function sampleContinentSupport(
 	if (guaranteed !== undefined) {
 		const margin =
 			guaranteed.member.guaranteeRadius -
-			guaranteed.distance +
-			MIN_NODE_BANDWIDTH;
+			guaranteed.distance;
 		return {
 			margin,
 			normalizedScore: margin / MIN_NODE_BANDWIDTH,

@@ -1,5 +1,38 @@
 # Validation
 
+## Geographic stress and collision release validation (1.6.0)
+
+- Date: 2026-07-30
+- Environment: Windows 11 x64, Node.js 24.12.0, npm 11.6.2
+- ESLint and strict TypeScript: PASS
+- Vitest: PASS; 48 files, 265 tests
+- Production build: PASS; valid root `main.js`
+
+Automated regressions cover deterministic multi-level directory initialization
+without a `territory` payload, bounded region-local sparse-stress constraints,
+relative and directionally coherent port selection, render-aware intrinsic
+collision separation, fixed-node preservation, Refresh anchor caps, worker
+payload validation/transfer, and connected-ocean land support. The layout
+algorithm version is 7, forcing one safe Initialize for older snapshots.
+
+A disposable browser QA atlas executed the actual planner, worker solver,
+post-layout geography, and land-support modules over 234 notes, 538 links, and
+four top-level-folder continents. It produced 52.8% connected ocean, zero
+visible-size overlaps, and converged its collision projection in two passes.
+The visible hemisphere showed cities distributed through irregular landmasses
+without common radial territory boundaries. Browser console errors and warnings:
+none. This local atlas is not a full Obsidian Electron-shell session; the
+corresponding manual vault checks remain in `MANUAL_TEST_PLAN.md`.
+
+### Release artifacts (1.6.0)
+
+- `main.js`: 901,236 bytes;
+  SHA-256 `023E1F4DBF69850E3C7D1D4C95BBA402E50DF3AF49AD5E3450856B5FA996BEFD`
+- `manifest.json`: 355 bytes, plugin 1.6.0;
+  SHA-256 `5A2F9AF00CD67AC21D0CC0FA5342C84782162DB8D30C49AF9A770F326930A15E`
+- `styles.css`: 49,224 bytes;
+  SHA-256 `6CF48EC62FD6FB70C54DADEA56DE7FC1878AC6D25394B146FEE9626E789E00C9`
+
 ## Organic continents and auto-rotation release validation (1.5.0)
 
 - Date: 2026-07-29

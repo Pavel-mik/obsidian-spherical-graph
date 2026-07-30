@@ -47,9 +47,21 @@ function input(): LayoutSolverInput {
 
 describe('layout worker protocol', () => {
 	it('creates a typed run request and enumerates transferable buffers', () => {
-		const request = createRunRequest(input());
+		const request = createRunRequest({
+			...input(),
+			edgeTargetAngles: new Float32Array([0.4]),
+			folderIndexByNode: new Int32Array([0, 0]),
+			regionIndexByNode: new Int32Array([0, 1]),
+			collisionAngularRadii: new Float32Array([0.02, 0.03]),
+			coastalPortScores: new Float32Array([1, 0]),
+			coastalPortDirections: new Float32Array([
+				0, 1, 0,
+				1, 0, 0,
+			]),
+			movableMask: new Uint8Array([1, 1]),
+		});
 		expect(isLayoutWorkerRequest(request)).toBe(true);
-		expect(getRunRequestTransferables(request)).toHaveLength(3);
+		expect(getRunRequestTransferables(request)).toHaveLength(10);
 	});
 
 	it('rejects obsolete geography-constrained run payloads', () => {
