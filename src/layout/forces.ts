@@ -15,6 +15,12 @@ import type {
 } from './layoutTypes';
 
 const SAME_FOLDER_LONG_RANGE_REPULSION_SCALE = 0.24;
+const FOLDER_ENVELOPE_LAND_FRACTION = 0.42;
+const FOLDER_ENVELOPE_MIN_RADIUS = 0.16;
+const FOLDER_ENVELOPE_MAX_RADIUS = 1.38;
+const FOLDER_ENVELOPE_PADDING = 0.035;
+const FOLDER_CENTER_SEA_GAP = 0.065;
+const EXACT_FOLDER_SEPARATION_LIMIT = 96;
 
 export interface ForceEvaluationInput {
 	readonly positions: Float32Array;
@@ -22,6 +28,8 @@ export interface ForceEvaluationInput {
 	readonly edgeWeights: Float32Array;
 	readonly edgeTargetAngles?: Float32Array;
 	readonly folderIndexByNode?: Int32Array;
+	readonly coastalPortScores?: Float32Array;
+	readonly territoryConstrained?: boolean;
 	readonly movableMask: Uint8Array;
 	readonly settings: SolverSettings;
 	readonly effectiveSeed: number;
@@ -373,6 +381,12 @@ function accumulateCoverageRegularizers(
 	if (nodeCount === 0) {
 		return 0;
 	}
+	// Territory-first layouts already have a globally balanced macro scaffold.
+	// Rotating and radially capping folder centroids here would make that fixed
+	// geography fight the solver and recreate circular or ribbon-like regions.
+	if (input.territoryConstrained === true) {
+		return 0;
+	}
 	/*
 	 * Directory continents are the macro bodies that should cover the globe.
 	 * Treating every note as an independent coverage sample pulls one large
@@ -411,6 +425,115 @@ function accumulateCoverageRegularizers(
 				? [sumX / norm, sumY / norm, sumZ / norm]
 				: readVec3(input.positions, members[0] ?? 0),
 		);
+	}
+	const continentalNodeCount = [...ownerMembers]
+		.filter(([owner]) => owner >= 0)
+		.reduce((sum, [, members]) => sum + members.length, 0);
+	const folderRadiusByOwner = new Map<number, number>();
+	for (const [owner, members] of ownerMembers) {
+		if (owner < 0 || continentalNodeCount === 0) {
+			continue;
+		}
+		const areaFraction =
+			FOLDER_ENVELOPE_LAND_FRACTION *
+			members.length /
+			continentalNodeCount;
+		folderRadiusByOwner.set(
+			owner,
+			clamp(
+				Math.acos(clamp(1 - 2 * areaFraction, -1, 1)),
+				FOLDER_ENVELOPE_MIN_RADIUS,
+				FOLDER_ENVELOPE_MAX_RADIUS,
+			),
+		);
+	}
+	const separationForceByOwner = new Map<number, Vec3>();
+	const folderOwners = [...folderRadiusByOwner.keys()];
+	/*
+	 * Exact macro separation is intentionally bounded. At very high folder
+	 * counts the weighted initializer and ordinary cross-folder node repulsion
+	 * already provide separation; an O(F²) pass on every solver iteration would
+	 * otherwise reintroduce the large-vault UI stalls this layout avoids.
+	 */
+	if (folderOwners.length <= EXACT_FOLDER_SEPARATION_LIMIT) {
+		for (let firstIndex = 0; firstIndex < folderOwners.length; firstIndex += 1) {
+			const firstOwner = folderOwners[firstIndex];
+			const firstCenter =
+				firstOwner === undefined ? undefined : groupCenters.get(firstOwner);
+			const firstRadius =
+				firstOwner === undefined ? undefined : folderRadiusByOwner.get(firstOwner);
+			if (firstOwner === undefined || firstCenter === undefined || firstRadius === undefined) {
+				continue;
+			}
+			for (
+				let secondIndex = firstIndex + 1;
+				secondIndex < folderOwners.length;
+				secondIndex += 1
+			) {
+				const secondOwner = folderOwners[secondIndex];
+				const secondCenter =
+					secondOwner === undefined ? undefined : groupCenters.get(secondOwner);
+				const secondRadius =
+					secondOwner === undefined ? undefined : folderRadiusByOwner.get(secondOwner);
+				if (secondOwner === undefined || secondCenter === undefined || secondRadius === undefined) {
+					continue;
+				}
+				const distance = angularDistanceComponents(
+					firstCenter[0],
+					firstCenter[1],
+					firstCenter[2],
+					secondCenter[0],
+					secondCenter[1],
+					secondCenter[2],
+				);
+				const desired = Math.min(
+					Math.PI * 0.78,
+					firstRadius + secondRadius + FOLDER_CENTER_SEA_GAP,
+				);
+				if (distance >= desired) {
+					continue;
+				}
+				const magnitude =
+					input.settings.centroidStrength * 0.42 * (desired - distance);
+				const pairSeed = hashNumbers(
+					input.effectiveSeed,
+					firstOwner,
+					secondOwner,
+					0x4ce,
+				);
+				const accumulateAway = (
+					owner: number,
+					from: Vec3,
+					other: Vec3,
+					salt: number,
+				): void => {
+					const dot = clamp(
+						from[0] * other[0] + from[1] * other[1] + from[2] * other[2],
+						-1,
+						1,
+					);
+					let x = dot * from[0] - other[0];
+					let y = dot * from[1] - other[1];
+					let z = dot * from[2] - other[2];
+					const length = Math.hypot(x, y, z);
+					if (length > 1e-10) {
+						x /= length;
+						y /= length;
+						z /= length;
+					} else {
+						[x, y, z] = orthogonalUnitVec3(from, salt);
+					}
+					const previous = separationForceByOwner.get(owner) ?? [0, 0, 0];
+					separationForceByOwner.set(owner, [
+						previous[0] + x * magnitude,
+						previous[1] + y * magnitude,
+						previous[2] + z * magnitude,
+					]);
+				};
+				accumulateAway(firstOwner, firstCenter, secondCenter, pairSeed);
+				accumulateAway(secondOwner, secondCenter, firstCenter, pairSeed ^ 0x51d);
+			}
+		}
 	}
 	const centers = [...groupCenters.values()];
 	const sampleCount = centers.length;
@@ -486,15 +609,18 @@ function accumulateCoverageRegularizers(
 		const centerForceX =
 			meanForceX -
 			isotropyScale *
-				(gradientX - gradientRadial * centerX);
+				(gradientX - gradientRadial * centerX) +
+			(separationForceByOwner.get(ownerByNode[index] ?? -1)?.[0] ?? 0);
 		const centerForceY =
 			meanForceY -
 			isotropyScale *
-				(gradientY - gradientRadial * centerY);
+				(gradientY - gradientRadial * centerY) +
+			(separationForceByOwner.get(ownerByNode[index] ?? -1)?.[1] ?? 0);
 		const centerForceZ =
 			meanForceZ -
 			isotropyScale *
-				(gradientZ - gradientRadial * centerZ);
+				(gradientZ - gradientRadial * centerZ) +
+			(separationForceByOwner.get(ownerByNode[index] ?? -1)?.[2] ?? 0);
 		/*
 		 * Convert the desired center tangent into one angular-velocity field
 		 * for the whole folder. omega × u is a rigid infinitesimal rotation,
@@ -512,6 +638,37 @@ function accumulateCoverageRegularizers(
 			(forces[offset + 1] ?? 0) + omegaZ * x - omegaX * z;
 		forces[offset + 2] =
 			(forces[offset + 2] ?? 0) + omegaX * y - omegaY * x;
+
+		const owner = ownerByNode[index] ?? -1;
+		const folderRadius = folderRadiusByOwner.get(owner);
+		if (folderRadius !== undefined) {
+			const portFreedom =
+				1 + clamp(input.coastalPortScores?.[index] ?? 0, 0, 1) * 0.28;
+			const softLimit =
+				folderRadius * 1.12 * portFreedom + FOLDER_ENVELOPE_PADDING;
+			const distance = angularDistanceComponents(
+				x,
+				y,
+				z,
+				centerX,
+				centerY,
+				centerZ,
+			);
+			if (distance > softLimit) {
+				addDirectedTangentForce(
+					forces,
+					index,
+					x,
+					y,
+					z,
+					centerX,
+					centerY,
+					centerZ,
+					input.settings.springStrength * 0.9 * (distance - softLimit),
+					hashNumbers(input.effectiveSeed, index, owner, 0x75a),
+				);
+			}
+		}
 	}
 
 	const meanEnergy = meanX * meanX + meanY * meanY + meanZ * meanZ;
@@ -609,7 +766,9 @@ export function computeSphericalForces(
 		(input.edgeTargetAngles !== undefined &&
 			input.edgeTargetAngles.length !== input.edgeWeights.length) ||
 		(input.folderIndexByNode !== undefined &&
-			input.folderIndexByNode.length !== nodeCount)
+			input.folderIndexByNode.length !== nodeCount) ||
+		(input.coastalPortScores !== undefined &&
+			input.coastalPortScores.length !== nodeCount)
 	) {
 		throw new RangeError('Force-evaluation buffers have inconsistent lengths.');
 	}

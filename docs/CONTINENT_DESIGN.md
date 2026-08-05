@@ -52,38 +52,39 @@ corners, or decorative grid overlays are part of this system.
 
 ## Geography rules
 
-- Topology determines continents before geography is rendered.
-- Communities are detected at multiple CPM resolutions and retained only when
-  they are sufficiently large, cohesive, and stable. Consensus is evaluated
-  per resolution before the candidate hierarchy is reconciled, so a prominent
-  hub region can survive at its natural coarse scale even when a fine scale
-  subdivides it.
-- The ordinary automatic size threshold grows sublinearly. A lower
-  large-vault threshold is reserved for exceptionally stable,
-  low-conductance regions, so a compact smaller book can become a continent
-  while a similarly sized sparse chain remains an archipelago.
-- Cohesion combines two-hop reachability and redundant internal edges. After
-  disjoint selection, a boundary note joins a continent only when at least two
-  member neighbors give that continent a dominant majority of local link
-  weight.
-- Selected continents are a disjoint partition subset; rejected nodes remain
-  islands rather than being forced into landmasses.
-- Initialize/Renew first complete the ordinary deterministic full-sphere
-  layout. Refresh preserves its bounded fixed-position behavior. Geography is
-  derived only afterward and never reserves caps, applies a force, or moves a
-  note.
-- Every degree-three-or-higher continent city supports a local land kernel and
-  short internal roads support narrow corridors. Unsupported areas remain sea;
-  links longer than the corridor limit cannot manufacture a trans-oceanic land
-  bridge.
-- Continent positions act as semantic territory sites. A closer competing
-  continent site carves sea from another region, and a dominance margin leaves
-  sea where two continent support fields compete. A lone free note cannot
-  create a lake; free notes carve only as a locally linked, spatially coherent
-  group. A surface cell therefore has at most one land owner.
-- Coast variation is deterministic and multi-scale. It perturbs the union of
-  city and short-road support rather than a center-radius silhouette, allowing
-  concave shores, gulfs, and separated lobes while retaining organic edges.
+- Top-level vault folders are the authoritative continent owners. Linked notes
+  in the vault root are islands; degree-zero notes remain cities over water.
+- Initialize and Renew allocate geography before the note solver runs. A fixed
+  intrinsic icosphere grid has exactly one owner per land cell and `-1` for
+  ocean.
+- Folder area quotas scale smoothly with member count. The global target is
+  48% land, leaving approximately 52% ocean without deriving a circular cap
+  around a folder centroid.
+- Seeds balance the existing macro layout with farthest-site separation.
+  Simultaneous deterministic frontier growth prevents a large owner from
+  surrounding a small one; a cell can join only from an existing same-owner
+  neighbour, so every continent is connected by construction.
+- Cells adjacent to foreign land remain water. Continents therefore cannot
+  overlap, touch, or weave through one another, even when the vault contains
+  many cross-folder links.
+- The growth priority combines an anisotropic local metric, multi-frequency
+  angular relief, local support, and seeded noise. This yields compact but
+  non-circular regions without one-cell tendrils.
+- Cities are assigned across their owner cells with deterministic
+  farthest-point sampling. The solver adds a tangent return force whenever a
+  movable city leaves its territory and performs a final hard projection after
+  collision handling. No artificial minimum distance from the coast is used.
+- Cross-folder links keep a weak spring contribution for orientation, but they
+  cannot move a city onto foreign land. Relatively strong endpoints become
+  ports and project to the nearest existing boundary cell on the preferred
+  side; they never grow a new land bridge.
+- The exact owner raster is stored in the committed snapshot. Load and Obsidian
+  Sync therefore reproduce the same land allocation instead of re-detecting it
+  from potentially different render timing or device performance.
+- The renderer treats the raster as authoritative and applies only
+  deterministic sub-cell boundary displacement. Coastlines gain coves,
+  headlands, relief, and an irregular beach band without changing territory
+  topology or drawing a beach ring around every city.
 - Mixed surface triangles are clipped at the coast rather than admitted by
   their centroid. This preserves a smooth irregular outline independent of the
   icosphere triangulation.
@@ -92,11 +93,8 @@ corners, or decorative grid overlays are part of this system.
   Both are derived from sphere direction and the snapshot seed; the plugin
   ships no raster texture and makes no runtime request.
 - Orphan notes remain visible as interactive cities over the ocean and do not
-  seed land. Degree-one/two notes can become spatially separated islands;
-  footprints shrink with vault density and avoid supported continent territory.
-  After land ownership is reconciled, the already connected external ocean
-  retreats weak coasts until it occupies 34–46% of the render raster. This
-  creates readable seas without inland holes or any node movement.
+  seed land. Degree-one/two folder notes remain ordinary cities on their
+  directory continent; only linked root notes receive island footprints.
 
 ## Core interaction
 

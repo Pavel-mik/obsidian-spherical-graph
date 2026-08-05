@@ -165,12 +165,34 @@ export function createRenderGraphSnapshot(
 						.filter(
 							(index): index is number => index !== undefined,
 						),
+					...(snapshot.geography.territory === undefined ||
+					snapshot.geography.continents.some(
+						(continent) =>
+							!continent.nodeIds.some((nodeId) =>
+								renderIndexById.has(nodeId),
+							),
+					)
+						? {}
+						: {
+								territory: {
+									subdivision:
+										snapshot.geography.territory.subdivision,
+									folderKeys: Object.freeze([
+										...snapshot.geography.territory.folderKeys,
+									]),
+									ownerByCell: Int32Array.from(
+										snapshot.geography.territory.ownerByCell,
+									),
+								},
+							}),
 				};
 
 	return {
 		// Include the current topology so metadata-only updates still trigger an
 		// atomic renderer refresh while coordinates retain the committed ID.
 		snapshotId: `${snapshot.snapshotId}:${graph.signature}:${renderMetadataSignature}`,
+		layoutRevision: snapshot.snapshotId,
+		topologyRevision: graph.signature,
 		nodes: Object.freeze(visibleNodes),
 		edges: Object.freeze(visibleEdges),
 		tags: Object.freeze(tags),

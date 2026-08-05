@@ -20,6 +20,8 @@ import {
 	GraphFilterOptions,
 	GraphNode,
 	MarkdownGraphFile,
+	ResolvedLinkIndex,
+	UnresolvedLinkIndex,
 } from "./graphTypes";
 
 interface EdgeAccumulator {
@@ -33,6 +35,16 @@ interface AuxiliaryEdgeAccumulator {
 	readonly sourceId: string;
 	readonly targetId: string;
 	weight: number;
+}
+
+export interface GraphBuildSourceSnapshot {
+	readonly markdownFiles: readonly MarkdownGraphFile[];
+	readonly attachmentFiles: readonly {
+		readonly path: string;
+		readonly basename: string;
+	}[];
+	readonly resolvedLinks: ResolvedLinkIndex;
+	readonly unresolvedLinks: UnresolvedLinkIndex;
 }
 
 function basenameFromPath(path: string): string {
@@ -121,6 +133,24 @@ export class GraphDataService {
 
 	constructor(source: GraphDataSource) {
 		this.source = source;
+	}
+
+	snapshotSource(): GraphBuildSourceSnapshot {
+		return {
+			markdownFiles: this.source.getMarkdownFiles(),
+			attachmentFiles: this.source.getAttachmentFiles?.() ?? [],
+			resolvedLinks: this.source.getResolvedLinks(),
+			unresolvedLinks: this.source.getUnresolvedLinks?.() ?? {},
+		};
+	}
+
+	static fromSnapshot(snapshot: GraphBuildSourceSnapshot): GraphDataService {
+		return new GraphDataService({
+			getMarkdownFiles: () => snapshot.markdownFiles,
+			getAttachmentFiles: () => snapshot.attachmentFiles,
+			getResolvedLinks: () => snapshot.resolvedLinks,
+			getUnresolvedLinks: () => snapshot.unresolvedLinks,
+		});
 	}
 
 	buildGraph(options?: Partial<GraphFilterOptions>): GraphData {

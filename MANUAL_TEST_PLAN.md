@@ -15,6 +15,8 @@ vault.
 
    ```powershell
    npm run generate:test-vault -- --output ./tmp/test-vault --nodes 500 --edges 1500 --seed 42 --pattern clustered
+
+   npm run generate:test-vault -- --output ./tmp/territory-vault --nodes 480 --edges 2800 --seed 20260805 --pattern territories --folders 24
    ```
 
    Copy only the generated Markdown notes into the disposable development
@@ -24,17 +26,18 @@ vault.
 
 ## Functional and lifecycle checks
 
-1. **First open / Initialize**
+1. **First open / load-first startup**
 
-   - Run **Spherical Graph: Open graph** from the command palette.
-   - Confirm a progress status appears rather than a blank panel.
-   - Confirm no intermediate node positions are shown.
-   - When complete, confirm a coherent full-sphere map appears and status is
-     fixed/up to date.
-   - Inspect diagnostics or an instrumented run and confirm the worker payload
-     contains no continent assignments, centers, extents, or geographic force
-     parameters. Confirm geographic analysis begins only after the final
-     position buffer has passed validation.
+	- Run **Spherical Graph: Open graph** from the command palette.
+	- With an existing map, confirm it appears without an Initialize progress
+	  state, vault scan, or layout worker.
+	- With no saved map, confirm the view remains in **No saved layout** state
+	  until **Renew layout** is explicitly confirmed.
+	- Confirm no intermediate node positions are shown after explicit generation.
+   - Inspect diagnostics or an instrumented run and confirm the layout worker
+     receives one compact intrinsic territory raster before iteration begins.
+     Confirm it returns the same raster with the final position buffer and the
+     geography worker persists both atomically.
    - Inspect diagnostics or instrumented state and confirm the worker has
      terminated.
 
@@ -164,8 +167,10 @@ vault.
 
     - Record selected node vectors and camera state.
     - Restart Obsidian and reopen the view.
-    - Confirm nodes return to the same unit vectors and the camera orientation is
-      restored without global rotation.
+	- Confirm nodes, tags, continents, islands, pins, and camera return from the
+	  saved map without a vault rebuild or global rotation.
+	- Copy or sync `data.json` from another device, choose **Load map**, and
+	  confirm the complete synced map replaces the current view.
 
 17. **Theme**
 
@@ -197,24 +202,25 @@ vault.
     - Confirm linked notes directly in the vault root receive island patches,
       degree-one/two folder notes remain on their continent, and every
       degree-zero orphan stays interactive over open water without land.
-    - Confirm the connected ocean covers approximately 52% of the render raster
-      and reads as broad water rather than one-cell river seams. Confirm
-      protected continent-member cells remain on land and no new inland lakes
-      appear.
-    - Use an instrumented geography run to confirm every land cell has exactly
-      one owner and all ocean cells form one connected component.
+    - Confirm ocean covers approximately 52% of the committed raster and reads
+      as broad water rather than one-cell river seams. Confirm all folder cities
+      remain on their allocated land and no beach rings appear beneath inland
+      cities.
+    - Use an instrumented generation to confirm every land cell has exactly one
+      owner, every owner has one connected component, different owners have at
+      least one water-cell boundary, and the raster is unchanged by rendering.
     - Add several cross-folder links. Confirm their endpoints can approach their
       own coasts, but no linked note crosses into the other folder's territory.
     - Inspect several coasts at close zoom. Confirm the shoreline has
       deterministic fine-scale irregularity, avoids a repeated circular
       “cloud” outline, and is bordered by a variably wide sand-beach band.
     - Center the largest top-level folder on the camera. Confirm its macro
-      outline contains asymmetric lobes, broad bays, and headlands instead of
-      reproducing the circular boundary of its outer allocation cap.
+      outline contains asymmetric lobes, broad bays, and headlands rather than
+      a circular cap or a one-cell-width snake.
     - Run Refresh after adding a note inside an existing spatial cluster.
       Confirm the matched continent keeps its name and color while its center
-      and diagnostic extent are rederived from the fixed positions. Confirm the
-      geography update itself does not alter any position.
+      and diagnostic extent are rederived from the fixed positions. When the
+      folder set is unchanged, confirm its saved territory raster is reused.
     - Run Renew and confirm directory territories are regenerated
       deterministically from the new effective seed and remain fixed afterward.
     - Select a note below `Folder/Subfolder`. Confirm the existing selected and
@@ -227,9 +233,12 @@ vault.
 20. **Large synthetic vault**
 
     - Test at 1,000 and 5,000 nodes.
-    - Confirm UI stays responsive during calculation, sampled mode is reported
+	- Confirm UI stays responsive during graph indexing, continental analysis,
+	  land generation, and layout calculation; sampled mode is reported
       above threshold, and pair-evaluation growth follows the configured sample
-      count rather than all pairs.
+	  count rather than all pairs.
+	- In developer tools, confirm graph indexing, geography, and land meshing use
+	  one-shot workers, and that land detail steps down for larger maps.
     - Confirm instanced nodes, batched edges, and bounded labels.
     - Confirm increasing the number of orphan notes does not change the
       continental density field or enlarge the landmasses.

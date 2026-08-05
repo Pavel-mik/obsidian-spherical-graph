@@ -172,4 +172,47 @@ describe('intrinsic spherical forces', () => {
 			0.002,
 		);
 	});
+
+	it('pulls only folder outliers back through the soft envelope and leaves ports freer', () => {
+		const positions = new Float32Array([
+			1, 0, 0,
+			0.9998, 0.02, 0,
+			0.9998, -0.02, 0,
+			0.9998, 0, 0.02,
+			0.9998, 0, -0.02,
+			0, 1, 0,
+			-1, 0, 0,
+			-0.9998, 0.02, 0,
+			-0.9998, -0.02, 0,
+			-0.9998, 0, 0.02,
+			-0.9998, 0, -0.02,
+			0, -1, 0,
+		]);
+		const evaluate = (portScore: number): number => {
+			const portScores = new Float32Array(12);
+			portScores[5] = portScore;
+			const result = computeSphericalForces({
+				positions,
+				edgeEndpoints: new Uint32Array(),
+				edgeWeights: new Float32Array(),
+				folderIndexByNode: new Int32Array([
+					0, 0, 0, 0, 0, 0,
+					1, 1, 1, 1, 1, 1,
+				]),
+				coastalPortScores: portScores,
+				movableMask: new Uint8Array(12).fill(1),
+				settings: resolveSolverSettings({
+					repulsionStrength: 0,
+					repulsionCap: 0,
+					centroidStrength: 0,
+					isotropyStrength: 0,
+				}),
+				effectiveSeed: 53,
+				iteration: 0,
+			});
+			return Math.hypot(...readVec3(result.forces, 5));
+		};
+
+		expect(evaluate(0)).toBeGreaterThan(evaluate(1) + 0.01);
+	});
 });

@@ -10,6 +10,7 @@ export interface StatusPresentation {
 	canRefresh: boolean;
 	canRenew: boolean;
 	canCancel: boolean;
+	renewLabel?: string;
 }
 
 export function presentLayoutStatus(
@@ -38,6 +39,7 @@ export function presentLayoutStatus(
 				canRefresh: false,
 				canRenew: true,
 				canCancel: false,
+				renewLabel: 'Generate map',
 			};
 		case 'initializing':
 			return busyStatus(
@@ -50,7 +52,7 @@ export function presentLayoutStatus(
 				text: `${UI_STRINGS.upToDate} · ${model.nodeCount} notes · ${model.edgeCount} links${continentSuffix(model)}${suffix}`,
 				tone: 'neutral',
 				isBusy: false,
-				canRefresh: false,
+				canRefresh: true,
 				canRenew: true,
 				canCancel: false,
 			};

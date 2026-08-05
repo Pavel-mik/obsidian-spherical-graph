@@ -19,6 +19,7 @@ const SUPPORTED_PATTERNS = new Set([
 	'clustered',
 	'multi-component',
 	'random',
+	'territories',
 ]);
 
 function parseArguments(argv) {
@@ -60,6 +61,11 @@ function parseArguments(argv) {
 	);
 	const seed = parseInteger(values.get('seed') ?? '42', 'seed', 0);
 	const pattern = values.get('pattern') ?? 'clustered';
+	const folders = parseInteger(
+		values.get('folders') ?? (pattern === 'territories' ? '18' : '1'),
+		'folders',
+		1,
+	);
 
 	if (!SUPPORTED_PATTERNS.has(pattern)) {
 		throw new Error(
@@ -73,6 +79,9 @@ function parseArguments(argv) {
 			`Requested ${edges} edges, but ${nodes} nodes allow at most ${maximumEdges}.`,
 		);
 	}
+	if (folders > nodes) {
+		throw new Error('--folders cannot exceed --nodes.');
+	}
 
 	return {
 		output: path.resolve(process.cwd(), values.get('output')),
@@ -80,6 +89,7 @@ function parseArguments(argv) {
 		edges,
 		seed,
 		pattern,
+		folders,
 		force: flags.has('force'),
 	};
 }
@@ -123,11 +133,31 @@ function componentOf(index, nodeCount) {
 	return index % componentCount;
 }
 
-function randomPair(pattern, nodeCount, random) {
+function territoryOf(index, nodeCount, folderCount) {
+	return Math.min(
+		folderCount - 1,
+		Math.floor(index * folderCount / nodeCount),
+	);
+}
+
+function randomNodeInTerritory(territory, nodeCount, folderCount, random) {
+	const start = Math.ceil(territory * nodeCount / folderCount);
+	const end = Math.ceil((territory + 1) * nodeCount / folderCount);
+	return start + Math.floor(random() * Math.max(1, end - start));
+}
+
+function randomPair(pattern, nodeCount, folderCount, random) {
 	const left = Math.floor(random() * nodeCount);
 	let right;
 
-	if (pattern === 'clustered' && random() < 0.84) {
+	if (pattern === 'territories' && random() < 0.78) {
+		right = randomNodeInTerritory(
+			territoryOf(left, nodeCount, folderCount),
+			nodeCount,
+			folderCount,
+			random,
+		);
+	} else if (pattern === 'clustered' && random() < 0.84) {
 		const clusterCount = Math.max(2, Math.min(12, Math.round(Math.sqrt(nodeCount / 8))));
 		const cluster = left % clusterCount;
 		const candidates = Math.max(1, Math.floor(nodeCount / clusterCount));
@@ -149,7 +179,7 @@ function randomPair(pattern, nodeCount, random) {
 	return [left, right];
 }
 
-function createEdges(nodeCount, requestedCount, pattern, seed) {
+function createEdges(nodeCount, requestedCount, pattern, folderCount, seed) {
 	const edges = new Map();
 	const random = createPrng(seed);
 
@@ -195,7 +225,12 @@ function createEdges(nodeCount, requestedCount, pattern, seed) {
 		edges.size < requestedCount && attempt < maximumAttempts;
 		attempt += 1
 	) {
-		const [left, right] = randomPair(pattern, nodeCount, random);
+		const [left, right] = randomPair(
+			pattern,
+			nodeCount,
+			folderCount,
+			random,
+		);
 		addEdge(edges, left, right);
 	}
 
@@ -287,7 +322,23 @@ function fileStem(index, nodeCount) {
 	return `Note-${String(index + 1).padStart(width, '0')}`;
 }
 
-async function writeVault(output, nodeCount, edges, pattern, seed) {
+function relativeNotePath(index, nodeCount, pattern, folderCount) {
+	const stem = fileStem(index, nodeCount);
+	if (pattern !== 'territories') {
+		return stem;
+	}
+	const territory = territoryOf(index, nodeCount, folderCount);
+	const start = Math.ceil(territory * nodeCount / folderCount);
+	const localIndex = index - start;
+	const folderWidth = Math.max(2, String(folderCount).length);
+	return path.join(
+		`Continent-${String(territory + 1).padStart(folderWidth, '0')}`,
+		`District-${String((localIndex % 3) + 1).padStart(2, '0')}`,
+		stem,
+	);
+}
+
+async function writeVault(output, nodeCount, edges, pattern, folderCount, seed) {
 	const neighbors = Array.from({ length: nodeCount }, () => []);
 	for (const [left, right] of edges) {
 		neighbors[left].push(right);
@@ -299,7 +350,7 @@ async function writeVault(output, nodeCount, edges, pattern, seed) {
 			linkedNodes.sort((left, right) => left - right);
 			const name = fileStem(index, nodeCount);
 			const links = linkedNodes
-				.map((neighbor) => `- [[${fileStem(neighbor, nodeCount)}]]`)
+				.map((neighbor) => `- [[${relativeNotePath(neighbor, nodeCount, pattern, folderCount)}]]`)
 				.join('\n');
 			const body = [
 				`# ${name}`,
@@ -311,7 +362,15 @@ async function writeVault(output, nodeCount, edges, pattern, seed) {
 				links || '_No links._',
 				'',
 			].join('\n');
-			await writeFile(path.join(output, `${name}.md`), body, 'utf8');
+			const relativePath = relativeNotePath(
+				index,
+				nodeCount,
+				pattern,
+				folderCount,
+			);
+			const target = path.join(output, `${relativePath}.md`);
+			await mkdir(path.dirname(target), { recursive: true });
+			await writeFile(target, body, 'utf8');
 		}),
 	);
 }
@@ -323,6 +382,7 @@ async function main() {
 		options.nodes,
 		options.edges,
 		options.pattern,
+		options.folders,
 		options.seed,
 	);
 	await writeVault(
@@ -330,6 +390,7 @@ async function main() {
 		options.nodes,
 		edges,
 		options.pattern,
+		options.folders,
 		options.seed,
 	);
 	process.stdout.write(
@@ -339,6 +400,7 @@ async function main() {
 			`Markdown files: ${options.nodes}`,
 			`Undirected edges: ${edges.length}`,
 			`Seed: ${options.seed}`,
+			`Top-level folders: ${options.pattern === 'territories' ? options.folders : 0}`,
 		].join('\n') + '\n',
 	);
 }

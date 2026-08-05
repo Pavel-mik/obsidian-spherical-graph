@@ -175,6 +175,7 @@ export class SphericalGraphRenderer {
 			this.graphGroup,
 			this.appearance,
 			this.theme,
+			() => this.requestRender(),
 		);
 		this.edgeLayer = new EdgeLayer(
 			this.graphGroup,
@@ -462,6 +463,13 @@ export class SphericalGraphRenderer {
 			up: this.camera.up.toArray(),
 			target: [0, 0, 0],
 		};
+	}
+
+	setCameraState(camera: CameraState): void {
+		this.cancelFocus();
+		this.applyCameraState(camera);
+		this.syncControlsToCamera();
+		this.requestRender();
 	}
 
 	getPositionBufferCopy(): Float32Array | undefined {

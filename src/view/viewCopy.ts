@@ -14,6 +14,7 @@ export const VIEW_CONTROL_COPY = {
 	cancelCalculation: 'Cancel calculation',
 	resetCamera: 'Reset camera',
 	saveMap: 'Save map',
+	loadMap: 'Load map',
 	fullscreen: 'Fullscreen',
 	autoRotate: 'Auto rotate',
 	findRoute: UI_STRINGS.routeIdle,

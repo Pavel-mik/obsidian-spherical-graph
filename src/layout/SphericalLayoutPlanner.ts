@@ -30,6 +30,12 @@ import {
 import { deriveCoastalPortLayout } from './coastalPortLayout';
 import { buildSparseStressConstraints } from './sparseStress';
 import { topLevelFolder } from '../geography/directorySemantics';
+import {
+	createDirectoryTerritoryPlan,
+	restoreDirectoryTerritoryPlan,
+	seedDirectoryNodesInTerritories,
+	type DirectoryTerritoryPlan,
+} from '../geography/directoryTerritories';
 import type {
 	RefreshConstraints,
 	SolverSettings,
@@ -242,15 +248,30 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 				graph,
 				context.effectiveSeed,
 			);
-			const solverGraph = solverGraphBuffers(
+			const territory = createDirectoryTerritoryPlan(
 				graph,
 				initialized.positions,
+				initialized.folderIndexByNode,
+				context.effectiveSeed,
+			);
+			const seededPositions = territory.folderKeys.length === 0
+				? initialized.positions
+				: seedDirectoryNodesInTerritories(
+						graph,
+						initialized.positions,
+						initialized.folderIndexByNode,
+						territory,
+						context.effectiveSeed,
+					);
+			const solverGraph = solverGraphBuffers(
+				graph,
+				seededPositions,
 				initialized.folderIndexByNode,
 				initialized.regionIndexByNode,
 				context.effectiveSeed,
 			);
 			return {
-				positions: initialized.positions,
+				positions: seededPositions,
 				edgeEndpoints: solverGraph.edgeEndpoints,
 				edgeWeights: solverGraph.edgeWeights,
 				edgeTargetAngles: solverGraph.edgeTargetAngles,
@@ -260,6 +281,9 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 				coastalPortScores: solverGraph.coastalPortScores,
 				coastalPortDirections:
 					solverGraph.coastalPortDirections,
+				...(territory.folderKeys.length === 0
+					? {}
+					: { territory: territoryPayload(territory) }),
 				movableMask,
 				settings: resolvedSettings,
 			};
@@ -369,6 +393,17 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 			regionIndexByNode,
 			context.effectiveSeed,
 		);
+		const territory =
+			restoreDirectoryTerritoryPlan(
+				graph,
+				snapshot.geography?.territory,
+			) ??
+			createDirectoryTerritoryPlan(
+				graph,
+				initialized.positions,
+				folderIndexByNode,
+				context.effectiveSeed,
+			);
 		return {
 			positions: initialized.positions,
 			edgeEndpoints: solverGraph.edgeEndpoints,
@@ -380,8 +415,19 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 			coastalPortScores: solverGraph.coastalPortScores,
 			coastalPortDirections:
 				solverGraph.coastalPortDirections,
+			...(territory.folderKeys.length === 0
+				? {}
+				: { territory: territoryPayload(territory) }),
 			refresh,
 			settings: resolvedSettings,
 		};
 	}
+}
+
+function territoryPayload(plan: DirectoryTerritoryPlan) {
+	return {
+		subdivision: plan.subdivision,
+		folderKeys: Object.freeze([...plan.folderKeys]),
+		ownerByCell: plan.ownerByCell.slice(),
+	};
 }

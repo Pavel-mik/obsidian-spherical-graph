@@ -10,6 +10,7 @@ export interface MigratedPluginData {
 	readonly schemaVersion: number;
 	readonly settings: unknown;
 	readonly committedLayout: unknown;
+	readonly graphCache: unknown;
 	readonly camera: unknown;
 	readonly pinnedNotePaths: unknown;
 }
@@ -52,6 +53,7 @@ export function migratePluginData(raw: unknown): MigratedPluginData {
 			schemaVersion: CURRENT_SCHEMA_VERSION,
 			settings: undefined,
 			committedLayout: null,
+			graphCache: null,
 			camera: undefined,
 			pinnedNotePaths: [],
 		};
@@ -63,6 +65,7 @@ export function migratePluginData(raw: unknown): MigratedPluginData {
 			schemaVersion: CURRENT_SCHEMA_VERSION,
 			settings: raw.settings,
 			committedLayout: null,
+			graphCache: null,
 			camera: raw.camera,
 			pinnedNotePaths: raw.pinnedNotePaths ?? raw.pins ?? [],
 		};
@@ -79,6 +82,7 @@ export function migratePluginData(raw: unknown): MigratedPluginData {
 			committedLayout === null
 				? null
 				: migrateSnapshot(committedLayout),
+		graphCache: raw.graphCache ?? null,
 		camera: raw.camera ?? raw.cameraState,
 		pinnedNotePaths: raw.pinnedNotePaths ?? raw.pins ?? [],
 	};

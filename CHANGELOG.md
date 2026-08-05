@@ -6,6 +6,53 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-08-05
+
+### Added
+
+- **Load map** re-reads the complete saved state, including positions,
+  continents, tags, attachments/unresolved nodes, camera, and pins. This makes
+  a map delivered through Obsidian Sync reproducible across devices.
+- Temporary, size-capped local JSONL diagnostics capture layout milestones and
+  exact commit-validation failures in `spherical-graph-development.log`.
+- A deterministic intrinsic territory raster is committed with each generated
+  map, so exact continent ownership and coast placement survive restart and
+  Obsidian Sync.
+
+### Changed
+
+- Startup is load-first: opening Obsidian or the graph view no longer scans the
+  vault or automatically initializes a missing layout.
+- Root-directory continents are packed by their expected surface area instead
+  of assigning equal macro cells. Large directories therefore retain enough
+  room while deterministic sea gaps separate neighbouring land masses.
+- Directory regions now form a two-dimensional proximity scaffold rather than
+  a latitude-ordered chain. A soft, area-scaled outer envelope reins in only
+  spatial outliers and grants cross-directory port cities extra coastal reach,
+  preserving irregular interiors without long interwoven land ribbons.
+- Live graph indexing, post-layout continental analysis, and detailed land
+  meshing now run in short-lived inline workers. Land mesh detail adapts to
+  large node/edge counts to keep the Obsidian UI responsive.
+- Metadata-cache startup resolution no longer schedules a redundant graph
+  rebuild by itself.
+- Continental generation is now territory-first. Simultaneous quota-based
+  growth allocates one connected, disjoint landmass per top-level folder before
+  cities are solved, retaining approximately half the globe as ocean.
+- Folder cities are seeded with an irregular farthest-point distribution and
+  constrained to their allocated land. Cross-folder roads have only a weak
+  node-level spring effect and selected endpoints are projected to the existing
+  coast rather than pulling new peninsulas across the sea.
+- Land rendering consumes the saved owner raster directly; the former
+  least-cost terminal connector is retained only for legacy snapshots without
+  territory data.
+
+### Fixed
+
+- Large vaults no longer perform the heaviest graph, geography, and coastline
+  loops synchronously on Obsidian's main UI thread.
+- A first initialization no longer fails while committing a spatially wide
+  continent whose diagnostic cap radius is between 1.2 and 1.55 radians.
+
 ## [1.7.0] - 2026-07-30
 
 ### Added
@@ -462,7 +509,9 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.6.1...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.8.0...HEAD
+[1.8.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.7.0...1.8.0
+[1.7.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.6.1...1.7.0
 [1.6.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.6.0...1.6.1
 [1.6.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.5.1...1.6.0
 [1.5.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.5.0...1.5.1

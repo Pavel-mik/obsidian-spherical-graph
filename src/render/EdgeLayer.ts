@@ -93,7 +93,10 @@ export class EdgeLayer {
 			if (start === undefined || end === undefined) {
 				continue;
 			}
-			const segments = adaptiveSegmentCount(start, end);
+			const segments = Math.min(
+				adaptiveSegmentCount(start, end),
+				maxSegmentsPerEdge(snapshot.edges.length),
+			);
 			const points = sampleGeodesicArc(
 				start,
 				end,
@@ -499,4 +502,19 @@ export function adaptiveSegmentCount(start: Vec3, end: Vec3): number {
 	const crossZ = start[0] * end[1] - start[1] * end[0];
 	const angle = Math.atan2(Math.hypot(crossX, crossY, crossZ), dot);
 	return Math.max(2, Math.min(32, Math.ceil(angle / (Math.PI / 24))));
+}
+
+const TOTAL_BASE_EDGE_SEGMENT_BUDGET = 180_000;
+
+export function maxSegmentsPerEdge(edgeCount: number): number {
+	if (!Number.isFinite(edgeCount) || edgeCount <= 0) {
+		return 32;
+	}
+	return Math.max(
+		2,
+		Math.min(
+			32,
+			Math.floor(TOTAL_BASE_EDGE_SEGMENT_BUDGET / edgeCount),
+		),
+	);
 }

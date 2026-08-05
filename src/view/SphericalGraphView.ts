@@ -204,6 +204,9 @@ export class SphericalGraphView extends ItemView {
 				onManualSave: () => {
 					this.saveMap();
 				},
+				onManualLoad: () => {
+					this.invoke(() => this.options.callbacks.onManualLoad());
+				},
 				onFullscreen: () => {
 					this.toggleFullscreen();
 				},
@@ -500,6 +503,10 @@ export class SphericalGraphView extends ItemView {
 
 	getCameraState(): CameraState | undefined {
 		return this.renderer?.getCameraState();
+	}
+
+	setCameraState(camera: CameraState): void {
+		this.renderer?.setCameraState(camera);
 	}
 
 	getPositionBufferCopy(): Float32Array | undefined {

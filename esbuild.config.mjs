@@ -16,23 +16,33 @@ Source: https://github.com/Pavel-mik/obsidian-spherical-graph
 const inlineWorkerPlugin = {
 	name: 'inline-spherical-graph-worker',
 	setup(build) {
+		const workers = new Map([
+			['virtual:spherical-graph-worker', 'src/layout/worker-entry.ts'],
+			['virtual:spherical-graph-data-worker', 'src/graph/graph-worker-entry.ts'],
+			['virtual:spherical-graph-land-worker', 'src/render/land-worker-entry.ts'],
+			['virtual:spherical-graph-geography-worker', 'src/geography/geography-worker-entry.ts'],
+		]);
 		build.onResolve(
-			{ filter: /^virtual:spherical-graph-worker$/ },
-			() => ({
-				path: 'spherical-graph-worker-source',
+			{ filter: /^virtual:spherical-graph-(?:worker|data-worker|land-worker|geography-worker)$/ },
+			(args) => ({
+				path: args.path,
 				namespace: 'spherical-graph-worker',
 			}),
 		);
 
 		build.onLoad(
 			{
-				filter: /^spherical-graph-worker-source$/,
+				filter: /.*/,
 				namespace: 'spherical-graph-worker',
 			},
-			async () => {
+			async (args) => {
+				const entryPoint = workers.get(args.path);
+				if (entryPoint === undefined) {
+					throw new Error(`Unknown inline worker: ${args.path}`);
+				}
 				const result = await esbuild.build({
 					absWorkingDir: rootDirectory,
-					entryPoints: ['src/layout/worker-entry.ts'],
+					entryPoints: [entryPoint],
 					bundle: true,
 					format: 'iife',
 					platform: 'browser',

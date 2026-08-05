@@ -9,7 +9,10 @@ import {
 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { SPHERE_RADIUS } from '../../src/constants';
-import { SphereLayer } from '../../src/render/SphereLayer';
+import {
+	adaptiveLandDetail,
+	SphereLayer,
+} from '../../src/render/SphereLayer';
 import {
 	prepareRenderSnapshot,
 	type RenderTheme,
@@ -75,6 +78,12 @@ function setSingleContinentSnapshot(layer: SphereLayer): void {
 }
 
 describe('SphereLayer graticule', () => {
+	it('reduces continent detail as vault rendering load grows', () => {
+		expect(adaptiveLandDetail(100, 200)).toBe(48);
+		expect(adaptiveLandDetail(1_000, 2_000)).toBe(32);
+		expect(adaptiveLandDetail(2_000, 8_000)).toBe(24);
+		expect(adaptiveLandDetail(5_000, 20_000)).toBe(16);
+	});
 	it('uses a muted dashed material distinct from document edges', () => {
 		const group = new Group();
 		const layer = new SphereLayer(

@@ -4,10 +4,12 @@ import {
 	Plugin,
 	TFile,
 	TFolder,
+	normalizePath,
 	type WorkspaceLeaf,
 } from 'obsidian';
 
 import { VIEW_TYPE } from './constants';
+import { DevelopmentLog } from './diagnostics/DevelopmentLog';
 import {
 	GraphChangeTracker,
 	type GraphChangeObservation,
@@ -16,12 +18,14 @@ import {
 	createObsidianGraphDataSource,
 	GraphDataService,
 } from './graph/GraphDataService';
+import { GraphDataWorkerClient } from './graph/GraphDataWorkerClient';
 import {
 	diffGraphDescriptors,
 	graphChangeRatio,
 	type GraphDiff,
 } from './graph/graphDiff';
 import type { GraphData, GraphFilterOptions } from './graph/graphTypes';
+import { GeographyWorkerClient } from './geography/GeographyWorkerClient';
 import { UI_STRINGS } from './i18n';
 import { createRenderGraphSnapshot } from './integration/renderSnapshot';
 import {
@@ -33,11 +37,14 @@ import {
 import { SphericalLayoutPlanner } from './layout/SphericalLayoutPlanner';
 import { LayoutSolverRunnerAdapter } from './layout/LayoutWorkerClient';
 import {
+	CURRENT_ALGORITHM_VERSION,
+	CURRENT_SCHEMA_VERSION,
 	DEFAULT_CAMERA_STATE,
 	type PersistedCameraState,
 	type PersistedLayoutSnapshot,
 } from './persistence/layoutState';
 import { PluginDataStore } from './persistence/PluginDataStore';
+import { restoreGraphData } from './persistence/graphCache';
 import type {
 	CameraState,
 	RenderGraphSnapshot,
@@ -72,13 +79,12 @@ const COMMAND_IDS = {
 	search: 'focus-search',
 	route: 'find-route',
 	save: 'save-map',
+	load: 'load-map',
 	pin: 'toggle-pin',
 	fullscreen: 'toggle-fullscreen',
 } as const;
 
 const CANCEL_NOTICE_DURATION_MS = 1_500;
-const INITIAL_METADATA_TIMEOUT_MS = 30_000;
-
 function graphFilters(
 	settings: SphericalGraphSettings,
 ): Partial<GraphFilterOptions> {
@@ -112,6 +118,8 @@ export default class SphericalGraphPlugin extends Plugin {
 		cloneSphericalGraphSettings(DEFAULT_SETTINGS);
 	private dataStore!: PluginDataStore<SphericalGraphSettings>;
 	private graphService!: GraphDataService;
+	private readonly graphWorker = new GraphDataWorkerClient();
+	private readonly geographyWorker = new GeographyWorkerClient();
 	private graphTracker: GraphChangeTracker | undefined;
 	private lifecycle: LayoutLifecycleController | undefined;
 	private lifecycleView: LayoutLifecycleView = {
@@ -129,8 +137,23 @@ export default class SphericalGraphPlugin extends Plugin {
 	private cancelNoticeTimer: number | undefined;
 	private runtimeFailure: string | undefined;
 	private unloading = false;
+	private developmentLog: DevelopmentLog | undefined;
 
 	override async onload(): Promise<void> {
+		const pluginDirectory =
+			this.manifest.dir ??
+			`${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+		this.developmentLog = new DevelopmentLog(
+			this.app.vault.adapter,
+			normalizePath(
+				`${pluginDirectory}/spherical-graph-development.log`,
+			),
+		);
+		this.developmentLog.startSession({
+			pluginVersion: this.manifest.version,
+			schemaVersion: CURRENT_SCHEMA_VERSION,
+			algorithmVersion: CURRENT_ALGORITHM_VERSION,
+		});
 		this.dataStore = new PluginDataStore(
 			{
 				loadData: () => this.loadData(),
@@ -147,9 +170,25 @@ export default class SphericalGraphPlugin extends Plugin {
 						'Could not save Spherical Graph data.',
 					);
 				},
+				onDiagnostic: (event, details) => {
+					this.diagnostic(`persistence.${event}`, details);
+				},
+				createGeography: (graph, positions, seed, previous, territory) =>
+					this.geographyWorker.build(
+						graph,
+						positions,
+						seed,
+						previous,
+						territory,
+					),
 			},
 		);
 		const persisted = await this.dataStore.load();
+		this.diagnostic('persistence.loaded', {
+			hasCommittedLayout: persisted.committedLayout !== null,
+			hasGraphCache: persisted.graphCache !== null,
+			pinnedNoteCount: persisted.pinnedNotePaths.length,
+		});
 		this.settings = cloneSphericalGraphSettings(persisted.settings);
 		this.graphService = new GraphDataService(
 			createObsidianGraphDataSource(
@@ -185,12 +224,15 @@ export default class SphericalGraphPlugin extends Plugin {
 	}
 
 	override onunload(): void {
+		this.diagnostic('session.unloading');
 		this.unloading = true;
 		if (this.cancelNoticeTimer !== undefined) {
 			window.clearTimeout(this.cancelNoticeTimer);
 			this.cancelNoticeTimer = undefined;
 		}
 		this.graphTracker?.dispose();
+		this.graphWorker.dispose();
+		this.geographyWorker.dispose();
 		this.graphTracker = undefined;
 		this.unsubscribeLifecycle?.();
 		this.unsubscribeLifecycle = undefined;
@@ -199,7 +241,10 @@ export default class SphericalGraphPlugin extends Plugin {
 		void this.dataStore
 			.flushDebounced()
 			.catch(() => undefined)
-			.finally(() => this.dataStore.dispose());
+			.finally(() => {
+				this.dataStore.dispose();
+				void this.developmentLog?.flush();
+			});
 	}
 
 	private createView(leaf: WorkspaceLeaf): SphericalGraphView {
@@ -210,6 +255,7 @@ export default class SphericalGraphPlugin extends Plugin {
 				onRefresh: () =>
 					this.runAction(async () => {
 						await this.ensureRuntime();
+						await this.scanVaultGraph();
 						if (!this.lifecycle?.startRefresh()) {
 							new Notice('There are no pending changes to refresh.');
 						}
@@ -217,7 +263,12 @@ export default class SphericalGraphPlugin extends Plugin {
 				onRenew: () =>
 					this.runAction(async () => {
 						await this.ensureRuntime();
-						if (!this.lifecycle?.startRenew()) {
+						await this.scanVaultGraph();
+						const started =
+							this.lifecycle?.committedSnapshot === undefined
+								? this.lifecycle?.startInitialize()
+								: this.lifecycle?.startRenew();
+						if (!started) {
 							new Notice(
 								'A layout calculation is already running.',
 							);
@@ -246,6 +297,7 @@ export default class SphericalGraphPlugin extends Plugin {
 					this.changePin(node, pinned),
 				onManualSave: (camera) =>
 					this.saveMap(camera),
+				onManualLoad: () => this.loadMap(),
 				onClose: () => {
 					window.setTimeout(() => {
 						if (
@@ -279,6 +331,7 @@ export default class SphericalGraphPlugin extends Plugin {
 			checkCallback: (checking) => {
 				const canRun =
 					this.lifecycle === undefined ||
+					this.lifecycle.state.kind === 'fixed-clean' ||
 					this.lifecycle.state.kind === 'fixed-dirty';
 				if (!checking && canRun) {
 					void this.runAction(async () => {
@@ -363,6 +416,16 @@ export default class SphericalGraphPlugin extends Plugin {
 			},
 		});
 		this.addCommand({
+			id: COMMAND_IDS.load,
+			name: 'Load saved spherical map',
+			callback: () => {
+				void this.runAction(async () => {
+					await this.ensureRuntime();
+					await this.loadMap();
+				});
+			},
+		});
+		this.addCommand({
 			id: COMMAND_IDS.pin,
 			name: 'Pin or unpin selected note',
 			checkCallback: (checking) => {
@@ -419,16 +482,23 @@ export default class SphericalGraphPlugin extends Plugin {
 				}
 			}),
 		);
+		let metadataReady =
+			this.app.vault.getMarkdownFiles().length === 0 ||
+			Object.keys(this.app.metadataCache.resolvedLinks).length >=
+				this.app.vault.getMarkdownFiles().length;
 		this.registerEvent(
 			this.app.metadataCache.on('changed', (file) => {
-				if (isMarkdownFile(file)) {
+				if (metadataReady && isMarkdownFile(file)) {
 					this.graphTracker?.markVaultChanged('metadata');
 				}
 			}),
 		);
 		this.registerEvent(
 			this.app.metadataCache.on('resolved', () => {
-				this.graphTracker?.markVaultChanged('resolved-links');
+				metadataReady = true;
+				if (this.graphTracker?.hasQueuedGraphChange) {
+					this.graphTracker.markVaultChanged('resolved-links');
+				}
 			}),
 		);
 		this.registerEvent(
@@ -505,13 +575,20 @@ export default class SphericalGraphPlugin extends Plugin {
 		if (this.unloading) {
 			return;
 		}
-		await this.waitForInitialMetadataResolution();
-		if (this.unloading) {
-			return;
-		}
-		this.currentGraph = this.graphService.buildGraph(
-			graphFilters(this.settings),
-		);
+		const saved = this.dataStore.committedSnapshot;
+		this.currentGraph =
+			saved === undefined
+				? GraphDataService.fromSnapshot({
+						markdownFiles: [],
+						attachmentFiles: [],
+						resolvedLinks: {},
+						unresolvedLinks: {},
+					}).buildGraph(graphFilters(this.settings))
+				: restoreGraphData(
+						saved.graphDescriptor,
+						saved.graphSignature,
+						this.dataStore.graphCache,
+					);
 		const planner = new SphericalLayoutPlanner(() => this.settings);
 		const solverRunner = new LayoutSolverRunnerAdapter();
 		const runner: LayoutOperationRunner = {
@@ -554,6 +631,9 @@ export default class SphericalGraphPlugin extends Plugin {
 			persistence: this.dataStore,
 			sink,
 			getBaseSeed: () => this.settings.layout.baseSeed,
+			onDiagnostic: (event, details) => {
+				this.diagnostic(`lifecycle.${event}`, details);
+			},
 		});
 		this.lifecycle = lifecycle;
 		this.unsubscribeLifecycle = lifecycle.subscribe((view) => {
@@ -562,10 +642,7 @@ export default class SphericalGraphPlugin extends Plugin {
 			this.broadcastStatus();
 		});
 		this.createGraphTracker();
-		lifecycle.open(
-			this.currentGraph,
-			this.dataStore.committedSnapshot,
-		);
+		lifecycle.open(this.currentGraph, saved);
 		const active = this.app.workspace.getActiveFile();
 		this.setActiveNode(active?.path);
 	}
@@ -579,47 +656,15 @@ export default class SphericalGraphPlugin extends Plugin {
 		});
 	}
 
-	private async waitForInitialMetadataResolution(): Promise<void> {
-		const markdownCount = this.app.vault.getMarkdownFiles().length;
-		const resolvedSourceCount = Object.keys(
-			this.app.metadataCache.resolvedLinks,
-		).length;
-		if (
-			markdownCount === 0 ||
-			resolvedSourceCount >= markdownCount
-		) {
-			return;
-		}
-
-		await new Promise<void>((resolve) => {
-			let settled = false;
-			let timeout: number | undefined;
-			const finish = (): void => {
-				if (settled) {
-					return;
-				}
-				settled = true;
-				if (timeout !== undefined) {
-					window.clearTimeout(timeout);
-				}
-				this.app.metadataCache.offref(eventRef);
-				resolve();
-			};
-			const eventRef = this.app.metadataCache.on(
-				'resolved',
-				finish,
-			);
-			timeout = window.setTimeout(
-				finish,
-				INITIAL_METADATA_TIMEOUT_MS,
-			);
-		});
-	}
-
 	private createGraphTracker(): void {
 		this.graphTracker?.dispose();
 		this.graphTracker = new GraphChangeTracker({
 			graphService: this.graphService,
+			buildGraph: (filters) =>
+				this.graphWorker.build(
+					this.graphService.snapshotSource(),
+					filters,
+				),
 			getFilters: () => graphFilters(this.settings),
 			getCommittedDescriptor: () =>
 				this.lifecycle?.committedSnapshot?.graphDescriptor,
@@ -660,6 +705,7 @@ export default class SphericalGraphPlugin extends Plugin {
 			observation.graph,
 			observation.diff,
 		);
+		this.dataStore.scheduleGraphCacheSave(observation.graph);
 		this.broadcastPinnedNotes();
 		this.broadcastStatus();
 	}
@@ -866,8 +912,44 @@ export default class SphericalGraphPlugin extends Plugin {
 
 	private async saveMap(camera: CameraState): Promise<void> {
 		this.dataStore.scheduleCameraSave(camera);
-		await this.dataStore.saveNow();
+		await this.dataStore.saveNow(this.currentGraph);
 		new Notice('Spherical map saved.');
+	}
+
+	private async loadMap(): Promise<void> {
+		if (this.lifecycle?.activeWorkerCount === 1) {
+			new Notice('Cancel the active layout calculation before loading a map.');
+			return;
+		}
+		const persisted = await this.dataStore.reload();
+		const snapshot = persisted.committedLayout;
+		if (snapshot === null) {
+			new Notice('No saved spherical map was found.');
+			return;
+		}
+		this.settings = cloneSphericalGraphSettings(persisted.settings);
+		const graph = restoreGraphData(
+			snapshot.graphDescriptor,
+			snapshot.graphSignature,
+			this.dataStore.graphCache,
+		);
+		this.currentGraph = graph;
+		this.currentDiff = undefined;
+		this.renderSnapshot = undefined;
+		this.createGraphTracker();
+		this.lifecycle?.open(graph, snapshot);
+		for (const view of this.graphViews()) {
+			view.updateSettings(this.settings);
+			view.setCameraState(cameraForView(persisted.camera));
+		}
+		this.broadcastPinnedNotes();
+		this.broadcastStatus();
+		new Notice('Saved spherical map loaded.');
+	}
+
+	private async scanVaultGraph(): Promise<void> {
+		this.graphTracker?.markVaultChanged('filter');
+		await this.graphTracker?.flush();
 	}
 
 	private broadcastPinnedNotes(): void {
@@ -948,6 +1030,12 @@ export default class SphericalGraphPlugin extends Plugin {
 			error instanceof Error && error.message.length > 0
 				? error.message
 				: fallback;
+		this.diagnostic('plugin.error', {
+			fallback,
+			detail,
+			fatal,
+			name: error instanceof Error ? error.name : typeof error,
+		});
 		if (fatal) {
 			this.runtimeFailure = detail;
 		}
@@ -957,5 +1045,12 @@ export default class SphericalGraphPlugin extends Plugin {
 				this.pushViewModel(view);
 			}
 		}
+	}
+
+	private diagnostic(
+		event: string,
+		details: Readonly<Record<string, unknown>> = {},
+	): void {
+		this.developmentLog?.record(event, details);
 	}
 }

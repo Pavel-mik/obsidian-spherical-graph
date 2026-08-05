@@ -19,6 +19,7 @@ main.js
 
 # obsidian
 data.json
+spherical-graph-development.log
 
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store

@@ -371,6 +371,9 @@ export class YieldingLayoutFallbackRunner implements LayoutRunner {
 					graphSignature: request.graphSignature,
 					positions: result.positions,
 					diagnostics: result.diagnostics,
+					...(result.territory === undefined
+						? {}
+						: { territory: result.territory }),
 				});
 			} else {
 				active.onMessage({

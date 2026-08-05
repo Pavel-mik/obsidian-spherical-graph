@@ -55,6 +55,7 @@ export interface LayoutCompletedMessage extends LayoutMessageIdentity {
 	readonly type: 'completed';
 	readonly positions: Float32Array;
 	readonly diagnostics: LayoutFinalDiagnostics;
+	readonly territory?: LayoutSolverInput['territory'];
 }
 
 export interface LayoutCancelledMessage extends LayoutMessageIdentity {
@@ -192,6 +193,12 @@ function isRunPayload(value: unknown): value is LayoutRunPayload {
 			value.coastalPortScores instanceof Float32Array) &&
 		(value.coastalPortDirections === undefined ||
 			value.coastalPortDirections instanceof Float32Array) &&
+		(value.territory === undefined ||
+			(isRecord(value.territory) &&
+				Number.isSafeInteger(value.territory.subdivision) &&
+				Array.isArray(value.territory.folderKeys) &&
+				value.territory.folderKeys.every((key) => typeof key === 'string') &&
+				value.territory.ownerByCell instanceof Int32Array)) &&
 		(value.movableMask === undefined ||
 			value.movableMask instanceof Uint8Array) &&
 		(value.refresh === undefined || isRefreshPayload(value.refresh)) &&
@@ -244,7 +251,13 @@ export function isLayoutWorkerResponse(
 		case 'completed':
 			return (
 				value.positions instanceof Float32Array &&
-				isLayoutFinalDiagnostics(value.diagnostics)
+				isLayoutFinalDiagnostics(value.diagnostics) &&
+				(value.territory === undefined ||
+					(isRecord(value.territory) &&
+						Number.isSafeInteger(value.territory.subdivision) &&
+						Array.isArray(value.territory.folderKeys) &&
+						value.territory.folderKeys.every((key) => typeof key === 'string') &&
+						value.territory.ownerByCell instanceof Int32Array))
 			);
 		case 'cancelled':
 			return isLayoutFinalDiagnostics(value.diagnostics);
@@ -305,6 +318,7 @@ export function getRunRequestTransferables(
 	add(request.payload.collisionAngularRadii);
 	add(request.payload.coastalPortScores);
 	add(request.payload.coastalPortDirections);
+	add(request.payload.territory?.ownerByCell);
 	add(request.payload.movableMask);
 	if (request.payload.refresh !== undefined) {
 		add(request.payload.refresh.existingNodeMask);
