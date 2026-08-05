@@ -31,6 +31,10 @@ export interface GraphChangeScheduler {
 
 export interface GraphChangeTrackerOptions {
 	readonly graphService: GraphDataService;
+	/** Optional off-main-thread graph builder used by the Obsidian runtime. */
+	readonly buildGraph?: (
+		filters: Partial<GraphFilterOptions>,
+	) => Promise<GraphData>;
 	readonly getFilters: () => Partial<GraphFilterOptions>;
 	readonly getCommittedDescriptor: () => GraphDescriptor | undefined;
 	readonly getCommittedSignature?: () => string | undefined;
@@ -123,9 +127,11 @@ export class GraphChangeTracker {
 
 		const run = async (): Promise<GraphChangeObservation> => {
 			const previous = this.options.getCommittedDescriptor();
-			const graph = this.options.graphService.buildGraph(
-				this.options.getFilters(),
-			);
+			const filters = this.options.getFilters();
+			const graph =
+				this.options.buildGraph === undefined
+					? this.options.graphService.buildGraph(filters)
+					: await this.options.buildGraph(filters);
 			const diff = diffGraphDescriptors(
 				previous,
 				graph.descriptor,

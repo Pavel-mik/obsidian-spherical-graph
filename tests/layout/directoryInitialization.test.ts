@@ -213,6 +213,55 @@ describe('directory-aware spherical initialization', () => {
 		expect(largestBin / nodeCount).toBeLessThan(0.22);
 	});
 
+	it('keeps many directory footprints compact without collapsing large folders into strips', () => {
+		const folderSizes = [120, 72, 48, 36, 30, 24, 20, 18, 16, 14, 12, 10];
+		const paths: string[] = [];
+		const edges: GraphEdge[] = [];
+		const ranges: Array<{ readonly start: number; readonly size: number }> = [];
+		for (let folderIndex = 0; folderIndex < folderSizes.length; folderIndex += 1) {
+			const size = folderSizes[folderIndex] ?? 0;
+			const start = paths.length;
+			ranges.push({ start, size });
+			for (let localIndex = 0; localIndex < size; localIndex += 1) {
+				paths.push(`Folder-${folderIndex}/Section/Note-${localIndex}.md`);
+				if (localIndex > 0) {
+					edges.push(edge(start + localIndex - 1, start + localIndex));
+				}
+				if (localIndex > 3) {
+					edges.push(edge(start + localIndex - 4, start + localIndex));
+				}
+			}
+		}
+		const initialized = initializeDirectoryLayout(graph(paths, edges), 211);
+		const centers: Vec3[] = [];
+		for (const range of ranges) {
+			const points = Array.from(
+				{ length: range.size },
+				(_, index) => readVec3(initialized.positions, range.start + index),
+			);
+			const center = sphericalWeightedMean(points) ?? ([1, 0, 0] satisfies Vec3);
+			centers.push(center);
+			const distances = points
+				.map((point) => geodesicDistance(center, point))
+				.sort((left, right) => left - right);
+			const median = distances[Math.floor(distances.length / 2)] ?? 0;
+			const percentile95 = distances[Math.floor(distances.length * 0.95)] ?? 0;
+			expect(percentile95).toBeLessThan(1.02);
+			expect(percentile95 / Math.max(0.05, median)).toBeLessThan(3.2);
+		}
+		let minimumCenterDistance = Math.PI;
+		for (let first = 0; first < centers.length; first += 1) {
+			for (let second = first + 1; second < centers.length; second += 1) {
+				minimumCenterDistance = Math.min(
+					minimumCenterDistance,
+					geodesicDistance(centers[first] ?? [1, 0, 0], centers[second] ?? [-1, 0, 0]),
+				);
+			}
+		}
+		expect(minimumCenterDistance).toBeGreaterThan(0.22);
+		expectUnitPositions(initialized.positions);
+	});
+
 	it('keeps root orphans unassigned on a seeded non-uniform distribution', () => {
 		const nodeCount = 40;
 		const current = graph(

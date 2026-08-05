@@ -88,10 +88,14 @@ async function run(request: LayoutRunRequest): Promise<void> {
 			});
 		} else {
 			const positions = result.positions;
+			const territory = result.territory;
 			const transfer =
-				positions.buffer instanceof ArrayBuffer
-					? [positions.buffer]
-					: [];
+				[
+					...(positions.buffer instanceof ArrayBuffer ? [positions.buffer] : []),
+					...(territory?.ownerByCell.buffer instanceof ArrayBuffer
+						? [territory.ownerByCell.buffer]
+						: []),
+				];
 			postResponse(
 				{
 					type: 'completed',
@@ -100,6 +104,7 @@ async function run(request: LayoutRunRequest): Promise<void> {
 					graphSignature: request.graphSignature,
 					positions,
 					diagnostics: result.diagnostics,
+					...(territory === undefined ? {} : { territory }),
 				},
 				transfer,
 			);

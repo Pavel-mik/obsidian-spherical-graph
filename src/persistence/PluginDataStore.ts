@@ -1,6 +1,16 @@
 import { GraphData } from "../graph/graphTypes";
 import { GraphRename } from "../graph/graphDiff";
+import type { DevelopmentDiagnosticSink } from "../diagnostics/DevelopmentLog";
+import type {
+	DirectoryTerritorySource,
+	PersistedContinentalGeography,
+} from "../geography";
 import { migratePluginData } from "./migrations";
+import {
+	createPersistedGraphCache,
+	PersistedGraphCache,
+	validatePersistedGraphCache,
+} from "./graphCache";
 import {
 	CompletedLayoutInput,
 	CURRENT_ALGORITHM_VERSION,
@@ -11,6 +21,7 @@ import {
 	PersistedPluginData,
 	PinnedPathRenameScope,
 	createCommittedLayoutSnapshot,
+	diagnoseCompletedLayoutInput,
 	isRecord,
 	prunePinnedNotePaths,
 	pruneSnapshotPaths,
@@ -39,6 +50,51 @@ export interface PluginDataStoreOptions<TSettings> {
 	readonly saveDebounceMs?: number;
 	readonly scheduler?: PersistenceScheduler;
 	readonly onAsyncError?: (error: unknown) => void;
+	readonly onDiagnostic?: DevelopmentDiagnosticSink;
+	readonly createGeography?: (
+		graph: GraphData,
+		positions: ArrayLike<number>,
+		seed: number,
+		previous?: PersistedContinentalGeography,
+		territory?: DirectoryTerritorySource,
+	) => Promise<PersistedContinentalGeography>;
+}
+
+function errorDetails(error: unknown): Readonly<Record<string, unknown>> {
+	return {
+		message:
+			error instanceof Error
+				? error.message
+				: "Unknown non-Error exception",
+		name: error instanceof Error ? error.name : typeof error,
+	};
+}
+
+function geographyDetails(
+	geography: PersistedContinentalGeography | undefined,
+): Readonly<Record<string, unknown>> {
+	if (geography === undefined) {
+		return { provided: false };
+	}
+	let assignedNodeCount = geography.islandNodeIds.length;
+	let maximumCapRadius = 0;
+	let minimumCapRadius = Number.POSITIVE_INFINITY;
+	for (const continent of geography.continents) {
+		assignedNodeCount += continent.nodeIds.length;
+		maximumCapRadius = Math.max(maximumCapRadius, continent.capRadius);
+		minimumCapRadius = Math.min(minimumCapRadius, continent.capRadius);
+	}
+	return {
+		provided: true,
+		continentCount: geography.continents.length,
+		islandCount: geography.islandNodeIds.length,
+		assignedNodeCount,
+		minimumCapRadius:
+			minimumCapRadius === Number.POSITIVE_INFINITY
+				? null
+				: minimumCapRadius,
+		maximumCapRadius,
+	};
 }
 
 export interface CommitCompletedResultInput {
@@ -51,12 +107,14 @@ export interface CommitCompletedResultInput {
 	readonly expectedSnapshotId: string | null;
 	readonly algorithmVersion?: number;
 	readonly normTolerance?: number;
+	readonly territory?: DirectoryTerritorySource;
 }
 
 export interface ReplacePersistedStateInput {
 	readonly schemaVersion?: unknown;
 	readonly settings: unknown;
 	readonly committedLayout: unknown;
+	readonly graphCache?: unknown;
 	readonly camera: unknown;
 	readonly pinnedNotePaths: unknown;
 }
@@ -173,6 +231,7 @@ function freezeEnvelope<TSettings>(
 		schemaVersion: CURRENT_SCHEMA_VERSION,
 		settings: data.settings,
 		committedLayout: data.committedLayout,
+		graphCache: data.graphCache,
 		camera: data.camera,
 		pinnedNotePaths: validatePinnedNotePaths(data.pinnedNotePaths),
 	});
@@ -197,6 +256,7 @@ export class PluginDataStore<TSettings> {
 	private pendingSettings: TSettings | undefined;
 	private pendingCamera: PersistedCameraState | undefined;
 	private pendingPinnedNotePaths: readonly string[] | undefined;
+	private pendingGraphCache: PersistedGraphCache | undefined;
 	private debounceTimer: unknown;
 	private disposed = false;
 
@@ -211,6 +271,7 @@ export class PluginDataStore<TSettings> {
 			schemaVersion: CURRENT_SCHEMA_VERSION,
 			settings: this.parseSettings(undefined),
 			committedLayout: null,
+			graphCache: null,
 			camera: options.defaultCamera ?? DEFAULT_CAMERA_STATE,
 			pinnedNotePaths: [],
 		});
@@ -222,6 +283,10 @@ export class PluginDataStore<TSettings> {
 
 	get committedSnapshot(): PersistedLayoutSnapshot | undefined {
 		return this.data.committedLayout ?? undefined;
+	}
+
+	get graphCache(): PersistedGraphCache | undefined {
+		return this.data.graphCache ?? undefined;
 	}
 
 	get pinnedNotePaths(): readonly string[] {
@@ -238,6 +303,24 @@ export class PluginDataStore<TSettings> {
 	}
 
 	async load(): Promise<PersistedPluginData<TSettings>> {
+		return this.loadFromAdapter();
+	}
+
+	/**
+	 * Re-reads data.json after Obsidian Sync has delivered a newer map. Pending
+	 * debounced writes are discarded so they cannot overwrite the synced file.
+	 */
+	async reload(): Promise<PersistedPluginData<TSettings>> {
+		this.clearDebounceTimer();
+		this.pendingSettings = undefined;
+		this.pendingCamera = undefined;
+		this.pendingPinnedNotePaths = undefined;
+		this.pendingGraphCache = undefined;
+		await this.writeQueue;
+		return this.loadFromAdapter();
+	}
+
+	private async loadFromAdapter(): Promise<PersistedPluginData<TSettings>> {
 		const migrated = migratePluginData(await this.adapter.loadData());
 		const snapshot =
 			migrated.committedLayout === null
@@ -249,6 +332,10 @@ export class PluginDataStore<TSettings> {
 			schemaVersion: CURRENT_SCHEMA_VERSION,
 			settings: this.parseSettings(migrated.settings),
 			committedLayout: snapshot ?? null,
+			graphCache:
+				snapshot === undefined
+					? null
+					: (validatePersistedGraphCache(migrated.graphCache) ?? null),
 			camera: validateCameraState(
 				migrated.camera,
 				this.options.defaultCamera ?? DEFAULT_CAMERA_STATE,
@@ -291,6 +378,10 @@ export class PluginDataStore<TSettings> {
 		}
 		let snapshot: PersistedLayoutSnapshot | null =
 			parsedSnapshot ?? null;
+		let graphCache =
+			snapshot === null
+				? null
+				: (validatePersistedGraphCache(migrated.graphCache) ?? null);
 		const settings = this.parseSettings(migrated.settings);
 		const camera = validateCameraState(
 			migrated.camera,
@@ -322,11 +413,19 @@ export class PluginDataStore<TSettings> {
 				options.existingPaths,
 			);
 		}
+		if (
+			(options.renames?.length ?? 0) > 0 ||
+			options.existingPaths !== undefined ||
+			graphCache?.graphSignature !== snapshot?.graphSignature
+		) {
+			graphCache = null;
+		}
 		return this.enqueue(async () => {
 			const next = freezeEnvelope({
 				schemaVersion: CURRENT_SCHEMA_VERSION,
 				settings,
 				committedLayout: snapshot ?? null,
+				graphCache,
 				camera,
 				pinnedNotePaths,
 			});
@@ -339,26 +438,69 @@ export class PluginDataStore<TSettings> {
 	async commitCompletedResult(
 		input: CommitCompletedResultInput,
 	): Promise<PersistedLayoutSnapshot | undefined> {
-		if (this.disposed || input.operationId.length === 0) {
+		this.diagnostic("commit.requested", {
+			mode: input.mode,
+			nodeCount: input.graph.nodes.length,
+			edgeCount: input.graph.edges.length,
+			positionCount: input.positions.length,
+			expectedSnapshotPresent: input.expectedSnapshotId !== null,
+		});
+		if (this.disposed) {
+			this.diagnostic("commit.rejected", { reason: "store-disposed" });
+			return undefined;
+		}
+		if (input.operationId.length === 0) {
+			this.diagnostic("commit.rejected", { reason: "empty-operation-id" });
 			return undefined;
 		}
 		return this.enqueue(async () => {
 			const current = this.data.committedLayout;
 			const currentId = current?.snapshotId ?? null;
 			if (currentId !== input.expectedSnapshotId) {
+				this.diagnostic("commit.rejected", {
+					reason: "snapshot-race",
+					currentSnapshotPresent: currentId !== null,
+					expectedSnapshotPresent:
+						input.expectedSnapshotId !== null,
+				});
 				return undefined;
 			}
 			if (
 				input.mode === "refresh" &&
 				current === null
 			) {
+				this.diagnostic("commit.rejected", {
+					reason: "refresh-without-snapshot",
+				});
 				return undefined;
 			}
 			const renewGeneration =
 				input.mode === "renew"
 					? (current?.renewGeneration ?? 0) + 1
 					: (current?.renewGeneration ?? 0);
-			const snapshot = createCommittedLayoutSnapshot({
+			this.diagnostic("geography.started", {
+				nodeCount: input.graph.nodes.length,
+				edgeCount: input.graph.edges.length,
+				hasPreviousGeography:
+					input.mode === "refresh" && current?.geography !== undefined,
+			});
+			let geography: PersistedContinentalGeography | undefined;
+			try {
+				geography = await this.options.createGeography?.(
+					input.graph,
+					input.positions,
+					input.effectiveSeed,
+					input.mode === "refresh"
+						? current?.geography
+						: undefined,
+					input.territory,
+				);
+			} catch (error: unknown) {
+				this.diagnostic("geography.failed", errorDetails(error));
+				throw error;
+			}
+			this.diagnostic("geography.completed", geographyDetails(geography));
+			const completedInput = {
 				snapshotId: `layout-${input.operationId}`,
 				graph: input.graph,
 				mode: input.mode,
@@ -374,16 +516,32 @@ export class PluginDataStore<TSettings> {
 					input.mode === "refresh"
 						? current?.geography
 						: undefined,
-			});
+				geography,
+			} satisfies CompletedLayoutInput;
+			const snapshot = createCommittedLayoutSnapshot(completedInput);
 			if (snapshot === undefined) {
+				const failure = diagnoseCompletedLayoutInput(completedInput);
+				this.diagnostic("commit.rejected", {
+					reason: "snapshot-validation",
+					stage: failure.stage,
+					code: failure.code,
+					...failure.details,
+				});
 				return undefined;
 			}
 			const next = freezeEnvelope({
 				...this.data,
 				committedLayout: snapshot,
+				graphCache: createPersistedGraphCache(input.graph),
 			});
 			await this.adapter.saveData(next);
 			this.data = next;
+			this.diagnostic("commit.persisted", {
+				mode: input.mode,
+				nodeCount: input.graph.nodes.length,
+				edgeCount: input.graph.edges.length,
+				...geographyDetails(snapshot.geography),
+			});
 			return snapshot;
 		});
 	}
@@ -406,6 +564,11 @@ export class PluginDataStore<TSettings> {
 			const next = freezeEnvelope({
 				...this.data,
 				committedLayout: snapshot,
+				graphCache:
+					this.data.graphCache?.graphSignature ===
+					snapshot.graphSignature
+						? this.data.graphCache
+						: null,
 			});
 			await this.adapter.saveData(next);
 			this.data = next;
@@ -442,6 +605,7 @@ export class PluginDataStore<TSettings> {
 			const next = freezeEnvelope({
 				...this.data,
 				committedLayout: renamed,
+				graphCache: null,
 				pinnedNotePaths: renamedPins,
 			});
 			await this.adapter.saveData(next);
@@ -477,6 +641,7 @@ export class PluginDataStore<TSettings> {
 			const next = freezeEnvelope({
 				...this.data,
 				committedLayout: pruned,
+				graphCache: null,
 				pinnedNotePaths: prunedPins,
 			});
 			await this.adapter.saveData(next);
@@ -663,18 +828,32 @@ export class PluginDataStore<TSettings> {
 		this.scheduleDebouncedSave();
 	}
 
+	scheduleGraphCacheSave(graph: GraphData): void {
+		if (
+			this.disposed ||
+			graph.signature !== this.data.committedLayout?.graphSignature
+		) {
+			return;
+		}
+		this.pendingGraphCache = createPersistedGraphCache(graph);
+		this.scheduleDebouncedSave();
+	}
+
 	async flushDebounced(): Promise<void> {
 		this.clearDebounceTimer();
 		const settings = this.pendingSettings;
 		const camera = this.pendingCamera;
 		const pinnedNotePaths = this.pendingPinnedNotePaths;
+		const graphCache = this.pendingGraphCache;
 		this.pendingSettings = undefined;
 		this.pendingCamera = undefined;
 		this.pendingPinnedNotePaths = undefined;
+		this.pendingGraphCache = undefined;
 		if (
 			settings === undefined &&
 			camera === undefined &&
-			pinnedNotePaths === undefined
+			pinnedNotePaths === undefined &&
+			graphCache === undefined
 		) {
 			return;
 		}
@@ -685,6 +864,7 @@ export class PluginDataStore<TSettings> {
 				camera: camera ?? this.data.camera,
 				pinnedNotePaths:
 					pinnedNotePaths ?? this.data.pinnedNotePaths,
+				graphCache: graphCache ?? this.data.graphCache,
 			});
 			await this.adapter.saveData(next);
 			this.data = next;
@@ -696,17 +876,25 @@ export class PluginDataStore<TSettings> {
 	 * adapter write; with no pending changes it still persists the current
 	 * complete envelope.
 	 */
-	async saveNow(): Promise<PersistedPluginData<TSettings>> {
+	async saveNow(graph?: GraphData): Promise<PersistedPluginData<TSettings>> {
 		this.clearDebounceTimer();
 		const settings = this.pendingSettings;
 		const camera = this.pendingCamera;
 		const pinnedNotePaths = this.pendingPinnedNotePaths;
+		const pendingGraphCache = this.pendingGraphCache;
 		this.pendingSettings = undefined;
 		this.pendingCamera = undefined;
 		this.pendingPinnedNotePaths = undefined;
+		this.pendingGraphCache = undefined;
 		return this.enqueue(async () => {
+			const graphCache =
+				graph !== undefined &&
+				graph.signature === this.data.committedLayout?.graphSignature
+					? createPersistedGraphCache(graph)
+					: (pendingGraphCache ?? this.data.graphCache);
 			const next = freezeEnvelope({
 				...this.data,
+				graphCache,
 				settings: settings ?? this.data.settings,
 				camera: camera ?? this.data.camera,
 				pinnedNotePaths:
@@ -727,12 +915,24 @@ export class PluginDataStore<TSettings> {
 		this.pendingSettings = undefined;
 		this.pendingCamera = undefined;
 		this.pendingPinnedNotePaths = undefined;
+		this.pendingGraphCache = undefined;
 	}
 
 	private parseSettings(value: unknown): TSettings {
 		return this.options.parseSettings === undefined
 			? deepMergeValidated(this.options.defaultSettings, value)
 			: this.options.parseSettings(value);
+	}
+
+	private diagnostic(
+		event: string,
+		details: Readonly<Record<string, unknown>> = {},
+	): void {
+		try {
+			this.options.onDiagnostic?.(event, details);
+		} catch {
+			// Diagnostics must never alter persistence behavior.
+		}
 	}
 
 	private enqueue<TResult>(

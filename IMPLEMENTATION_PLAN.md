@@ -32,10 +32,14 @@
   linked root notes as islands, and leave every orphan over open water.
 - [x] Add same-subfolder selection emphasis and a searchable excluded-folder
   picker with subtree semantics.
-- [x] Replace uniform circular directory caps with deterministic compound
-  territories and multi-scale connected-ocean coastal erosion.
+- [x] Replace render-derived circular/compound land with a deterministic,
+  quota-based connected owner raster allocated before the solver and persisted
+  with the committed layout.
 - [x] Add a directly accessible bottom-rail Auto rotate control that preserves
   the fixed position buffer and stops on manual camera interaction.
 - [x] Replace radial lobe sampling and uniform orphan placement with
-  deterministic organic spacing, short-range collision protection, and soft
-  intrinsic territory barriers.
+  deterministic farthest-point city spacing, short-range collision protection,
+  hard final territory projection, and irregular ocean-separated growth.
+- [x] Make startup load-first, persist a complete Sync-safe render graph, add
+  explicit Load map controls, and isolate graph indexing, geography, and land
+  meshing in adaptive one-shot workers for large-vault stability.

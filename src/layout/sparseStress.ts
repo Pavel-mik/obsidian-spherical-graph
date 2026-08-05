@@ -12,9 +12,10 @@ const DEFAULT_STRESS_WEIGHT_SCALE = 0.22;
 const LOCAL_SCAFFOLD_WEIGHT_SCALE = 0.34;
 const REGIONAL_SCAFFOLD_WEIGHT_SCALE = 0.28;
 const LOCAL_SCAFFOLD_NEIGHBORS = 3;
-const REGIONAL_SCAFFOLD_NEIGHBORS = 3;
+const REGIONAL_SCAFFOLD_NEIGHBORS = 4;
 const SCAFFOLD_LATITUDE_BANDS = 32;
 const SCAFFOLD_LONGITUDE_BANDS = 64;
+const REGIONAL_BRIDGE_SAMPLE_LIMIT = 36;
 
 export interface SparseStressOptions {
 	/** A constant upper bound keeps landmark BFS work linear in the graph size. */
@@ -605,8 +606,34 @@ function nearestBridge(
 	salt: number,
 ): ScaffoldCandidate | undefined {
 	let best: ScaffoldCandidate | undefined;
-	for (const source of first) {
-		for (const target of second) {
+	const firstStride = Math.max(
+		1,
+		Math.ceil(first.length / REGIONAL_BRIDGE_SAMPLE_LIMIT),
+	);
+	const secondStride = Math.max(
+		1,
+		Math.ceil(second.length / REGIONAL_BRIDGE_SAMPLE_LIMIT),
+	);
+	const firstOffset = hashNumbers(salt, first.length, 0x48a) % firstStride;
+	const secondOffset = hashNumbers(salt, second.length, 0x48b) % secondStride;
+	for (
+		let firstIndex = firstOffset;
+		firstIndex < first.length;
+		firstIndex += firstStride
+	) {
+		const source = first[firstIndex];
+		if (source === undefined) {
+			continue;
+		}
+		for (
+			let secondIndex = secondOffset;
+			secondIndex < second.length;
+			secondIndex += secondStride
+		) {
+			const target = second[secondIndex];
+			if (target === undefined) {
+				continue;
+			}
 			const distance = angularDistance(
 				input.positions,
 				source,
@@ -807,45 +834,108 @@ function appendFolderScaffoldConstraints(
 			}
 		}
 
-		for (
-			let regionIndex = 0;
-			regionIndex < regions.length;
-			regionIndex += 1
-		) {
-			const current = regions[regionIndex];
-			if (current === undefined) {
+		/*
+		 * The former latitude-strip neighbor chain gave a folder only one
+		 * flexible topological spine. Under stress it folded into a long ribbon.
+		 * Build a bounded two-dimensional proximity scaffold instead: an MST
+		 * guarantees connectivity and local k-nearest links resist folding.
+		 */
+		const regionCandidates: Array<{
+			readonly first: number;
+			readonly second: number;
+			readonly distance: number;
+			readonly tieBreak: number;
+		}> = [];
+		for (let first = 0; first < regions.length; first += 1) {
+			const firstRegion = regions[first];
+			if (firstRegion === undefined) {
 				continue;
 			}
-			for (
-				let offset = 1;
-				offset <= REGIONAL_SCAFFOLD_NEIGHBORS;
-				offset += 1
-			) {
-				const neighbor = regions[regionIndex + offset];
-				if (neighbor === undefined) {
-					break;
-				}
-				const bridge = nearestBridge(
-					input,
-					current.members,
-					neighbor.members,
-					0x7e6 + offset,
-				);
-				if (bridge === undefined) {
+			for (let second = first + 1; second < regions.length; second += 1) {
+				const secondRegion = regions[second];
+				if (secondRegion === undefined) {
 					continue;
 				}
-				appendScaffoldConstraint(
-					input,
-					options,
-					occupiedPairs,
-					meanEdgeWeight,
-					constraints,
-					bridge.source,
-					bridge.target,
-					REGIONAL_SCAFFOLD_WEIGHT_SCALE,
-					0x2b9 + offset,
-				);
+				regionCandidates.push({
+					first,
+					second,
+					distance: angularDistance(
+						input.positions,
+						firstRegion.representative,
+						secondRegion.representative,
+					),
+					tieBreak: hashNumbers(
+						input.seed,
+						firstRegion.index,
+						secondRegion.index,
+						0x7e6,
+					),
+				});
 			}
+		}
+		regionCandidates.sort(
+			(left, right) =>
+				left.distance - right.distance ||
+				left.tieBreak - right.tieBreak ||
+				left.first - right.first ||
+				left.second - right.second,
+		);
+		const selectedRegionPairs = new Set<string>();
+		const regionComponents = new DisjointSet(regions.length);
+		const selectRegionPair = (first: number, second: number): void => {
+			selectedRegionPairs.add(`${Math.min(first, second)}:${Math.max(first, second)}`);
+		};
+		for (const candidate of regionCandidates) {
+			if (regionComponents.union(candidate.first, candidate.second)) {
+				selectRegionPair(candidate.first, candidate.second);
+			}
+		}
+		for (let regionIndex = 0; regionIndex < regions.length; regionIndex += 1) {
+			let neighborCount = 0;
+			for (const candidate of regionCandidates) {
+				if (
+					candidate.first !== regionIndex &&
+					candidate.second !== regionIndex
+				) {
+					continue;
+				}
+				selectRegionPair(candidate.first, candidate.second);
+				neighborCount += 1;
+				if (neighborCount >= REGIONAL_SCAFFOLD_NEIGHBORS) {
+					break;
+				}
+			}
+		}
+		for (const pair of selectedRegionPairs) {
+			const [firstText, secondText] = pair.split(':');
+			const first = Number(firstText);
+			const second = Number(secondText);
+			const current = regions[first];
+			const neighbor = regions[second];
+			if (current === undefined || neighbor === undefined) {
+				continue;
+			}
+			const bridge = nearestBridge(
+				input,
+				current.members,
+				neighbor.members,
+				hashNumbers(input.seed, current.index, neighbor.index, 0x7e6),
+			);
+			if (bridge === undefined) {
+				continue;
+			}
+			components.union(bridge.source, bridge.target);
+			appendScaffoldConstraint(
+				input,
+				options,
+				occupiedPairs,
+				meanEdgeWeight,
+				constraints,
+				bridge.source,
+				bridge.target,
+				REGIONAL_SCAFFOLD_WEIGHT_SCALE,
+				hashNumbers(current.index, neighbor.index, 0x2b9),
+			);
 		}
 	}
 }

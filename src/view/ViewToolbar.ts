@@ -22,6 +22,7 @@ export interface ViewToolbarCallbacks extends SearchControllerCallbacks {
 	onContinentsVisibilityChange(visible: boolean): void;
 	onAtmosphereVisibilityChange(visible: boolean): void;
 	onManualSave(): void;
+	onManualLoad(): void;
 	onFullscreen(): void;
 }
 
@@ -55,6 +56,7 @@ export class ViewToolbar {
 	private readonly cancelButton: HTMLButtonElement;
 	private readonly resetButton: HTMLButtonElement;
 	private readonly saveButton: HTMLButtonElement;
+	private readonly loadButton: HTMLButtonElement;
 	private readonly fullscreenButton: HTMLButtonElement;
 	private readonly routeButton: HTMLButtonElement;
 	private readonly tagsToggle: FilterToggle;
@@ -125,6 +127,11 @@ export class ViewToolbar {
 			VIEW_CONTROL_COPY.saveMap,
 			'spherical-graph-action-save',
 		);
+		this.loadButton = createButton(
+			actionGrid,
+			VIEW_CONTROL_COPY.loadMap,
+			'spherical-graph-action-load',
+		);
 		this.fullscreenButton = createButton(
 			actionGrid,
 			VIEW_CONTROL_COPY.fullscreen,
@@ -146,6 +153,7 @@ export class ViewToolbar {
 			this.routeButton,
 			this.resetButton,
 			this.saveButton,
+			this.loadButton,
 			this.fullscreenButton,
 		);
 
@@ -247,6 +255,7 @@ export class ViewToolbar {
 		this.resetButton.addEventListener('click', this.onReset);
 		this.routeButton.addEventListener('click', this.onRoute);
 		this.saveButton.addEventListener('click', this.onSave);
+		this.loadButton.addEventListener('click', this.onLoad);
 		this.fullscreenButton.addEventListener(
 			'click',
 			this.onFullscreen,
@@ -307,6 +316,13 @@ export class ViewToolbar {
 	setStatus(presentation: StatusPresentation): void {
 		this.refreshButton.disabled = !presentation.canRefresh;
 		this.renewButton.disabled = !presentation.canRenew;
+		this.renewButton.textContent =
+			presentation.renewLabel ?? VIEW_CONTROL_COPY.renew;
+		this.renewButton.title = this.renewButton.textContent;
+		this.renewButton.setAttribute(
+			'aria-label',
+			this.renewButton.textContent,
+		);
 		this.cancelButton.disabled = !presentation.canCancel;
 		this.cancelButton.hidden = !presentation.canCancel;
 		this.element.dataset.busy = String(presentation.isBusy);
@@ -382,6 +398,7 @@ export class ViewToolbar {
 		this.resetButton.removeEventListener('click', this.onReset);
 		this.routeButton.removeEventListener('click', this.onRoute);
 		this.saveButton.removeEventListener('click', this.onSave);
+		this.loadButton.removeEventListener('click', this.onLoad);
 		this.fullscreenButton.removeEventListener(
 			'click',
 			this.onFullscreen,
@@ -458,6 +475,11 @@ export class ViewToolbar {
 	private readonly onSave = (): void => {
 		this.closeMenu();
 		this.callbacks.onManualSave();
+	};
+
+	private readonly onLoad = (): void => {
+		this.closeMenu();
+		this.callbacks.onManualLoad();
 	};
 
 	private readonly onFullscreen = (): void => {

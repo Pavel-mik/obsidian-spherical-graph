@@ -19,6 +19,7 @@ import {
 import { applyCoastalPortBias } from './coastalPortLayout';
 import { projectSphericalCollisions } from './collisionProjection';
 import { computeSphericalForces } from './forces';
+import { DirectoryTerritoryConstraint } from './territoryConstraints';
 import {
 	resolveSolverSettings,
 	type LayoutFinalDiagnostics,
@@ -143,6 +144,8 @@ export class SphericalSolver {
 	private readonly collisionAngularRadii: Float32Array | undefined;
 	private readonly coastalPortScores: Float32Array | undefined;
 	private readonly coastalPortDirections: Float32Array | undefined;
+	private readonly territory: LayoutSolverInput['territory'];
+	private readonly territoryConstraint: DirectoryTerritoryConstraint | undefined;
 	private readonly baseMovableMask: Uint8Array;
 	private readonly refresh: LayoutSolverInput['refresh'];
 	private readonly cappedNodes: Uint8Array;
@@ -226,6 +229,27 @@ export class SphericalSolver {
 		this.coastalPortScores = input.coastalPortScores?.slice();
 		this.coastalPortDirections =
 			input.coastalPortDirections?.slice();
+		if (input.territory !== undefined) {
+			if (
+				!Number.isSafeInteger(input.territory.subdivision) ||
+				input.territory.folderKeys.some((key) => key.length === 0)
+			) {
+				throw new RangeError('Invalid directory territory metadata.');
+			}
+			this.territory = {
+				subdivision: input.territory.subdivision,
+				folderKeys: Object.freeze([...input.territory.folderKeys]),
+				ownerByCell: input.territory.ownerByCell.slice(),
+			};
+			this.territoryConstraint = new DirectoryTerritoryConstraint({
+				subdivision: this.territory.subdivision,
+				ownerByCell: this.territory.ownerByCell,
+				ownerCount: this.territory.folderKeys.length,
+			});
+		} else {
+			this.territory = undefined;
+			this.territoryConstraint = undefined;
+		}
 		this.velocities = new Float64Array(this.positions.length);
 		this.cappedNodes = new Uint8Array(nodeCount);
 
@@ -530,6 +554,8 @@ export class SphericalSolver {
 				edgeWeights: this.edgeWeights,
 				edgeTargetAngles: this.edgeTargetAngles,
 				folderIndexByNode: this.folderIndexByNode,
+				coastalPortScores: this.coastalPortScores,
+				territoryConstrained: this.territoryConstraint !== undefined,
 				movableMask,
 				settings: this.settings,
 				effectiveSeed: this.effectiveSeed,
@@ -543,6 +569,19 @@ export class SphericalSolver {
 						? this.refresh?.anchorStrengths
 						: undefined,
 			});
+			if (
+				this.territoryConstraint !== undefined &&
+				this.folderIndexByNode !== undefined
+			) {
+				this.territoryConstraint.addForces(
+					this.positions,
+					this.folderIndexByNode,
+					movableMask,
+					forceEvaluation.forces,
+					this.settings.springStrength * 2.8,
+					this.effectiveSeed,
+				);
+			}
 			this.repulsionMode = forceEvaluation.repulsionMode;
 			this.totalRepulsionPairs +=
 				forceEvaluation.evaluatedRepulsionPairs;
@@ -776,6 +815,13 @@ export class SphericalSolver {
 			}
 			writeVec3(this.positions, index, position);
 		}
+		this.territoryConstraint?.projectPositions(
+			this.positions,
+			this.folderIndexByNode,
+			movableMask,
+			this.coastalPortScores,
+			true,
+		);
 	}
 
 	private diagnostics(
@@ -857,6 +903,16 @@ export class SphericalSolver {
 		}
 		this.applyCoastalPorts();
 		this.applyCollisionProjection();
+		if (
+			this.territoryConstraint !== undefined &&
+			this.folderIndexByNode !== undefined
+		) {
+			this.territoryConstraint.projectPositions(
+				this.positions,
+				this.folderIndexByNode,
+				this.refresh?.relaxationMovableMask ?? this.baseMovableMask,
+			);
+		}
 
 		const maximumNormError = this.maximumNormError();
 		if (!Number.isFinite(maximumNormError) || maximumNormError > 1e-5) {
@@ -869,6 +925,15 @@ export class SphericalSolver {
 			status: 'completed',
 			positions: this.positions.slice(),
 			diagnostics: this.diagnostics(now, true),
+			...(this.territory === undefined
+				? {}
+				: {
+						territory: {
+							subdivision: this.territory.subdivision,
+							folderKeys: Object.freeze([...this.territory.folderKeys]),
+							ownerByCell: this.territory.ownerByCell.slice(),
+						},
+					}),
 		};
 		return this.finalResult;
 	}

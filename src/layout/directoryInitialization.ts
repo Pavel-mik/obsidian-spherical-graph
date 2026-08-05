@@ -34,6 +34,8 @@ const MIN_COHORT_SIZE = 18;
 const MAX_COHORT_SIZE = 84;
 const REGION_CENTER_ATTEMPTS = 24;
 const MAX_NODE_PLACEMENT_ATTEMPTS = 18;
+const FOLDER_PACKING_SEA_GAP = 0.07;
+const MAX_PACKING_EXTENT = 0.95;
 
 export interface DirectoryInitialization {
 	readonly positions: Float32Array;
@@ -160,16 +162,11 @@ function folderGroups(
 			members[folderIndex]?.push(node.index);
 		}
 	}
-	const permutation = deterministicPermutation(
-		names.length,
-		hashNumbers(seed, names.length, 0xd1ae),
-	);
 	const totalMembers = Math.max(
 		1,
 		members.reduce((sum, groupMembers) => sum + groupMembers.length, 0),
 	);
 	const provisional = names.map((name, index) => {
-		const pointIndex = permutation[index] ?? index;
 		const memberCount = members[index]?.length ?? 0;
 		const areaFraction =
 			CONTINENTAL_LAND_FRACTION * memberCount / totalMembers;
@@ -177,7 +174,6 @@ function folderGroups(
 			index,
 			name,
 			members: members[index] ?? [],
-			center: fibonacciSpherePoint(pointIndex, names.length),
 			extent: Math.min(
 				MAX_FOLDER_EXTENT,
 				Math.max(
@@ -189,24 +185,74 @@ function folderGroups(
 			),
 		};
 	});
-	return provisional.map((group) => {
-		let nearestCenter = Math.PI;
-		for (const other of provisional) {
-			if (other.index !== group.index) {
-				nearestCenter = Math.min(
-					nearestCenter,
-					geodesicDistance(group.center, other.center),
-				);
+	if (provisional.length === 0) {
+		return [];
+	}
+
+	/*
+	 * A plain Fibonacci assignment gives every root folder the same amount of
+	 * macro space.  Large folders are then forced to leak through the gaps
+	 * between smaller folders, which is the origin of the long, interwoven
+	 * "snake" continents.  Pack the folder caps from largest to smallest and
+	 * choose every next center by its worst normalized clearance instead.
+	 * Candidate sampling is still deterministic and intrinsic to S².
+	 */
+	const candidateCount = Math.max(
+		160,
+		provisional.length,
+		Math.min(4_096, provisional.length * 32),
+	);
+	const candidateOrder = deterministicPermutation(
+		candidateCount,
+		hashNumbers(seed, provisional.length, 0xd1ae),
+	);
+	const candidates = Array.from(candidateOrder, (pointIndex) =>
+		fibonacciSpherePoint(pointIndex, candidateCount),
+	);
+	const placementOrder = [...provisional].sort(
+		(left, right) =>
+			right.extent - left.extent ||
+			right.members.length - left.members.length ||
+			hashNumbers(seed, left.index, 0xa61) -
+				hashNumbers(seed, right.index, 0xa61),
+	);
+	const candidateClearances = new Float64Array(candidateCount);
+	candidateClearances.fill(Math.PI);
+	const centerByFolder = new Map<number, Vec3>();
+	for (const group of placementOrder) {
+		let bestCenter = candidates[0] ?? ([1, 0, 0] satisfies Vec3);
+		let bestClearance = Number.NEGATIVE_INFINITY;
+		for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+			const candidate = candidates[candidateIndex];
+			if (candidate === undefined) {
+				continue;
+			}
+			const clearance = candidateClearances[candidateIndex] ?? -Infinity;
+			if (clearance > bestClearance) {
+				bestClearance = clearance;
+				bestCenter = candidate;
 			}
 		}
-		return {
-			...group,
-			extent:
-				provisional.length <= 1
-					? group.extent
-					: Math.min(group.extent, nearestCenter * 0.45),
-		};
-	});
+		centerByFolder.set(group.index, bestCenter);
+		const occupiedRadius =
+			Math.min(group.extent, MAX_PACKING_EXTENT) + FOLDER_PACKING_SEA_GAP;
+		for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+			const candidate = candidates[candidateIndex];
+			if (candidate === undefined) {
+				continue;
+			}
+			candidateClearances[candidateIndex] = Math.min(
+				candidateClearances[candidateIndex] ?? Math.PI,
+				geodesicDistance(candidate, bestCenter) - occupiedRadius,
+			);
+		}
+	}
+	return provisional.map((group) => ({
+		...group,
+		center:
+			centerByFolder.get(group.index) ??
+			([1, 0, 0] satisfies Vec3),
+	}));
 }
 
 function connectedComponents(
@@ -569,19 +615,17 @@ function placeRegionCenters(
 	);
 	const targetSpacing =
 		group.extent *
-		Math.min(0.64, 0.82 / Math.sqrt(Math.max(1, regions.length)));
+		Math.min(0.64, 0.9 / Math.sqrt(Math.max(1, regions.length)));
+	const tangentX = orthogonalUnitVec3(
+		group.center,
+		hashNumbers(seed, group.index, 0x711),
+	);
+	const tangentY = normalizeVec3(crossVec3(group.center, tangentX));
+	const phaseA = hashToUnitFloat(seed, group.index, 0x712) * Math.PI * 2;
+	const phaseB = hashToUnitFloat(seed, group.index, 0x713) * Math.PI * 2;
 	const first = ordered[0];
 	if (first !== undefined) {
-		const firstSeed = hashNumbers(seed, group.index, first.index, 0x3e7);
-		first.center = exponentialMap(
-			group.center,
-			scaleVec3(
-				tangentDirectionFromHash(group.center, firstSeed),
-				group.extent *
-					(0.035 +
-						hashToUnitFloat(firstSeed, 0x31) * 0.1),
-			),
-		);
+		first.center = group.center;
 	}
 	const placed = first === undefined ? [] : [first.center];
 	for (let index = 1; index < ordered.length; index += 1) {
@@ -603,40 +647,42 @@ function placeRegionCenters(
 				attempt,
 				0xc37,
 			);
-			const parent =
-				placed[
-					hashNumbers(candidateSeed, 0x4a7) % placed.length
-				] ?? group.center;
-			const desiredSpacing =
-				targetSpacing *
-				(0.72 + hashToUnitFloat(candidateSeed, 0x5a1) * 0.78);
+			const angle =
+				hashToUnitFloat(candidateSeed, 0x4a7) * Math.PI * 2;
+			/*
+			 * A low-frequency, deterministic boundary modulation keeps the
+			 * footprint organic without turning its regions into a random walk.
+			 */
+			const boundaryScale =
+				0.76 +
+				Math.sin(angle * 3 + phaseA) * 0.11 +
+				Math.sin(angle * 5 + phaseB) * 0.07;
+			const radialDistance =
+				group.extent *
+				boundaryScale *
+				Math.sqrt(hashToUnitFloat(candidateSeed, 0x5a1));
+			const tangentDirection = normalizeVec3([
+				tangentX[0] * Math.cos(angle) +
+					tangentY[0] * Math.sin(angle),
+				tangentX[1] * Math.cos(angle) +
+					tangentY[1] * Math.sin(angle),
+				tangentX[2] * Math.cos(angle) +
+					tangentY[2] * Math.sin(angle),
+			]);
 			const candidate = exponentialMap(
-				parent,
-				scaleVec3(
-					tangentDirectionFromHash(parent, candidateSeed),
-					desiredSpacing,
-				),
+				group.center,
+				scaleVec3(tangentDirection, radialDistance),
 			);
 			const nearest = nearestDistance(
 				candidate,
 				placed,
 				candidateSeed,
 			);
-			const radialDistance = geodesicDistance(
-				group.center,
-				candidate,
-			);
-			const softLimit =
-				group.extent *
-				(0.66 +
-					hashToUnitFloat(candidateSeed, 0x61f) * 0.18);
-			const overflow = Math.max(0, radialDistance - softLimit);
 			const score =
-				-Math.abs(nearest - desiredSpacing) -
-				overflow * 4.5 +
+				Math.min(nearest, targetSpacing * 1.8) +
 				hashToSignedUnitFloat(candidateSeed, 0x82f) *
 					targetSpacing *
-					0.08;
+					0.18;
 			if (score > bestScore) {
 				bestScore = score;
 				best = candidate;
@@ -1050,8 +1096,8 @@ export function directoryAwareEdgeWeights(
 			sourceOwner >= 0 && sourceOwner === targetOwner
 				? 1
 				: sourceOwner < 0 || targetOwner < 0
-					? 0.35
-					: 0.14;
-		return Math.max(0.05, edge.weight * factor);
+					? 0.18
+					: 0.035;
+		return Math.max(0.012, edge.weight * factor);
 	});
 }

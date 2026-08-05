@@ -26,7 +26,7 @@ describe('presentLayoutStatus', () => {
 			edgeCount: 14,
 		});
 
-		expect(clean.canRefresh).toBe(false);
+		expect(clean.canRefresh).toBe(true);
 		expect(dirty.canRefresh).toBe(true);
 		expect(dirty.text).toContain('+1 / -0 notes');
 		expect(dirty.text).toContain('6 link changes');

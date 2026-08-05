@@ -13,8 +13,11 @@ import {
 import {
 	CONTINENTAL_GEOGRAPHY_VERSION,
 	CONTINENT_COLOR_COUNT,
+	MAX_PERSISTED_CONTINENT_CAP_RADIUS,
 	type PersistedContinent,
 	type PersistedContinentalGeography,
+	type PersistedDirectoryTerritory,
+	type DirectoryTerritorySource,
 } from './geographyTypes';
 import {
 	buildSphericalWatershed,
@@ -206,7 +209,7 @@ function diagnosticCapRadius(
 		);
 	}
 	return Math.min(
-		1.55,
+		MAX_PERSISTED_CONTINENT_CAP_RADIUS,
 		Math.max(0.12, maximumDistance + Math.min(0.14, spacing * 0.6)),
 	);
 }
@@ -233,6 +236,7 @@ function conductance(
 function freezeGeography(
 	continents: readonly PersistedContinent[],
 	islandNodeIds: readonly string[],
+	territory?: PersistedDirectoryTerritory,
 ): PersistedContinentalGeography {
 	return Object.freeze({
 		version: CONTINENTAL_GEOGRAPHY_VERSION,
@@ -246,7 +250,47 @@ function freezeGeography(
 			),
 		),
 		islandNodeIds: Object.freeze([...islandNodeIds].sort()),
+		...(territory === undefined
+			? {}
+			: {
+					territory: Object.freeze({
+						subdivision: territory.subdivision,
+						folderKeys: Object.freeze([...territory.folderKeys]),
+						ownerByCell: Object.freeze([...territory.ownerByCell]),
+					}),
+			}),
 	});
+}
+
+function persistTerritory(
+	source: DirectoryTerritorySource | undefined,
+	groups: readonly DirectoryGroup[],
+): PersistedDirectoryTerritory | undefined {
+	if (source === undefined) {
+		return undefined;
+	}
+	const expectedKeys = groups.map((group) => group.folder);
+	if (
+		source.folderKeys.length !== expectedKeys.length ||
+		expectedKeys.some((key, index) => source.folderKeys[index] !== key)
+	) {
+		throw new RangeError('Territory folder order does not match continental geography.');
+	}
+	const grid = createIntrinsicSphericalGrid(source.subdivision);
+	if (source.ownerByCell.length !== grid.vertices.length) {
+		throw new RangeError('Territory raster length does not match its subdivision.');
+	}
+	const owners = Array.from(source.ownerByCell, (owner) => {
+		if (!Number.isSafeInteger(owner) || owner < -1 || owner >= groups.length) {
+			throw new RangeError('Territory raster contains an invalid owner.');
+		}
+		return owner;
+	});
+	return {
+		subdivision: source.subdivision,
+		folderKeys: Object.freeze([...source.folderKeys]),
+		ownerByCell: Object.freeze(owners),
+	};
 }
 
 /**
@@ -260,6 +304,7 @@ export function derivePostLayoutGeography(
 	seed: number,
 	previous?: PersistedContinentalGeography,
 	options: PostLayoutGeographyOptions = {},
+	territorySource?: DirectoryTerritorySource,
 ): PostLayoutGeographyAnalysis {
 	if (positions.length !== graph.nodes.length * 3) {
 		throw new RangeError('Geography positions must contain one vector per note.');
@@ -327,7 +372,11 @@ export function derivePostLayoutGeography(
 		.map((node) => node.id)
 		.sort();
 	return {
-		geography: freezeGeography(continents, islandNodeIds),
+		geography: freezeGeography(
+			continents,
+			islandNodeIds,
+			persistTerritory(territorySource, groups),
+		),
 		assignmentByNode,
 		grid,
 		density,
@@ -341,11 +390,14 @@ export function createPersistedContinentalGeography(
 	positions: ArrayLike<number>,
 	seed: number,
 	previous?: PersistedContinentalGeography,
+	territory?: DirectoryTerritorySource,
 ): PersistedContinentalGeography {
 	return derivePostLayoutGeography(
 		graph,
 		positions,
 		seed,
 		previous,
+		{},
+		territory,
 	).geography;
 }

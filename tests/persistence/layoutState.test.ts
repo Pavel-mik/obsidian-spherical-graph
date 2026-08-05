@@ -3,9 +3,17 @@ import { describe, expect, it } from "vitest";
 import { GraphDataService } from "../../src/graph/GraphDataService";
 import { GraphDataSource } from "../../src/graph/graphTypes";
 import {
+	createPersistedContinentalGeography,
+	MAX_PERSISTED_CONTINENT_CAP_RADIUS,
+} from "../../src/geography";
+import { createIntrinsicSphericalGrid } from "../../src/geography/sphericalGrid";
+import {
 	CURRENT_ALGORITHM_VERSION,
 	CURRENT_SCHEMA_VERSION,
+	MINIMUM_LOADABLE_ALGORITHM_VERSION,
 	createCommittedLayoutSnapshot,
+	diagnoseCompletedPositions,
+	diagnoseContinentalGeography,
 	deriveEffectiveSeed,
 	isSnapshotUsable,
 	prunePinnedNotePaths,
@@ -123,6 +131,16 @@ describe("layout state validation", () => {
 				["a.md"],
 			),
 		).toBeUndefined();
+		expect(
+			diagnoseCompletedPositions(
+				new Float32Array([2, 0, 0]),
+				["a.md"],
+			),
+		).toMatchObject({
+			stage: "positions",
+			code: "norm-out-of-tolerance",
+			details: { nodeIndex: 0, norm: 2 },
+		});
 		expect(
 			validateCompletedPositions(
 				new Float32Array([0, 0, 0]),
@@ -352,6 +370,88 @@ describe("snapshot reconciliation and migrations", () => {
 		).toBe("orphan-over-water");
 	});
 
+	it("commits and reloads a first layout with a maximally wide continent", () => {
+		const currentGraph = new GraphDataService(
+			graphSource(["Books/A.md", "Books/B.md"], {
+				"Books/A.md": { "Books/B.md": 1 },
+			}),
+		).buildGraph();
+		const positions = new Float32Array([1, 0, 0, -1, 0, 0]);
+		const geography = createPersistedContinentalGeography(
+			currentGraph,
+			positions,
+			42,
+		);
+
+		expect(geography.continents[0]?.capRadius).toBe(
+			MAX_PERSISTED_CONTINENT_CAP_RADIUS,
+		);
+		const snapshot = createCommittedLayoutSnapshot({
+			snapshotId: "wide-first-layout",
+			graph: currentGraph,
+			mode: "initialize",
+			effectiveSeed: 42,
+			renewGeneration: 0,
+			completedAt: 10,
+			positions,
+			geography,
+		});
+
+		expect(snapshot?.snapshotId).toBe("wide-first-layout");
+		expect(
+			validatePersistedLayoutSnapshot(
+				JSON.parse(JSON.stringify(snapshot)) as unknown,
+			)?.snapshotId,
+		).toBe("wide-first-layout");
+	});
+
+	it("round-trips the fixed directory territory raster through JSON persistence", () => {
+		const currentGraph = new GraphDataService(
+			graphSource(["Books/A.md", "Books/B.md"], {
+				"Books/A.md": { "Books/B.md": 1 },
+			}),
+		).buildGraph();
+		const positions = new Float32Array([
+			1, 0, 0,
+			0.98, 0.198_997_49, 0,
+		]);
+		const grid = createIntrinsicSphericalGrid(4);
+		const ownerByCell = Int32Array.from(
+			grid.vertices,
+			(point) => point[0] > 0.15 ? 0 : -1,
+		);
+		const geography = createPersistedContinentalGeography(
+			currentGraph,
+			positions,
+			42,
+			undefined,
+			{
+				subdivision: 4,
+				folderKeys: ["Books"],
+				ownerByCell,
+			},
+		);
+		const snapshot = createCommittedLayoutSnapshot({
+			snapshotId: "territory-round-trip",
+			graph: currentGraph,
+			mode: "renew",
+			effectiveSeed: 42,
+			renewGeneration: 1,
+			completedAt: 10,
+			positions,
+			geography,
+		});
+		const restored = validatePersistedLayoutSnapshot(
+			JSON.parse(JSON.stringify(snapshot)) as unknown,
+		);
+
+		expect(restored?.geography?.territory?.subdivision).toBe(4);
+		expect(restored?.geography?.territory?.folderKeys).toEqual(["Books"]);
+		expect(restored?.geography?.territory?.ownerByCell).toEqual([
+			...ownerByCell,
+		]);
+	});
+
 	it("rejects geography that omits a linked note", () => {
 		const currentGraph = new GraphDataService(
 			graphSource(["a.md", "b.md"], {
@@ -383,6 +483,16 @@ describe("snapshot reconciliation and migrations", () => {
 			islandNodeIds: [],
 		};
 
+		expect(
+			diagnoseContinentalGeography(
+				raw.geography,
+				currentGraph.descriptor,
+			),
+		).toMatchObject({
+			stage: "geography",
+			code: "omitted-linked-node",
+			details: { omittedLinkedNodeCount: 2 },
+		});
 		expect(validatePersistedLayoutSnapshot(raw)).toBeUndefined();
 	});
 
@@ -407,9 +517,20 @@ describe("snapshot reconciliation and migrations", () => {
 			completedAt: 10,
 			positions: new Float32Array([1, 0, 0]),
 		});
+		const previousCompatibleSnapshot = createCommittedLayoutSnapshot({
+			snapshotId: "algorithm-previous-compatible",
+			graph: currentGraph,
+			mode: "initialize",
+			effectiveSeed: 42,
+			renewGeneration: 0,
+			completedAt: 10,
+			positions: new Float32Array([1, 0, 0]),
+			algorithmVersion: MINIMUM_LOADABLE_ALGORITHM_VERSION,
+		});
 
-		expect(CURRENT_ALGORITHM_VERSION).toBe(8);
+		expect(CURRENT_ALGORITHM_VERSION).toBe(10);
 		expect(isSnapshotUsable(legacySnapshot, currentGraph)).toBe(false);
+		expect(isSnapshotUsable(previousCompatibleSnapshot, currentGraph)).toBe(true);
 		expect(isSnapshotUsable(currentSnapshot, currentGraph)).toBe(true);
 	});
 });

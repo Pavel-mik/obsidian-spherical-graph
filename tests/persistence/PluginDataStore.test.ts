@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GraphDataService } from "../../src/graph/GraphDataService";
 import { GraphDataSource } from "../../src/graph/graphTypes";
+import { CONTINENTAL_GEOGRAPHY_VERSION } from "../../src/geography";
 import {
 	deepMergeValidated,
 	PersistenceScheduler,
@@ -87,14 +88,17 @@ class ManualScheduler implements PersistenceScheduler {
 	}
 }
 
-function createGraph(paths: readonly string[]) {
+function createGraph(
+	paths: readonly string[],
+	links: Readonly<Record<string, Readonly<Record<string, number>>>> = {},
+) {
 	const source: GraphDataSource = {
 		getMarkdownFiles: () =>
 			paths.map((path) => ({
 				path,
 				basename: path.replace(/\.md$/, ""),
 			})),
-		getResolvedLinks: () => ({}),
+		getResolvedLinks: () => links,
 	};
 	return new GraphDataService(source).buildGraph();
 }
@@ -120,6 +124,7 @@ describe("PluginDataStore loading", () => {
 		const loaded = await store.load();
 		expect(loaded.settings).toEqual(DEFAULT_SETTINGS);
 		expect(loaded.committedLayout).toBeNull();
+		expect(loaded.graphCache).toBeNull();
 		expect(loaded.camera.position).toEqual([0, 0, 3]);
 		expect(loaded.pinnedNotePaths).toEqual([]);
 	});
@@ -251,6 +256,49 @@ describe("PluginDataStore transactional writes", () => {
 		expect(result?.snapshotId).toBe("layout-one");
 		expect(adapter.saves).toHaveLength(1);
 		expect(store.committedSnapshot).toBe(result);
+		expect(store.graphCache?.graphSignature).toBe(result?.graphSignature);
+	});
+
+	it("diagnoses the exact reason an async geography result cannot commit", async () => {
+		const adapter = new MemoryAdapter();
+		const diagnostics: Array<{
+			readonly event: string;
+			readonly details: Readonly<Record<string, unknown>>;
+		}> = [];
+		const store = new PluginDataStore(adapter, {
+			defaultSettings: DEFAULT_SETTINGS,
+			onDiagnostic: (event, details = {}) => {
+				diagnostics.push({ event, details });
+			},
+			createGeography: async () => ({
+				version: CONTINENTAL_GEOGRAPHY_VERSION,
+				continents: [],
+				islandNodeIds: [],
+			}),
+		});
+		await store.load();
+		const graph = createGraph(["a.md", "b.md"], {
+			"a.md": { "b.md": 1 },
+		});
+
+		const result = await store.commitCompletedResult({
+			graph,
+			mode: "initialize",
+			operationId: "diagnostic",
+			effectiveSeed: 1,
+			completedAt: 1,
+			positions: new Float32Array([1, 0, 0, 0, 1, 0]),
+			expectedSnapshotId: null,
+		});
+
+		expect(result).toBeUndefined();
+		const rejection = diagnostics.find(
+			(diagnostic) => diagnostic.event === "commit.rejected",
+		);
+		expect(rejection?.details.reason).toBe("snapshot-validation");
+		expect(rejection?.details.stage).toBe("geography");
+		expect(rejection?.details.code).toBe("omitted-linked-node");
+		expect(rejection?.details.omittedLinkedNodeCount).toBe(2);
 	});
 
 	it("can atomically initialize over a known unusable snapshot id", async () => {
@@ -677,5 +725,60 @@ describe("PluginDataStore transactional writes", () => {
 		expect(saved.settings.enabled).toBe(false);
 		expect(saved.camera.position).toEqual([0, 0, 7]);
 		expect(saved.pinnedNotePaths).toEqual(["favorite.md"]);
+	});
+
+	it("automatically folds matching render metadata into the saved map", async () => {
+		const adapter = new MemoryAdapter();
+		const scheduler = new ManualScheduler();
+		const store = createStore(adapter, scheduler);
+		await store.load();
+		const graph = createGraph(['A.md']);
+		await store.commitCompletedResult({
+			graph,
+			mode: 'initialize',
+			operationId: 'metadata',
+			effectiveSeed: 1,
+			completedAt: 1,
+			positions: new Float32Array([1, 0, 0]),
+			expectedSnapshotId: null,
+		});
+		const savesBefore = adapter.saves.length;
+
+		store.scheduleGraphCacheSave(graph);
+		scheduler.advance(50);
+		await vi.waitFor(() => {
+			expect(adapter.saves).toHaveLength(savesBefore + 1);
+		});
+		expect(store.graphCache?.nodes[0]?.basename).toBe('A');
+	});
+
+	it("reloads a synced envelope and discards an older pending camera write", async () => {
+		const adapter = new MemoryAdapter();
+		const scheduler = new ManualScheduler();
+		const store = createStore(adapter, scheduler);
+		await store.load();
+		store.scheduleCameraSave({
+			position: [0, 0, 9],
+			up: [0, 1, 0],
+			target: [0, 0, 0],
+		});
+		adapter.raw = {
+			schemaVersion: 4,
+			settings: DEFAULT_SETTINGS,
+			committedLayout: null,
+			graphCache: null,
+			camera: {
+				position: [0, 0, 5],
+				up: [0, 1, 0],
+				target: [0, 0, 0],
+			},
+			pinnedNotePaths: ['synced.md'],
+		};
+
+		const loaded = await store.reload();
+		scheduler.advance(100);
+		expect(loaded.camera.position).toEqual([0, 0, 5]);
+		expect(loaded.pinnedNotePaths).toEqual(['synced.md']);
+		expect(adapter.saves).toHaveLength(0);
 	});
 });

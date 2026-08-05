@@ -10,6 +10,15 @@ export default defineConfig({
 					import.meta.url,
 				),
 			),
+			'virtual:spherical-graph-data-worker': fileURLToPath(
+				new URL('./tests/fixtures/workerSource.ts', import.meta.url),
+			),
+			'virtual:spherical-graph-land-worker': fileURLToPath(
+				new URL('./tests/fixtures/workerSource.ts', import.meta.url),
+			),
+			'virtual:spherical-graph-geography-worker': fileURLToPath(
+				new URL('./tests/fixtures/workerSource.ts', import.meta.url),
+			),
 		},
 	},
 	test: {

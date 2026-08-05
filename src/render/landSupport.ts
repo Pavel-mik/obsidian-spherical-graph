@@ -156,6 +156,8 @@ export interface LandSupportDiagnostics {
 	readonly expandedLandCellCount: number;
 	readonly enclosedWaterCellCount: number;
 	readonly ownerComponentCounts: readonly number[];
+	/** Fraction of owner cells with at most two same-owner raster neighbors. */
+	readonly ownerThinCellFractions: readonly number[];
 	readonly disconnectedContinentCount: number;
 }
 
@@ -2169,6 +2171,10 @@ function buildLandRaster(
 	maximumSupport: number,
 	seed: number,
 ): LandRaster {
+	const persisted = buildPersistedTerritoryRaster(geography);
+	if (persisted !== undefined) {
+		return persisted;
+	}
 	const memberCount = assignments.reduce(
 		(total, owner) => total + (owner >= 0 ? 1 : 0),
 		0,
@@ -2643,6 +2649,82 @@ function countOwnerComponents(raster: LandRaster): readonly number[] {
 	return counts;
 }
 
+function buildPersistedTerritoryRaster(
+	geography: RenderGeography,
+): LandRaster | undefined {
+	const territory = geography.territory;
+	if (territory === undefined) {
+		return undefined;
+	}
+	const grid = createIntrinsicSphericalGrid(territory.subdivision);
+	if (territory.ownerByCell.length !== grid.vertices.length) {
+		throw new RangeError('Persisted land raster does not match its grid.');
+	}
+	const owners = territory.ownerByCell.slice();
+	const connectedOcean = new Uint8Array(owners.length);
+	const bestDensity = new Float32Array(owners.length);
+	const rasterPoints = createBuckets<RasterPoint>(RASTER_BUCKET_CELL_SIZE);
+	for (let cell = 0; cell < owners.length; cell += 1) {
+		const owner = owners[cell] ?? -1;
+		if (owner < -1 || owner >= geography.continents.length) {
+			throw new RangeError('Persisted land raster contains an invalid owner.');
+		}
+		connectedOcean[cell] = owner < 0 ? 1 : 0;
+		bestDensity[cell] = owner < 0 ? 0 : 1;
+		const direction = grid.vertices[cell];
+		if (direction !== undefined) {
+			addToBuckets(rasterPoints, { direction, index: cell });
+		}
+	}
+	const boundaries = boundarySamples(grid, owners, connectedOcean);
+	const boundaryBuckets = createBuckets<BoundarySample>(
+		BOUNDARY_BUCKET_CELL_SIZE,
+	);
+	for (const boundary of boundaries) {
+		addToBuckets(boundaryBuckets, boundary);
+	}
+	return {
+		grid,
+		ownerCount: geography.continents.length,
+		ownerByCell: owners,
+		protectedOwnerByCell: owners.slice(),
+		connectedOcean,
+		boundaryBand: connectedOceanBoundaryBand(
+			grid,
+			owners,
+			connectedOcean,
+		),
+		bestDensity,
+		rasterPoints,
+		boundaries,
+		boundaryBuckets,
+		expandedLandCellCount: 0,
+	};
+}
+
+function ownerThinCellFractions(raster: LandRaster): readonly number[] {
+	const cellCounts = Array.from({ length: raster.ownerCount }, () => 0);
+	const thinCounts = Array.from({ length: raster.ownerCount }, () => 0);
+	for (let cell = 0; cell < raster.ownerByCell.length; cell += 1) {
+		const owner = raster.ownerByCell[cell] ?? -1;
+		if (owner < 0) {
+			continue;
+		}
+		cellCounts[owner] = (cellCounts[owner] ?? 0) + 1;
+		let sameOwnerNeighbors = 0;
+		for (const neighbor of raster.grid.neighbors[cell] ?? []) {
+			sameOwnerNeighbors +=
+				(raster.ownerByCell[neighbor] ?? -1) === owner ? 1 : 0;
+		}
+		if (sameOwnerNeighbors <= 2) {
+			thinCounts[owner] = (thinCounts[owner] ?? 0) + 1;
+		}
+	}
+	return cellCounts.map((count, owner) =>
+		count === 0 ? 0 : (thinCounts[owner] ?? 0) / count,
+	);
+}
+
 export function landSupportDiagnostics(
 	model: LandSupportModel,
 ): LandSupportDiagnostics {
@@ -2661,6 +2743,7 @@ export function landSupportDiagnostics(
 		protectedLandCellCount += owner >= 0 ? 1 : 0;
 	}
 	const ownerComponentCounts = countOwnerComponents(model.raster);
+	const thinCellFractions = ownerThinCellFractions(model.raster);
 	return {
 		rasterCellCount: model.raster.grid.vertices.length,
 		densityAnchorCount: bucketValueCount(model.anchors),
@@ -2677,6 +2760,7 @@ export function landSupportDiagnostics(
 			waterCellCount - connectedOceanCellCount,
 		),
 		ownerComponentCounts,
+		ownerThinCellFractions: thinCellFractions,
 		disconnectedContinentCount: ownerComponentCounts.filter(
 			(count) => count !== 1,
 		).length,

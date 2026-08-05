@@ -19,6 +19,7 @@ import {
 	buildLandSurfaceData,
 	type LandSurfaceData,
 } from './landGeometry';
+import { LandSurfaceWorkerClient } from './LandSurfaceWorkerClient';
 import {
 	type PreparedRenderSnapshot,
 	type RenderTheme,
@@ -204,11 +205,17 @@ export class SphereLayer {
 	private coastGeometry: BufferGeometry | undefined;
 	private coastMaterial: LineBasicMaterial | undefined;
 	private coastLines: LineSegments | undefined;
+	private readonly landWorker =
+		typeof Worker === 'undefined'
+			? undefined
+			: new LandSurfaceWorkerClient();
+	private landRevision: string | undefined;
 
 	constructor(
 		private readonly group: Group,
 		appearance: AppearanceSettings,
 		theme: RenderTheme,
+		private readonly onInvalidate?: () => void,
 	) {
 		this.appearance = appearance;
 		this.theme = theme;
@@ -227,6 +234,11 @@ export class SphereLayer {
 
 	setSnapshot(snapshot: PreparedRenderSnapshot): void {
 		this.snapshot = snapshot;
+		const revision = `${snapshot.layoutRevision}:${snapshot.topologyRevision}`;
+		if (revision === this.landRevision) {
+			return;
+		}
+		this.landRevision = revision;
 		this.rebuildLand();
 	}
 
@@ -282,6 +294,7 @@ export class SphereLayer {
 	}
 
 	dispose(): void {
+		this.landWorker?.dispose();
 		this.removeLand();
 		this.group.remove(this.mesh, this.depthMask, this.grid, this.rim);
 		this.oceanGeometry.dispose();
@@ -292,6 +305,7 @@ export class SphereLayer {
 		this.gridMaterial.dispose();
 		this.rimMaterial.dispose();
 		this.snapshot = undefined;
+		this.landRevision = undefined;
 	}
 
 	private rebuildLand(): void {
@@ -304,15 +318,53 @@ export class SphereLayer {
 		) {
 			return;
 		}
+		const detail = adaptiveLandDetail(
+			snapshot.nodes.length,
+			snapshot.edges.length,
+		);
+		const seed = hashString(snapshot.layoutRevision);
+		if (this.landWorker !== undefined) {
+			const requestId = `${snapshot.layoutRevision}:${snapshot.topologyRevision}`;
+			void this.landWorker
+				.build({
+					type: 'build-land',
+					requestId,
+					geography: snapshot.geography,
+					positions: new Float32Array(snapshot.positions),
+					radius: LAND_SURFACE_RADIUS,
+					seed,
+					detail,
+					edges: snapshot.edges,
+					nodeDegrees: Uint32Array.from(
+						snapshot.nodes,
+						(node) => node.degree,
+					),
+				})
+				.then((data) => {
+					if (this.landRevision === requestId) {
+						this.applyLandData(data);
+					}
+				})
+				.catch(() => {
+					// A superseded or failed decorative land build must never
+					// block the rest of the saved graph from rendering.
+				});
+			return;
+		}
 		const data = buildLandSurfaceData(
 			snapshot.geography,
 			snapshot.positions,
 			LAND_SURFACE_RADIUS,
-			hashString(snapshot.snapshotId.split(':')[0] ?? snapshot.snapshotId),
-			48,
+			seed,
+			detail,
 			snapshot.edges,
 			snapshot.nodes.map((node) => node.degree),
 		);
+		this.applyLandData(data);
+	}
+
+	private applyLandData(data: LandSurfaceData): void {
+		this.removeLand();
 		this.landData = data;
 		const beachGeometry = new BufferGeometry();
 		beachGeometry.setAttribute(
@@ -466,6 +518,7 @@ export class SphereLayer {
 		this.coastLines = coastLines;
 		this.recolorLand();
 		this.updateLandVisibility();
+		this.onInvalidate?.();
 	}
 
 	private recolorLand(): void {
@@ -572,6 +625,21 @@ export class SphereLayer {
 		this.coastMaterial = undefined;
 		this.coastLines = undefined;
 	}
+}
+
+/** Bounds continent work for large vaults while keeping small maps detailed. */
+export function adaptiveLandDetail(nodeCount: number, edgeCount: number): number {
+	const load = Math.max(nodeCount, edgeCount / 4);
+	if (load <= 500) {
+		return 48;
+	}
+	if (load <= 1_500) {
+		return 32;
+	}
+	if (load <= 3_000) {
+		return 24;
+	}
+	return 16;
 }
 
 function createGridGeometry(radius: number): BufferGeometry {

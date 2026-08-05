@@ -8,26 +8,26 @@ Turn your Obsidian vault into an explorable world. Each top-level vault folder
 becomes its own continent, notes become cities, links become roads across the
 surface, and tags orbit overhead as satellites. Linked notes stored directly
 in the vault root become islands; orphan notes remain cities over open water.
-The cartography reserves approximately half the globe for one connected ocean.
-Topology-first city placement, a bounded non-radial directory mesh, and
-post-layout coastal erosion keep large continents connected and irregular
-rather than circular. Route Finder reveals every shortest path between distant
-notes.
+The cartography reserves approximately half the globe for ocean. A
+territory-first spherical allocator gives every folder one connected,
+non-overlapping landmass before cities are relaxed, so even densely
+cross-linked vaults cannot pull continents into interwoven ribbons. Route
+Finder reveals every shortest path between distant notes.
 
 Spherical Graph is designed as a stable spatial map: a finite layout operation
 computes positions, validates and saves one complete snapshot, and then stops.
 Normal reading, search, filtering, selection, rotation, zoom, theme changes,
 and resizing do not move notes.
 
-Initialize and Renew first place top-level folders and their subdirectory or
-topology districts on the sphere. These areas are starting hints, not circular
-fences. Sparse graph-distance stress, reduced cross-folder springs, relative
-coastal-port bias, and a final render-aware collision pass arrange the cities.
-After the finite solver stops, bounded adaptive land support builds one
-protected backbone per directory and fills coherent interior territory.
-Multi-scale coastal erosion over the fixed positions then produces exclusive
-coastlines, beaches, root-note islands, and one broad ocean without turning
-ordinary inland cities into tiny beach-ringed islands.
+Initialize and Renew first grow deterministic folder territories on an
+intrinsic icosphere raster. Area quotas follow folder size, simultaneous growth
+keeps every region connected, and a permanent water buffer separates different
+owners. Cities are then seeded across their own land with an irregular
+blue-noise distribution and relaxed without crossing the fixed coast. Sparse
+graph-distance stress arranges internal roads, while cross-folder links mostly
+influence macro orientation and relative coastal-port placement. The renderer
+adds multi-scale shoreline detail and beaches to that committed raster; it no
+longer invents corridors between cities after layout.
 
 ## See your vault as a world
 
@@ -61,11 +61,15 @@ coordinate.
 
 Spherical Graph has three finite layout operations:
 
-- **Initialize** runs automatically only when no usable saved layout exists.
+- **Initialize** runs only after an explicit **Generate/Renew layout** action.
+  Opening Obsidian or the graph view first loads the last saved map and never
+  scans or regenerates the vault automatically.
 - **Refresh layout** incorporates pending vault changes while preserving the
   existing mental map. New nodes warm up while old nodes are fixed; then only a
   local affected set may relax under geodesic anchors and a maximum angular
-  displacement.
+  displacement. It is also the explicit way to scan for changes made while
+  Obsidian was closed; when topology is unchanged, metadata is refreshed and
+  no layout operation starts.
 - **Renew layout** is an explicit, confirmed, whole-map regeneration. It uses a
   new deterministic effective seed and does not use old positions as anchors.
 
@@ -94,18 +98,20 @@ and a reliable rename keeps the old position under the new path. Select
   commands.
 - Intrinsic, seam-free spherical layout with deterministic exact and sampled
   repulsion modes.
-- Directory-aware Initialize/Renew placement directly on \(S^2\): each
-  non-orphan top-level folder receives deterministic irregular districts,
-  internal links retain full spring weight, cross-folder links are weaker, and
-  no circular lobe boundary constrains the final city positions.
+- Territory-first Initialize/Renew placement directly on \(S^2\): every
+  non-orphan top-level folder receives a connected irregular raster region,
+  different owners remain separated by sea, and approximately 52% of the
+  surface remains ocean.
+- Cities use deterministic farthest-point/blue-noise seeding across their
+  territory. Internal links retain full spring weight; cross-folder links are
+  reduced to a weak macro/port influence and cannot manufacture land arms.
 - Bounded graph-distance landmark stress breaks hub rings, while a final
   marker-aware S² collision projection prevents visible node overlap without
   moving hard-fixed Refresh nodes.
 - Relatively strong, directionally coherent inter-continent endpoints become
   port cities and can reach the coastline on the side of their strongest roads.
-- Post-layout cartography over fixed positions uses adaptive member and
-  same-folder-road support, exclusive land ownership, irregular coastlines,
-  and one connected ocean targeting approximately half the globe.
+- Post-layout cartography consumes the committed owner raster directly and
+  only adds sub-cell coast detail, relief, beaches, and root-note islands.
 - Degree-zero notes stay as cities over water. Degree-one/two folder notes
   remain on their continent; only linked root notes receive island patches.
 - Membership matching preserves stable continent identity and color across
@@ -113,9 +119,12 @@ and a reliable rename keeps the old position under the new path. Select
 - Incremental Refresh with a new-node warm-up, graph-neighborhood affected set,
   hard-fixed remote nodes, anchors, and a displacement cap.
 - Transactional committed snapshot, schema migrations, stable camera state,
-  and safe rename/prune handling.
-- Short-lived inline Web Worker with final-only position transfer plus a
-  yielding main-thread compatibility fallback.
+  saved graph metadata, exact continent territory raster, tags, auxiliary nodes, pins, and safe
+  rename/prune handling. The complete `data.json` map can be carried by
+  Obsidian Sync and restored with **Load map** without a vault scan.
+- Short-lived inline Web Workers isolate layout solving, live-vault graph
+  indexing, post-layout continental analysis, and detailed land meshing from
+  Obsidian's UI thread. Large maps use an adaptive land-detail ceiling.
 - Three.js rendering with a matte ocean, batched topology-derived land,
   deterministic organic coastlines supported by actual member cities and
   short internal roads, an irregular sand beach band, sea carved by neighboring
@@ -182,6 +191,7 @@ and a reliable rename keeps the old position under the new path. Select
 | Hide or show geography | Toggle **Continents** in **Map → Appearance** |
 | Hide or show the cloud layer | Toggle **Atmosphere** in **Map → Appearance** |
 | Save the complete map state now | Choose **Save map** in **Map** |
+| Reload the last saved or synced map | Choose **Load map** in **Map** |
 | Enter the control-free presentation globe | Choose **Fullscreen** in **Map**; press `Escape` to exit |
 | Change globe surface | Use **Appearance** in **Map** |
 | Include pending changes | Choose **Refresh layout** in **Map** |
@@ -296,6 +306,9 @@ npm run validate:release
 npm run check
 npm run benchmark:layout
 npm run generate:test-vault -- --output ./tmp/test-vault --nodes 500 --edges 1500 --seed 42 --pattern clustered
+
+# Stress continent allocation with many root folders and cross-folder roads
+npm run generate:test-vault -- --output ./tmp/territory-vault --nodes 480 --edges 2800 --seed 20260805 --pattern territories --folders 24
 ```
 
 The production build writes the release artifacts to the repository root. The

@@ -52,6 +52,7 @@ function createView(): SphericalGraphView {
 			onAtmosphereVisibilityChange: vi.fn(),
 			onPinChange: vi.fn(),
 			onManualSave: vi.fn(),
+			onManualLoad: vi.fn(),
 			onClose: vi.fn(),
 		},
 	});

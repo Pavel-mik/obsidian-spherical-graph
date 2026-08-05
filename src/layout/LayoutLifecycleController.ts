@@ -1,3 +1,4 @@
+import type { DevelopmentDiagnosticSink } from "../diagnostics/DevelopmentLog";
 import {
 	diffGraphDescriptors,
 	GraphDiff,
@@ -11,6 +12,7 @@ import {
 import {
 	CURRENT_ALGORITHM_VERSION,
 	PersistedLayoutSnapshot,
+	diagnoseCompletedPositions,
 	deriveEffectiveSeed,
 	isSnapshotUsable,
 	validateCompletedPositions,
@@ -143,6 +145,7 @@ export interface LayoutLifecycleControllerOptions {
 	readonly now?: () => number;
 	readonly normTolerance?: number;
 	readonly algorithmVersion?: number;
+	readonly onDiagnostic?: DevelopmentDiagnosticSink;
 }
 
 export interface LayoutLifecycleView {
@@ -164,6 +167,8 @@ interface ActiveOperation {
 	readonly expectedSnapshotId: string | null;
 	session?: LayoutOperationSession;
 	terminalReceived: boolean;
+	lastDiagnosticIteration: number;
+	lastDiagnosticPhase?: LayoutProgress["phase"];
 }
 
 let fallbackOperationSequence = 0;
@@ -233,8 +238,8 @@ export class LayoutLifecycleController {
 	}
 
 	/**
-	 * Restores a usable committed map, otherwise automatically starts the sole
-	 * allowed automatic operation: Initialize.
+	 * Restores a usable committed map. Missing or incompatible data remains in
+	 * no-layout state until the user explicitly requests generation.
 	 */
 	open(
 		graph: GraphData,
@@ -272,7 +277,7 @@ export class LayoutLifecycleController {
 		this.unusableSnapshotId = snapshot?.snapshotId;
 		this.currentDiff = undefined;
 		this.setState({ kind: "no-layout" });
-		return this.startOperation("initialize");
+		return false;
 	}
 
 	/**
@@ -337,6 +342,17 @@ export class LayoutLifecycleController {
 			return false;
 		}
 		return this.startOperation("refresh");
+	}
+
+	startInitialize(): boolean {
+		if (
+			this.committedValue !== undefined ||
+			(this.stateValue.kind !== "no-layout" &&
+				this.stateValue.kind !== "error")
+		) {
+			return false;
+		}
+		return this.startOperation("initialize");
 	}
 
 	startRenew(): boolean {
@@ -447,6 +463,7 @@ export class LayoutLifecycleController {
 			expectedSnapshotId:
 				committed?.snapshotId ?? this.unusableSnapshotId ?? null,
 			terminalReceived: false,
+			lastDiagnosticIteration: -1,
 		};
 
 		let input: LayoutSolverInput;
@@ -477,6 +494,15 @@ export class LayoutLifecycleController {
 
 		this.activeOperation = operation;
 		this.progressValue = undefined;
+		this.diagnostic("operation.started", {
+			mode,
+			nodeCount: graph.nodes.length,
+			edgeCount: graph.edges.length,
+			positionCount: input.positions.length,
+			effectiveSeed,
+			expectedSnapshotPresent:
+				operation.expectedSnapshotId !== null,
+		});
 		this.setState(
 			mode === "initialize"
 				? { kind: "initializing", operationId }
@@ -521,6 +547,7 @@ export class LayoutLifecycleController {
 		} catch (error: unknown) {
 			this.workerCount = 0;
 			this.activeOperation = undefined;
+			this.diagnostic("runner.start-failed", this.errorDetails(error));
 			this.setError(
 				error instanceof Error
 					? error.message
@@ -557,6 +584,9 @@ export class LayoutLifecycleController {
 
 		switch (message.type) {
 			case "started":
+				this.diagnostic("runner.started", {
+					mode: operation.mode,
+				});
 				return;
 			case "progress":
 				if (
@@ -566,9 +596,31 @@ export class LayoutLifecycleController {
 					return;
 				}
 				this.progressValue = message.progress;
+				if (
+					operation.lastDiagnosticPhase !==
+						message.progress.phase ||
+					message.progress.iteration -
+						operation.lastDiagnosticIteration >=
+						100
+				) {
+					operation.lastDiagnosticIteration =
+						message.progress.iteration;
+					operation.lastDiagnosticPhase =
+						message.progress.phase;
+					this.diagnostic(
+						"runner.progress",
+						this.progressDetails(message.progress),
+					);
+				}
 				this.emit();
 				return;
 			case "cancelled":
+				this.diagnostic("runner.cancelled", {
+					...this.progressDetails(message.diagnostics),
+					converged: message.diagnostics.converged,
+					maximumNormError:
+						message.diagnostics.maximumNormError,
+				});
 				operation.terminalReceived = true;
 				this.releaseSession(operation);
 				this.activeOperation = undefined;
@@ -577,22 +629,50 @@ export class LayoutLifecycleController {
 				void this.settlePureRenameAfterRollback();
 				return;
 			case "error":
+				this.diagnostic("runner.failed", {
+					message: message.message,
+				});
 				operation.terminalReceived = true;
 				this.releaseSession(operation);
 				this.activeOperation = undefined;
 				this.progressValue = undefined;
 				this.setError(message.message);
 				return;
-			case "completed":
+			case "completed": {
+				this.diagnostic("runner.completed", {
+					...this.progressDetails(message.diagnostics),
+					converged: message.diagnostics.converged,
+					maximumNormError:
+						message.diagnostics.maximumNormError,
+					repulsionMode: message.diagnostics.repulsionMode,
+					collisionPasses:
+						message.diagnostics.collisionPasses ?? null,
+					collisionRemainingOverlapCount:
+						message.diagnostics
+							.collisionRemainingOverlapCount ?? null,
+					collisionMaximumPenetration:
+						message.diagnostics.collisionMaximumPenetration ??
+						null,
+					positionCount: message.positions.length,
+				});
 				operation.terminalReceived = true;
 				this.releaseSession(operation);
-				if (
-					validateCompletedPositions(
+				const validatedPositions = validateCompletedPositions(
+					message.positions,
+					operation.graph.nodes.map((node) => node.path),
+					this.options.normTolerance,
+				);
+				if (validatedPositions === undefined) {
+					const failure = diagnoseCompletedPositions(
 						message.positions,
 						operation.graph.nodes.map((node) => node.path),
 						this.options.normTolerance,
-					) === undefined
-				) {
+					);
+					this.diagnostic("runner.positions-rejected", {
+						stage: failure?.stage ?? "positions",
+						code: failure?.code ?? "unknown",
+						...(failure?.details ?? {}),
+					});
 					this.activeOperation = undefined;
 					this.progressValue = undefined;
 					this.setError(
@@ -601,6 +681,8 @@ export class LayoutLifecycleController {
 					return;
 				}
 				void this.commitCompleted(operation, message);
+				return;
+			}
 		}
 	}
 
@@ -609,6 +691,11 @@ export class LayoutLifecycleController {
 		message: LayoutCompletedMessage,
 	): Promise<void> {
 		let snapshot: PersistedLayoutSnapshot | undefined;
+		this.diagnostic("commit.started", {
+			mode: operation.mode,
+			nodeCount: operation.graph.nodes.length,
+			edgeCount: operation.graph.edges.length,
+		});
 		try {
 			snapshot = await this.options.persistence.commitCompletedResult({
 				graph: operation.graph,
@@ -622,8 +709,10 @@ export class LayoutLifecycleController {
 					this.options.algorithmVersion ??
 					CURRENT_ALGORITHM_VERSION,
 				normTolerance: this.options.normTolerance,
+				territory: message.territory,
 			});
 		} catch (error: unknown) {
+			this.diagnostic("commit.failed", this.errorDetails(error));
 			if (this.activeOperation === operation) {
 				this.activeOperation = undefined;
 				this.progressValue = undefined;
@@ -636,15 +725,30 @@ export class LayoutLifecycleController {
 			return;
 		}
 		if (this.activeOperation !== operation || this.disposed) {
+			this.diagnostic("commit.ignored", {
+				reason: this.disposed
+					? "controller-disposed"
+					: "operation-replaced",
+			});
 			return;
 		}
 		if (snapshot === undefined) {
+			this.diagnostic("commit.rejected", {
+				reason: "persistence-returned-no-snapshot",
+			});
 			this.activeOperation = undefined;
 			this.progressValue = undefined;
 			this.setError("The completed layout could not be committed.");
 			return;
 		}
 
+		this.diagnostic("commit.completed", {
+			mode: operation.mode,
+			nodeCount: snapshot.graphDescriptor.nodeIds.length,
+			edgeCount: snapshot.graphDescriptor.edges.length,
+			continentCount: snapshot.geography?.continents.length ?? 0,
+			islandCount: snapshot.geography?.islandNodeIds.length ?? 0,
+		});
 		this.committedValue = snapshot;
 		this.unusableSnapshotId = undefined;
 		const currentGraph = this.currentGraph ?? operation.graph;
@@ -784,6 +888,49 @@ export class LayoutLifecycleController {
 				kind: "fixed-clean",
 				snapshotId: committed.snapshotId,
 			});
+		}
+	}
+
+	private progressDetails(
+		progress: LayoutProgress,
+	): Readonly<Record<string, unknown>> {
+		return {
+			phase: progress.phase,
+			iteration: progress.iteration,
+			elapsedMs: progress.elapsedMs,
+			maxAngularDisplacement: progress.maxAngularDisplacement,
+			meanVectorNorm: progress.meanVectorNorm,
+			covarianceDiagonal: [...progress.covarianceDiagonal],
+			evaluatedRepulsionPairs: progress.evaluatedRepulsionPairs,
+			movableNodeCount: progress.movableNodeCount,
+			anchoredNodeCount: progress.anchoredNodeCount,
+			hardFixedNodeCount: progress.hardFixedNodeCount,
+			cappedNodeCount: progress.cappedNodeCount,
+			maxExistingNodeDisplacement:
+				progress.maxExistingNodeDisplacement,
+		};
+	}
+
+	private errorDetails(
+		error: unknown,
+	): Readonly<Record<string, unknown>> {
+		return {
+			message:
+				error instanceof Error
+					? error.message
+					: "Unknown non-Error exception",
+			name: error instanceof Error ? error.name : typeof error,
+		};
+	}
+
+	private diagnostic(
+		event: string,
+		details: Readonly<Record<string, unknown>> = {},
+	): void {
+		try {
+			this.options.onDiagnostic?.(event, details);
+		} catch {
+			// Diagnostics must never alter layout lifecycle behavior.
 		}
 	}
 

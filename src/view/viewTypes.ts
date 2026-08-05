@@ -80,6 +80,7 @@ export interface SphericalGraphViewCallbacks {
 	onAtmosphereVisibilityChange(visible: boolean): Promise<void> | void;
 	onPinChange(node: RenderNode, pinned: boolean): Promise<void> | void;
 	onManualSave(camera: CameraState): Promise<void> | void;
+	onManualLoad(): Promise<void> | void;
 	onClose(): Promise<void> | void;
 }
 

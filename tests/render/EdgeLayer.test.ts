@@ -2,6 +2,7 @@ import { Group, LineSegments, Mesh, PerspectiveCamera } from 'three';
 import { describe, expect, it } from 'vitest';
 import {
 	adaptiveSegmentCount,
+	maxSegmentsPerEdge,
 	EdgeLayer,
 } from '../../src/render/EdgeLayer';
 import {
@@ -40,6 +41,12 @@ describe('adaptiveSegmentCount', () => {
 		expect(adaptiveSegmentCount([1, 0, 0], [1, 0, 0])).toBe(2);
 		expect(adaptiveSegmentCount([1, 0, 0], [0, 1, 0])).toBe(12);
 		expect(adaptiveSegmentCount([1, 0, 0], [-1, 0, 0])).toBe(24);
+	});
+
+	it('bounds total base-road tessellation for very large graphs', () => {
+		expect(maxSegmentsPerEdge(100)).toBe(32);
+		expect(maxSegmentsPerEdge(30_000)).toBe(6);
+		expect(maxSegmentsPerEdge(200_000)).toBe(2);
 	});
 
 	it('adds bright batched ribbons for selected links and route links', () => {

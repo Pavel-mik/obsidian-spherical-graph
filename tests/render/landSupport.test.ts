@@ -22,6 +22,7 @@ import {
 } from '../../src/geometry/vector3';
 import { fibonacciSpherePoint } from '../../src/layout/initialization';
 import type { RenderGeography } from '../../src/render/renderTypes';
+import { createIntrinsicSphericalGrid } from '../../src/geography/sphericalGrid';
 
 const center: Vec3 = [1, 0, 0];
 
@@ -64,6 +65,46 @@ function clusterAround(
 }
 
 describe('node- and edge-supported continent territory', () => {
+	it('uses a persisted connected territory verbatim instead of rebuilding node ribbons', () => {
+		const grid = createIntrinsicSphericalGrid(4);
+		const ownerByCell = Int32Array.from(
+			grid.vertices,
+			(point) => point[0] > 0.35 ? 0 : -1,
+		);
+		const geography: RenderGeography = {
+			continents: [
+				{
+					id: 'books',
+					label: 'Books',
+					nodeIndices: [0, 1],
+					center,
+					capRadius: 0.8,
+					colorIndex: 0,
+				},
+			],
+			islandNodeIndices: [],
+			territory: {
+				subdivision: 4,
+				folderKeys: ['Books'],
+				ownerByCell,
+			},
+		};
+		const positions = new Float32Array([
+			1, 0, 0,
+			0.9, 0.42, 0.1,
+		]);
+		const model = createLandSupportModel(geography, positions, [], 73);
+		const diagnostics = landSupportDiagnostics(model);
+		const expectedLand = [...ownerByCell].filter((owner) => owner === 0).length;
+
+		expect(diagnostics.landCellCount).toBe(expectedLand);
+		expect(diagnostics.protectedLandCellCount).toBe(expectedLand);
+		expect(diagnostics.expandedLandCellCount).toBe(0);
+		expect(diagnostics.ownerComponentCounts).toEqual([1]);
+		expect(classifySupportedContinent([1, 0, 0], model)).toBe(0);
+		expect(classifySupportedContinent([-1, 0, 0], model)).toBe(-1);
+	});
+
 	it('guarantees member land without cutting a lake around one isolated free node', () => {
 		const member = center;
 		const foreign = exponentialMap(center, [0, 0.08, 0]);
@@ -759,6 +800,7 @@ describe('node- and edge-supported continent territory', () => {
 		);
 		expect(diagnostics.enclosedWaterCellCount).toBe(0);
 		expect(diagnostics.ownerComponentCounts).toEqual([1]);
+		expect(diagnostics.ownerThinCellFractions[0]).toBeLessThan(0.12);
 		expect(diagnostics.disconnectedContinentCount).toBe(0);
 		for (const member of members) {
 			expect(classifySupportedContinent(member, model)).toBe(0);
@@ -855,6 +897,9 @@ describe('node- and edge-supported continent territory', () => {
 		);
 		expect(diagnostics.enclosedWaterCellCount).toBe(0);
 		expect(diagnostics.ownerComponentCounts).toEqual([1, 1, 1, 1]);
+		expect(
+			Math.max(...diagnostics.ownerThinCellFractions),
+		).toBeLessThan(0.16);
 		expect(diagnostics.disconnectedContinentCount).toBe(0);
 		const interiorMargins = membersByFolder.flatMap(
 			(members, owner) =>

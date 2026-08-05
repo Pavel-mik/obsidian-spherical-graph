@@ -1,5 +1,6 @@
 import { AppearanceSettings } from '../settings/settings';
 import { directoryRegionKey } from '../geography/directorySemantics';
+import { createIntrinsicSphericalGrid } from '../geography/sphericalGrid';
 
 export type RenderNodeKind = 'note' | 'attachment' | 'unresolved';
 
@@ -38,10 +39,19 @@ export interface RenderContinent {
 export interface RenderGeography {
 	continents: readonly RenderContinent[];
 	islandNodeIndices: readonly number[];
+	territory?: {
+		readonly subdivision: number;
+		readonly folderKeys: readonly string[];
+		readonly ownerByCell: Int32Array;
+	};
 }
 
 export interface RenderGraphSnapshot {
 	snapshotId: string;
+	/** Stable committed-layout revision; metadata refreshes do not change it. */
+	layoutRevision?: string;
+	/** Stable topology revision used by expensive geometry layers. */
+	topologyRevision?: string;
 	nodes: readonly RenderNode[];
 	edges: readonly RenderEdge[];
 	tags?: readonly RenderTag[];
@@ -118,6 +128,8 @@ export interface RendererOptions {
 
 export interface PreparedRenderSnapshot {
 	snapshotId: string;
+	layoutRevision: string;
+	topologyRevision: string;
 	nodes: readonly RenderNode[];
 	edges: readonly RenderEdge[];
 	tags: readonly RenderTag[];
@@ -260,6 +272,8 @@ export function prepareRenderSnapshot(
 
 	return {
 		snapshotId: snapshot.snapshotId,
+		layoutRevision: snapshot.layoutRevision ?? snapshot.snapshotId,
+		topologyRevision: snapshot.topologyRevision ?? snapshot.snapshotId,
 		nodes: [...snapshot.nodes],
 		edges: [...snapshot.edges],
 		tags: [...tagById.values()],
@@ -327,5 +341,34 @@ function prepareRenderGeography(
 	) {
 		throw new Error('Render geography contains an invalid island.');
 	}
-	return { continents, islandNodeIndices };
+	let territory: RenderGeography['territory'];
+	if (value.territory !== undefined) {
+		let expectedCellCount = -1;
+		try {
+			expectedCellCount = createIntrinsicSphericalGrid(
+				value.territory.subdivision,
+			).vertices.length;
+		} catch {
+			throw new Error('Render geography contains an invalid territory grid.');
+		}
+		if (
+			value.territory.folderKeys.length !== continents.length ||
+			value.territory.ownerByCell.length !== expectedCellCount ||
+			[...value.territory.ownerByCell].some(
+				(owner) => owner < -1 || owner >= continents.length,
+			)
+		) {
+			throw new Error('Render geography contains an invalid territory raster.');
+		}
+		territory = {
+			subdivision: value.territory.subdivision,
+			folderKeys: Object.freeze([...value.territory.folderKeys]),
+			ownerByCell: value.territory.ownerByCell.slice(),
+		};
+	}
+	return {
+		continents,
+		islandNodeIndices,
+		...(territory === undefined ? {} : { territory }),
+	};
 }

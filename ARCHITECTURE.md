@@ -6,7 +6,8 @@ tested without WebGL or a real vault.
 
 ```mermaid
 flowchart LR
-    O["Public Obsidian APIs"] --> G["GraphDataService"]
+    O["Public Obsidian APIs"] --> GW["Graph index worker"]
+    GW --> G["GraphDataService"]
     O --> T["GraphChangeTracker"]
     T --> D["Graph diff + pending signature"]
     G --> D
@@ -18,10 +19,11 @@ flowchart LR
     V --> F["Fixed positions on S²"]
     G --> Q["Directory semantics<br/>folder → continent / root → island"]
     Q --> L
-    G --> H["Post-layout geography<br/>directory ownership → land support → ocean"]
+    G --> H["Geography worker<br/>directory ownership → land support → ocean"]
     F --> H
     H -->|"atomic positions + geography save"| P
-    P --> R["SphericalGraphRenderer"]
+    P -->|"load-first restore"| R["SphericalGraphRenderer"]
+    R --> LW["Adaptive land-mesh worker"]
     U["ItemView / toolbar / settings"] --> L
     U --> R
     R -->|"camera, select, open"| U
@@ -47,8 +49,10 @@ flowchart LR
   lifecycle state machine. Render-time land ownership never feeds back into the
   solver.
 - `src/persistence` validates untrusted stored data, migrates schema versions,
-  reconciles current paths with a committed snapshot, and serializes atomic
-  layout and pin commits separately from debounced settings/camera writes.
+  reconstructs a renderable graph from a saved descriptor plus metadata cache,
+  reconciles current paths with a committed snapshot, and serializes positions,
+  continents, graph metadata, pins, settings, and camera in one Sync-safe
+  envelope.
 - `src/render` owns Three.js resources: the ocean sphere, a batched icosphere
   land mesh, deterministic coastlines and island patches, cartographic region
   labels, one instanced node layer, a muted dashed graticule, batched geodesic
@@ -74,8 +78,9 @@ flowchart LR
 
 ```mermaid
 stateDiagram-v2
-    [*] --> no_layout
-    no_layout --> initializing: usable snapshot absent
+    [*] --> no_layout: no saved map
+    [*] --> fixed_clean: load usable saved map
+    no_layout --> initializing: explicit Generate/Renew
     initializing --> fixed_clean: valid atomic commit
     initializing --> no_layout: cancel
     initializing --> error: invalid/error
@@ -126,6 +131,14 @@ Typed public vault and metadata events enqueue a debounced graph rebuild.
 Rename events also carry the old and new path as a reliable hint. The resulting
 descriptor is compared to the committed descriptor.
 
+Startup is deliberately different: it performs no vault indexing and starts no
+solver. The saved graph descriptor, metadata cache, positions, continents,
+camera, and pins are reconstructed directly from `data.json`. A manual **Load
+map** re-reads the same file so a map delivered by Obsidian Sync can replace the
+in-memory view. Live graph indexing begins only for a real post-start event or
+an explicit Refresh/Renew operation, and its expensive work runs in a one-shot
+worker.
+
 - An active-file event changes highlight only.
 - A non-empty graph diff moves a fixed state to `fixed-dirty`.
 - Existing committed nodes remain at their exact vectors.
@@ -162,33 +175,35 @@ cancellation, and validation semantics.
 ## Directory geography pipeline
 
 The first path segment is the authoritative continent key. Initialize and Renew
-allocate deterministic macro centers, split folders into subdirectory and
-topology cohorts with a linear strongest-road DFS sweep, grow irregular district
-centers, and adaptively best-candidate-place notes without emitting any hard
-territory. Same-folder springs retain full weight, cross-folder springs are
-reduced, bounded landmark constraints preserve longer graph distances, and
-coverage acts on folder centroids. Root notes are islands; orphans are seeded
-ocean scatter. Refresh uses an orphan-only initializer when that is the only
-new placement it needs.
+first allocate a fixed owner raster on an intrinsic icosphere grid. Smoothed
+folder-size quotas target 48% total land. Seeds combine the macro initializer
+with farthest-site separation, then simultaneous deterministic frontier growth
+creates one connected component per owner while foreign-adjacent cells remain
+sea. Anisotropic multi-frequency growth cost prevents both circular caps and
+one-cell tendrils.
 
-After force convergence, relative inter-folder link evidence moves only a small,
-directionally coherent set of port cities toward the observed edge of their
-own folder distribution. A deterministic S² projection then resolves remaining
-marker overlap using radii derived from the current visual Globe size. Refresh
-fixed masks and anchor cones are enforced by both post-processes.
+Folder nodes are seeded across their owner cells with deterministic
+farthest-point sampling before sparse stress begins. Same-folder springs retain
+full weight; cross-folder springs are deliberately weak, bounded landmark
+constraints preserve longer internal distances, and the old centroid coverage
+force is disabled because the territory raster is already the macro scaffold.
+A tangent return force and final projection prevent movable nodes from crossing
+their coast. Root notes are islands and orphans keep their seeded ocean scatter.
+
+After force convergence, relative inter-folder link evidence moves only a
+small, directionally coherent set of port cities toward the nearest existing
+boundary cell on the preferred side. It cannot grow a new land corridor. A
+deterministic S² projection resolves remaining marker overlap, then territory
+ownership is enforced again. Refresh fixed masks and anchor cones remain
+authoritative.
 
 After validation, `postLayoutGeography` groups all linked folder notes by their
 top-level path, makes linked root notes islands, and omits orphans from land.
 It derives centers and diagnostic extents from the fixed vectors and preserves
-identity/color by full-path or relative-path membership overlap. The renderer
-then builds adaptive member/road support with exclusive ownership and expands
-only the connected external ocean until visible water is approximately 52%.
-Multi-scale spherical erosion bias makes weak coastal sectors retreat into
-broad bays without moving or excluding protected member cities.
-
-The analytical grid, density samples, watershed labels, and cell ownership are
-temporary. The atomic snapshot persists fixed note vectors and compact semantic
-geography, not the analytical surface.
+identity/color by full-path or relative-path membership overlap. It also
+validates and serializes the exact owner raster. The atomic snapshot therefore
+persists fixed note vectors, semantic geography, and cell ownership together;
+Load map and Obsidian Sync reproduce the same continents without re-analysis.
 
 ## Renderer lifecycle
 
@@ -204,17 +219,16 @@ it does not clear the persistent switch.
 The WebGL graticule is a low-contrast dashed `LineDashedMaterial`; document
 links remain continuous geodesic roads with a separate material. `SphereLayer`
 derives a single-owner land mesh and coastline batch from the committed
-geography. `landGeometry` evaluates deterministic anisotropic multi-scale
-support, clips mixed icosphere triangles at the exact ownership transition,
+geography. For version-10 snapshots, `landSupport` consumes the saved raster
+directly; its former density growth and least-cost terminal connector are only
+a compatibility path for older geography without territory data.
+`landGeometry` clips mixed icosphere triangles at the exact ownership transition,
 draws the outer mask as sand, and overlays a variably inset land interior.
 Detailed bays, headlands, and the irregular beach band are therefore smooth
 rather than aligned to mesh cells.
-`landSupport` excludes degree-zero notes, keeps every linked directory member,
-and retreats weak coastal ownership from the already connected ocean until the
-52% target plus bounded root-island compensation is reached. A precomputed
-smooth spherical bias varies the retreat rate at three scales. Protected member
-cells remain land, so this render-only retreat widens seas and carves
-headlands/bays without changing positions or creating inland holes.
+Multi-scale deterministic boundary displacement adds headlands and bays only
+within a narrow coast band; it never changes raster connectivity or creates a
+beach-ringed island under an inland city.
 The land and ocean `ShaderMaterial`s generate their atlas texture from local
 sphere direction, requiring no texture files or runtime I/O. The ocean depth
 skin sits slightly inside the logical globe so land, graticule, roads, and

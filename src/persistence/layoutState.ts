@@ -16,13 +16,18 @@ import {
 import {
 	CONTINENTAL_GEOGRAPHY_VERSION,
 	CONTINENT_COLOR_COUNT,
+	MAX_PERSISTED_CONTINENT_CAP_RADIUS,
 	createPersistedContinentalGeography,
 	type PersistedContinent,
 	type PersistedContinentalGeography,
+	type PersistedDirectoryTerritory,
 } from "../geography";
+import { createIntrinsicSphericalGrid } from "../geography/sphericalGrid";
+import type { PersistedGraphCache } from "./graphCache";
 
-export const CURRENT_SCHEMA_VERSION = 3;
-export const CURRENT_ALGORITHM_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_ALGORITHM_VERSION = 10;
+export const MINIMUM_LOADABLE_ALGORITHM_VERSION = 9;
 export const DEFAULT_POSITION_NORM_TOLERANCE = 1e-4;
 
 export type Vector3Tuple = readonly [number, number, number];
@@ -58,6 +63,7 @@ export interface PersistedPluginData<TSettings> {
 	readonly schemaVersion: number;
 	readonly settings: TSettings;
 	readonly committedLayout: PersistedLayoutSnapshot | null;
+	readonly graphCache: PersistedGraphCache | null;
 	readonly camera: PersistedCameraState;
 	readonly pinnedNotePaths: readonly string[];
 }
@@ -73,11 +79,18 @@ export interface CompletedLayoutInput {
 	readonly algorithmVersion?: number;
 	readonly normTolerance?: number;
 	readonly previousGeography?: PersistedContinentalGeography;
+	readonly geography?: PersistedContinentalGeography;
 }
 
 export interface ValidatedCompletedPositions {
 	readonly positionsByPath: Readonly<Record<string, Vector3Tuple>>;
 	readonly maxNormError: number;
+}
+
+export interface CompletedLayoutValidationFailure {
+	readonly stage: "positions" | "metadata" | "geography" | "unknown";
+	readonly code: string;
+	readonly details: Readonly<Record<string, unknown>>;
 }
 
 export interface ReconciledCommittedLayout {
@@ -470,7 +483,7 @@ function validatePersistedContinent(
 		new Set(value.nodeIds).size !== value.nodeIds.length ||
 		!isFiniteNumber(value.capRadius) ||
 		value.capRadius < 0.1 ||
-		value.capRadius > 1.2 ||
+		value.capRadius > MAX_PERSISTED_CONTINENT_CAP_RADIUS ||
 		!isNonNegativeInteger(value.colorIndex) ||
 		value.colorIndex >= CONTINENT_COLOR_COUNT ||
 		!isFiniteNumber(value.stability) ||
@@ -499,6 +512,248 @@ function validatePersistedContinent(
 		stability: value.stability,
 		conductance: value.conductance,
 	});
+}
+
+function validationFailure(
+	stage: CompletedLayoutValidationFailure["stage"],
+	code: string,
+	details: Readonly<Record<string, unknown>> = {},
+): CompletedLayoutValidationFailure {
+	return Object.freeze({ stage, code, details: Object.freeze(details) });
+}
+
+function validatePersistedTerritory(
+	value: unknown,
+	continentCount: number,
+): PersistedDirectoryTerritory | undefined {
+	if (
+		!isRecord(value) ||
+		!Number.isSafeInteger(value.subdivision) ||
+		(value.subdivision as number) < 0 ||
+		(value.subdivision as number) > 6 ||
+		!isUnknownArray(value.folderKeys) ||
+		value.folderKeys.length !== continentCount ||
+		!value.folderKeys.every(
+			(key): key is string => typeof key === "string" && key.length > 0,
+		) ||
+		new Set(value.folderKeys).size !== value.folderKeys.length ||
+		!isUnknownArray(value.ownerByCell)
+	) {
+		return undefined;
+	}
+	const subdivision = Number(value.subdivision);
+	let cellCount: number;
+	try {
+		cellCount = createIntrinsicSphericalGrid(subdivision).vertices.length;
+	} catch {
+		return undefined;
+	}
+	if (
+		value.ownerByCell.length !== cellCount ||
+		!value.ownerByCell.every(
+			(owner) =>
+				typeof owner === "number" &&
+				Number.isSafeInteger(owner) &&
+				owner >= -1 &&
+				owner < continentCount,
+		)
+	) {
+		return undefined;
+	}
+	return Object.freeze({
+		subdivision,
+		folderKeys: Object.freeze([...value.folderKeys]),
+		ownerByCell: Object.freeze([...(value.ownerByCell as number[])]),
+	});
+}
+
+export function diagnoseContinentalGeography(
+	value: unknown,
+	descriptor: GraphDescriptor,
+): CompletedLayoutValidationFailure | undefined {
+	if (!isRecord(value)) {
+		return validationFailure("geography", "not-an-object");
+	}
+	if (value.version !== CONTINENTAL_GEOGRAPHY_VERSION) {
+		return validationFailure("geography", "version-mismatch", {
+			expectedVersion: CONTINENTAL_GEOGRAPHY_VERSION,
+			actualVersion: value.version,
+		});
+	}
+	if (!isUnknownArray(value.continents)) {
+		return validationFailure("geography", "continents-not-an-array");
+	}
+	if (!isUnknownArray(value.islandNodeIds)) {
+		return validationFailure("geography", "islands-not-an-array");
+	}
+	if (
+		value.territory !== undefined &&
+		validatePersistedTerritory(value.territory, value.continents.length) === undefined
+	) {
+		return validationFailure("geography", "invalid-territory");
+	}
+
+	const validNodeIds = new Set(descriptor.nodeIds);
+	const assigned = new Set<string>();
+	const continentIds = new Set<string>();
+	for (
+		let continentIndex = 0;
+		continentIndex < value.continents.length;
+		continentIndex += 1
+	) {
+		const raw = value.continents[continentIndex];
+		if (!isRecord(raw)) {
+			return validationFailure("geography", "continent-not-an-object", {
+				continentIndex,
+			});
+		}
+		if (typeof raw.id !== "string" || raw.id.length === 0) {
+			return validationFailure("geography", "invalid-continent-id", {
+				continentIndex,
+			});
+		}
+		if (typeof raw.label !== "string" || raw.label.length === 0) {
+			return validationFailure("geography", "invalid-continent-label", {
+				continentIndex,
+			});
+		}
+		if (!Array.isArray(raw.nodeIds) || raw.nodeIds.length === 0) {
+			return validationFailure("geography", "invalid-continent-node-list", {
+				continentIndex,
+			});
+		}
+		const stringNodeIds = raw.nodeIds.filter(
+			(nodeId): nodeId is string => typeof nodeId === "string",
+		);
+		if (stringNodeIds.length !== raw.nodeIds.length) {
+			return validationFailure("geography", "non-string-continent-node", {
+				continentIndex,
+				nodeCount: raw.nodeIds.length,
+			});
+		}
+		const unknownNodeCount = stringNodeIds.filter(
+			(nodeId) => !validNodeIds.has(nodeId),
+		).length;
+		if (unknownNodeCount > 0) {
+			return validationFailure("geography", "unknown-continent-node", {
+				continentIndex,
+				unknownNodeCount,
+			});
+		}
+		if (new Set(stringNodeIds).size !== stringNodeIds.length) {
+			return validationFailure("geography", "duplicate-continent-node", {
+				continentIndex,
+				nodeCount: stringNodeIds.length,
+			});
+		}
+		if (validateAndNormalizePosition(raw.center) === undefined) {
+			return validationFailure("geography", "invalid-continent-center", {
+				continentIndex,
+			});
+		}
+		if (
+			!isFiniteNumber(raw.capRadius) ||
+			raw.capRadius < 0.1 ||
+			raw.capRadius > MAX_PERSISTED_CONTINENT_CAP_RADIUS
+		) {
+			return validationFailure("geography", "invalid-continent-cap-radius", {
+				continentIndex,
+				capRadius: raw.capRadius,
+				minimum: 0.1,
+				maximum: MAX_PERSISTED_CONTINENT_CAP_RADIUS,
+			});
+		}
+		if (
+			!isNonNegativeInteger(raw.colorIndex) ||
+			raw.colorIndex >= CONTINENT_COLOR_COUNT
+		) {
+			return validationFailure("geography", "invalid-continent-color", {
+				continentIndex,
+				colorIndex: raw.colorIndex,
+				colorCount: CONTINENT_COLOR_COUNT,
+			});
+		}
+		if (
+			!isFiniteNumber(raw.stability) ||
+			raw.stability < 0 ||
+			raw.stability > 1
+		) {
+			return validationFailure("geography", "invalid-continent-stability", {
+				continentIndex,
+				stability: raw.stability,
+			});
+		}
+		if (
+			!isFiniteNumber(raw.conductance) ||
+			raw.conductance < 0 ||
+			raw.conductance > 1
+		) {
+			return validationFailure("geography", "invalid-continent-conductance", {
+				continentIndex,
+				conductance: raw.conductance,
+			});
+		}
+		if (continentIds.has(raw.id)) {
+			return validationFailure("geography", "duplicate-continent-id", {
+				continentIndex,
+			});
+		}
+		const overlappingNodeCount = stringNodeIds.filter((nodeId) =>
+			assigned.has(nodeId),
+		).length;
+		if (overlappingNodeCount > 0) {
+			return validationFailure("geography", "overlapping-continent-node", {
+				continentIndex,
+				overlappingNodeCount,
+			});
+		}
+		continentIds.add(raw.id);
+		for (const nodeId of stringNodeIds) {
+			assigned.add(nodeId);
+		}
+	}
+
+	const islandNodeIds = value.islandNodeIds.filter(
+		(nodeId): nodeId is string => typeof nodeId === "string",
+	);
+	if (islandNodeIds.length !== value.islandNodeIds.length) {
+		return validationFailure("geography", "non-string-island-node", {
+			islandCount: value.islandNodeIds.length,
+		});
+	}
+	const invalidIslandCount = islandNodeIds.filter(
+		(nodeId) => !validNodeIds.has(nodeId) || assigned.has(nodeId),
+	).length;
+	if (invalidIslandCount > 0) {
+		return validationFailure("geography", "invalid-island-node", {
+			invalidIslandCount,
+		});
+	}
+	if (new Set(islandNodeIds).size !== islandNodeIds.length) {
+		return validationFailure("geography", "duplicate-island-node", {
+			islandCount: islandNodeIds.length,
+		});
+	}
+	for (const nodeId of islandNodeIds) {
+		assigned.add(nodeId);
+	}
+	const linkedNodeIds = new Set<string>();
+	for (const edge of descriptor.edges) {
+		linkedNodeIds.add(edge.sourceId);
+		linkedNodeIds.add(edge.targetId);
+	}
+	const omittedLinkedNodeCount = descriptor.nodeIds.filter(
+		(nodeId) => !assigned.has(nodeId) && linkedNodeIds.has(nodeId),
+	).length;
+	if (omittedLinkedNodeCount > 0) {
+		return validationFailure("geography", "omitted-linked-node", {
+			omittedLinkedNodeCount,
+			assignedNodeCount: assigned.size,
+			linkedNodeCount: linkedNodeIds.size,
+			totalNodeCount: descriptor.nodeIds.length,
+		});
+	}
+	return undefined;
 }
 
 export function validateContinentalGeography(
@@ -567,10 +822,17 @@ export function validateContinentalGeography(
 	}
 	// Geography is intentionally non-exhaustive only for true orphan notes.
 	// Any omitted linked node indicates truncated or corrupt persisted data.
+	const territory = value.territory === undefined
+		? undefined
+		: validatePersistedTerritory(value.territory, continents.length);
+	if (value.territory !== undefined && territory === undefined) {
+		return undefined;
+	}
 	return Object.freeze({
 		version: CONTINENTAL_GEOGRAPHY_VERSION,
 		continents: Object.freeze(continents),
 		islandNodeIds: Object.freeze(islandNodeIds.sort(compareCodeUnits)),
+		...(territory === undefined ? {} : { territory }),
 	});
 }
 
@@ -626,6 +888,117 @@ export function validateCompletedPositions(
 	});
 }
 
+export function diagnoseCompletedPositions(
+	positions: ArrayLike<number>,
+	nodePaths: readonly string[],
+	normTolerance = DEFAULT_POSITION_NORM_TOLERANCE,
+): CompletedLayoutValidationFailure | undefined {
+	const expectedLength = nodePaths.length * 3;
+	if (positions.length !== expectedLength) {
+		return validationFailure("positions", "length-mismatch", {
+			expectedLength,
+			actualLength: positions.length,
+			nodeCount: nodePaths.length,
+		});
+	}
+	if (!Number.isFinite(normTolerance) || normTolerance < 0) {
+		return validationFailure("positions", "invalid-norm-tolerance", {
+			normTolerance,
+		});
+	}
+	if (new Set(nodePaths).size !== nodePaths.length) {
+		return validationFailure("positions", "duplicate-node-path", {
+			nodeCount: nodePaths.length,
+			uniqueNodeCount: new Set(nodePaths).size,
+		});
+	}
+	for (let index = 0; index < nodePaths.length; index += 1) {
+		const x = positions[index * 3];
+		const y = positions[index * 3 + 1];
+		const z = positions[index * 3 + 2];
+		if (
+			x === undefined ||
+			y === undefined ||
+			z === undefined ||
+			!Number.isFinite(x) ||
+			!Number.isFinite(y) ||
+			!Number.isFinite(z)
+		) {
+			return validationFailure("positions", "non-finite-position", {
+				nodeIndex: index,
+				x,
+				y,
+				z,
+			});
+		}
+		const norm = Math.hypot(x, y, z);
+		if (!Number.isFinite(norm) || norm <= Number.EPSILON) {
+			return validationFailure("positions", "zero-or-invalid-norm", {
+				nodeIndex: index,
+				norm,
+			});
+		}
+		const normError = Math.abs(norm - 1);
+		if (normError > normTolerance) {
+			return validationFailure("positions", "norm-out-of-tolerance", {
+				nodeIndex: index,
+				norm,
+				normError,
+				normTolerance,
+			});
+		}
+	}
+	return undefined;
+}
+
+export function diagnoseCompletedLayoutInput(
+	input: CompletedLayoutInput,
+): CompletedLayoutValidationFailure {
+	const positionsFailure = diagnoseCompletedPositions(
+		input.positions,
+		input.graph.nodes.map((node) => node.path),
+		input.normTolerance,
+	);
+	if (positionsFailure !== undefined) {
+		return positionsFailure;
+	}
+	const algorithmVersion =
+		input.algorithmVersion ?? CURRENT_ALGORITHM_VERSION;
+	if (input.snapshotId.length === 0) {
+		return validationFailure("metadata", "empty-snapshot-id");
+	}
+	if (!isNonNegativeInteger(input.effectiveSeed)) {
+		return validationFailure("metadata", "invalid-effective-seed", {
+			effectiveSeed: input.effectiveSeed,
+		});
+	}
+	if (!isNonNegativeInteger(input.renewGeneration)) {
+		return validationFailure("metadata", "invalid-renew-generation", {
+			renewGeneration: input.renewGeneration,
+		});
+	}
+	if (!isNonNegativeInteger(algorithmVersion) || algorithmVersion === 0) {
+		return validationFailure("metadata", "invalid-algorithm-version", {
+			algorithmVersion,
+		});
+	}
+	if (!isFiniteNumber(input.completedAt) || input.completedAt < 0) {
+		return validationFailure("metadata", "invalid-completed-at", {
+			completedAt: input.completedAt,
+		});
+	}
+	if (input.geography !== undefined) {
+		const geographyFailure = diagnoseContinentalGeography(
+			input.geography,
+			input.graph.descriptor,
+		);
+		if (geographyFailure !== undefined) {
+			return geographyFailure;
+		}
+	}
+	return validationFailure("unknown", "snapshot-construction-rejected");
+}
+
 export function createCommittedLayoutSnapshot(
 	input: CompletedLayoutInput,
 ): PersistedLayoutSnapshot | undefined {
@@ -650,12 +1023,23 @@ export function createCommittedLayoutSnapshot(
 	}
 	let geography: PersistedContinentalGeography;
 	try {
-		geography = createPersistedContinentalGeography(
-			input.graph,
-			input.positions,
-			input.effectiveSeed,
-			input.previousGeography,
-		);
+		if (input.geography === undefined) {
+			geography = createPersistedContinentalGeography(
+				input.graph,
+				input.positions,
+				input.effectiveSeed,
+				input.previousGeography,
+			);
+		} else {
+			const validatedGeography = validateContinentalGeography(
+				input.geography,
+				input.graph.descriptor,
+			);
+			if (validatedGeography === undefined) {
+				return undefined;
+			}
+			geography = validatedGeography;
+		}
 	} catch {
 		return undefined;
 	}
@@ -681,7 +1065,8 @@ export function isSnapshotUsable(
 ): boolean {
 	if (
 		snapshot === undefined ||
-		snapshot.algorithmVersion !== algorithmVersion
+		snapshot.algorithmVersion < MINIMUM_LOADABLE_ALGORITHM_VERSION ||
+		snapshot.algorithmVersion > algorithmVersion
 	) {
 		return false;
 	}
@@ -876,31 +1261,33 @@ export function pruneSnapshotPaths(
 			positionsByPath[path] = position;
 		}
 	}
-	const geography =
-		snapshot.geography === undefined
-			? undefined
-			: Object.freeze({
-					...snapshot.geography,
-					continents: Object.freeze(
-						snapshot.geography.continents
-							.map((continent) =>
-								Object.freeze({
-									...continent,
-									nodeIds: Object.freeze(
-										continent.nodeIds.filter((nodeId) =>
-											retained.has(nodeId),
-										),
-									),
-								}),
-							)
-							.filter((continent) => continent.nodeIds.length > 0),
+	let geography: PersistedContinentalGeography | undefined;
+	if (snapshot.geography !== undefined) {
+		const continents = snapshot.geography.continents
+			.map((continent) =>
+				Object.freeze({
+					...continent,
+					nodeIds: Object.freeze(
+						continent.nodeIds.filter((nodeId) => retained.has(nodeId)),
 					),
-					islandNodeIds: Object.freeze(
-						snapshot.geography.islandNodeIds.filter((nodeId) =>
-							retained.has(nodeId),
-						),
-					),
-				});
+				}),
+			)
+			.filter((continent) => continent.nodeIds.length > 0);
+		const territory =
+			continents.length === snapshot.geography.continents.length
+				? snapshot.geography.territory
+				: undefined;
+		geography = Object.freeze({
+			version: snapshot.geography.version,
+			continents: Object.freeze(continents),
+			islandNodeIds: Object.freeze(
+				snapshot.geography.islandNodeIds.filter((nodeId) =>
+					retained.has(nodeId),
+				),
+			),
+			...(territory === undefined ? {} : { territory }),
+		});
+	}
 	return Object.freeze({
 		...snapshot,
 		graphSignature: createGraphSignature(graphDescriptor),

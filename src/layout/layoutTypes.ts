@@ -75,6 +75,12 @@ export interface RefreshConstraints {
 	readonly alignToAnchors?: boolean;
 }
 
+export interface LayoutDirectoryTerritory {
+	readonly subdivision: number;
+	readonly folderKeys: readonly string[];
+	readonly ownerByCell: Int32Array;
+}
+
 export interface LayoutSolverInput {
 	readonly operationId: string;
 	readonly mode: LayoutOperationMode;
@@ -98,6 +104,8 @@ export interface LayoutSolverInput {
 	readonly coastalPortScores?: Float32Array;
 	/** Preferred tangent departure direction for each port, as a 3N buffer. */
 	readonly coastalPortDirections?: Float32Array;
+	/** Fixed connected land ownership allocated before note relaxation. */
+	readonly territory?: LayoutDirectoryTerritory;
 	readonly movableMask?: Uint8Array;
 	readonly refresh?: RefreshConstraints;
 	readonly settings?: Partial<SolverSettings>;
@@ -137,6 +145,7 @@ export interface LayoutCompletedResult {
 	readonly status: 'completed';
 	readonly positions: Float32Array;
 	readonly diagnostics: LayoutFinalDiagnostics;
+	readonly territory?: LayoutDirectoryTerritory;
 }
 
 export interface LayoutCancelledResult {
