@@ -318,6 +318,13 @@
 	text-transform: uppercase;
 }
 
+.spherical-graph-controls-hint {
+	margin-block-start: -5px;
+	color: color-mix(in srgb, var(--sg-muted) 86%, transparent);
+	font-size: 10px;
+	line-height: 1.35;
+}
+
 .spherical-graph-controls-grid {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -329,6 +336,10 @@
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+.spherical-graph-control-span {
+	grid-column: 1 / -1;
 }
 
 .spherical-graph-filter-toggle {

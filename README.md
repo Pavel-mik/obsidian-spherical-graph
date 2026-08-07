@@ -4,7 +4,7 @@
 [![Latest release](https://img.shields.io/github/v/release/Pavel-mik/obsidian-spherical-graph?label=release)](https://github.com/Pavel-mik/obsidian-spherical-graph/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
 
-Turn your Obsidian vault into an explorable world. Each top-level vault folder
+Turn your Obsidian vault into a world you can navigate. Each top-level vault folder
 becomes its own continent, notes become cities, links become roads across the
 surface, and tags orbit overhead as satellites. Linked notes stored directly
 in the vault root become islands; orphan notes remain cities over open water.
@@ -35,7 +35,7 @@ longer invents corridors between cities after layout.
 
 ![Route Finder highlighting shortest paths across the globe](docs/screenshots/spherical-graph-route.png)
 
-![Compact graph controls with render-only filters](docs/screenshots/spherical-graph-filters.png)
+![Task-oriented Map controls for layout, exploration, saved state, visible content, and globe layers](docs/screenshots/spherical-graph-filters.png)
 
 ## Requirements
 
@@ -61,9 +61,10 @@ coordinate.
 
 Spherical Graph has three finite layout operations:
 
-- **Initialize** runs only after an explicit **Generate/Renew layout** action.
-  Opening Obsidian or the graph view first loads the last saved map and never
-  scans or regenerates the vault automatically.
+- **Initialize** runs automatically the first time the graph opens without a
+  usable saved layout. The plugin first indexes the current vault, then shows
+  calculation progress until one complete map is validated and saved. Later
+  openings restore that saved map without regenerating it.
 - **Refresh layout** incorporates pending vault changes while preserving the
   existing mental map. New nodes warm up while old nodes are fixed; then only a
   local affected set may relax under geodesic anchors and a maximum angular
@@ -185,19 +186,19 @@ and a reliable rename keeps the old position under the new path. Select
 | Open from selection details | Click a selected, linked, endpoint, or route note; hold `Ctrl`/`Cmd` for a new tab |
 | Hide or show selection details | Select the **Selection details** header |
 | Find and focus | Type in **Find a note or tag…** and choose a result |
-| Find all shortest routes | Select an origin, open **Map**, choose **Find route**, then select a destination |
-| Clear a route | Choose **Clear route** in **Map** |
-| Hide categories without moving the map | Use **Filters** in **Map** |
-| Hide or show geography | Toggle **Continents** in **Map → Appearance** |
-| Hide or show the cloud layer | Toggle **Atmosphere** in **Map → Appearance** |
-| Save the complete map state now | Choose **Save map** in **Map** |
-| Reload the last saved or synced map | Choose **Load map** in **Map** |
-| Enter the control-free presentation globe | Choose **Fullscreen** in **Map**; press `Escape` to exit |
-| Change globe surface | Use **Appearance** in **Map** |
-| Include pending changes | Choose **Refresh layout** in **Map** |
-| Build a new world | Choose **Renew layout** in **Map**, then confirm |
-| Stop a calculation | Choose **Cancel calculation** in **Map** |
-| Restore view | Choose **Reset camera** in **Map** |
+| Find all shortest routes | Select an origin, then choose **Map controls → Explore → Find route** and select a destination |
+| Clear a route | Choose the active route control in **Map controls → Explore** |
+| Hide categories without moving the map | Use **Map controls → Visible content** |
+| Hide or show geography | Toggle **Continents** in **Map controls → Globe** |
+| Hide or show the cloud layer | Toggle **Atmosphere** in **Map controls → Globe** |
+| Save the complete map state now | Choose **Map controls → Saved map → Save map** |
+| Reload the last saved or synced map | Choose **Map controls → Saved map → Load map** |
+| Enter the control-free presentation globe | Choose **Map controls → Explore → Fullscreen**; press `Escape` to exit |
+| Change globe surface | Use **Map controls → Globe** |
+| Include pending changes | Choose **Map controls → Layout → Refresh layout** |
+| Build a new world | Choose **Map controls → Layout → Renew layout**, then confirm |
+| Stop a calculation | Choose **Map controls → Layout → Cancel calculation** |
+| Restore view | Choose **Map controls → Explore → Reset camera** |
 
 Manual or automatic rotation changes only the camera and never a node position.
 
@@ -252,7 +253,8 @@ map.
 ## Saving and Obsidian Sync
 
 Completed layouts are saved automatically. Camera changes and settings are
-debounced; pin changes are committed immediately. **Map → Save map** flushes
+debounced; pin changes are committed immediately. **Map controls → Saved map →
+Save map** flushes
 the current camera, settings, and pins into the same complete state on demand.
 
 The only authoritative state file is Obsidian's standard

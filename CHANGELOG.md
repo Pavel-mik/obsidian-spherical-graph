@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-08-07
+
+### Added
+
+- Opening Spherical Graph without a usable saved layout now indexes the current
+  vault and starts the first Initialize operation automatically.
+
+### Changed
+
+- The graph menu is reorganized into task-oriented Layout, Explore, Saved map,
+  Visible content, and Globe groups with concise intent hints and clearer
+  tooltips.
+- Community-facing copy now leads with folder continents, note cities, road
+  links, orbiting tag satellites, and Route Finder.
+
 ## [1.8.0] - 2026-08-05
 
 ### Added
@@ -509,7 +524,8 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.8.0...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.8.1...HEAD
+[1.8.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.8.0...1.8.1
 [1.8.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.7.0...1.8.0
 [1.7.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.6.1...1.7.0
 [1.6.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.6.0...1.6.1

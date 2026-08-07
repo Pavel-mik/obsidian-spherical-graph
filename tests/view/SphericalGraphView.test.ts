@@ -65,6 +65,12 @@ describe('SphericalGraphView Renew prompt', () => {
 
 	it('uses the design-system control and modal copy verbatim', () => {
 		expect(VIEW_CONTROL_COPY).toMatchObject({
+			graphControls: 'Map controls',
+			layout: 'Layout',
+			explore: 'Explore',
+			savedMap: 'Saved map',
+			visibleContent: 'Visible content',
+			globe: 'Globe',
 			refresh: 'Refresh layout',
 			renew: 'Renew layout',
 			cancelCalculation: 'Cancel calculation',
