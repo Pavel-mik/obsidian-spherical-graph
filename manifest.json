@@ -1,9 +1,9 @@
 {
 	"id": "spherical-graph",
 	"name": "Spherical Graph",
-	"version": "1.8.0",
+	"version": "1.8.1",
 	"minAppVersion": "1.7.2",
-	"description": "Explore your vault as a globe: notes are cities, links are roads, tags orbit as satellites, and Route Finder reveals every shortest path.",
+	"description": "Navigate your vault as a globe: folders form continents, notes become cities, links become roads, tags orbit as satellites, and Route Finder connects ideas.",
 	"author": "Pavel-mik",
 	"authorUrl": "https://github.com/Pavel-mik",
 	"isDesktopOnly": true

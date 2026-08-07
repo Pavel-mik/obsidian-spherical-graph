@@ -43,3 +43,7 @@
 - [x] Make startup load-first, persist a complete Sync-safe render graph, add
   explicit Load map controls, and isolate graph indexing, geography, and land
   meshing in adaptive one-shot workers for large-vault stability.
+- [x] Automatically index and initialize the first map only when no usable
+  saved layout exists, while retaining load-first startup for every later open.
+- [x] Reorganize the compact menu into Layout, Explore, Saved map, Visible
+  content, and Globe groups with concise intent hints and action tooltips.

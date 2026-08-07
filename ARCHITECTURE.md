@@ -22,7 +22,8 @@ flowchart LR
     G --> H["Geography worker<br/>directory ownership → land support → ocean"]
     F --> H
     H -->|"atomic positions + geography save"| P
-    P -->|"load-first restore"| R["SphericalGraphRenderer"]
+    P -->|"saved-map restore"| R["SphericalGraphRenderer"]
+	G -->|"no usable saved map"| L
     R --> LW["Adaptive land-mesh worker"]
     U["ItemView / toolbar / settings"] --> L
     U --> R
@@ -80,7 +81,7 @@ flowchart LR
 stateDiagram-v2
     [*] --> no_layout: no saved map
     [*] --> fixed_clean: load usable saved map
-    no_layout --> initializing: explicit Generate/Renew
+    no_layout --> initializing: automatic first Initialize
     initializing --> fixed_clean: valid atomic commit
     initializing --> no_layout: cancel
     initializing --> error: invalid/error

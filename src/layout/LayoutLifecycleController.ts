@@ -238,8 +238,8 @@ export class LayoutLifecycleController {
 	}
 
 	/**
-	 * Restores a usable committed map. Missing or incompatible data remains in
-	 * no-layout state until the user explicitly requests generation.
+	 * Restores a usable committed map. Missing or incompatible data starts one
+	 * automatic Initialize operation for the supplied current vault graph.
 	 */
 	open(
 		graph: GraphData,
@@ -277,7 +277,7 @@ export class LayoutLifecycleController {
 		this.unusableSnapshotId = snapshot?.snapshotId;
 		this.currentDiff = undefined;
 		this.setState({ kind: "no-layout" });
-		return false;
+		return this.startInitialize();
 	}
 
 	/**

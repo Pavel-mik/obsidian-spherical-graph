@@ -95,71 +95,105 @@ export class ViewToolbar {
 		const panel = this.menu.createDiv();
 		panel.className = 'spherical-graph-controls-panel';
 
-		const actions = createSection(
+		const layout = createSection(
 			panel,
-			VIEW_CONTROL_COPY.actions,
-			'actions',
+			VIEW_CONTROL_COPY.layout,
+			VIEW_CONTROL_COPY.layoutDescription,
+			'layout',
 		);
-		const actionGrid = actions.createDiv();
-		actionGrid.className = 'spherical-graph-controls-grid';
+		const layoutGrid = layout.createDiv();
+		layoutGrid.className = 'spherical-graph-controls-grid';
 		this.refreshButton = createButton(
-			actionGrid,
+			layoutGrid,
 			VIEW_CONTROL_COPY.refresh,
 			'spherical-graph-action-refresh',
+			VIEW_CONTROL_COPY.refreshDescription,
 		);
 		this.renewButton = createButton(
-			actionGrid,
+			layoutGrid,
 			VIEW_CONTROL_COPY.renew,
 			'spherical-graph-action-renew',
+			VIEW_CONTROL_COPY.renewDescription,
 		);
 		this.cancelButton = createButton(
-			actionGrid,
+			layoutGrid,
 			VIEW_CONTROL_COPY.cancelCalculation,
 			'spherical-graph-action-cancel',
+			VIEW_CONTROL_COPY.cancelDescription,
 		);
-		this.resetButton = createButton(
-			actionGrid,
-			VIEW_CONTROL_COPY.resetCamera,
-			'spherical-graph-action-reset',
-		);
-		this.saveButton = createButton(
-			actionGrid,
-			VIEW_CONTROL_COPY.saveMap,
-			'spherical-graph-action-save',
-		);
-		this.loadButton = createButton(
-			actionGrid,
-			VIEW_CONTROL_COPY.loadMap,
-			'spherical-graph-action-load',
-		);
-		this.fullscreenButton = createButton(
-			actionGrid,
-			VIEW_CONTROL_COPY.fullscreen,
-			'spherical-graph-action-fullscreen',
-		);
-		this.fullscreenButton.dataset.active = 'false';
-		this.fullscreenButton.setAttribute('aria-pressed', 'false');
-		this.routeButton = createButton(
-			actionGrid,
-			VIEW_CONTROL_COPY.findRoute,
-			'spherical-graph-action-route',
-		);
-		this.routeButton.dataset.routeState = 'idle';
-		this.routeButton.setAttribute('aria-pressed', 'false');
-		actionGrid.append(
+		this.cancelButton.classList.add('spherical-graph-control-span');
+		layoutGrid.append(
 			this.refreshButton,
 			this.renewButton,
 			this.cancelButton,
+		);
+
+		const explore = createSection(
+			panel,
+			VIEW_CONTROL_COPY.explore,
+			VIEW_CONTROL_COPY.exploreDescription,
+			'explore',
+		);
+		const exploreGrid = explore.createDiv();
+		exploreGrid.className = 'spherical-graph-controls-grid';
+		this.routeButton = createButton(
+			exploreGrid,
+			VIEW_CONTROL_COPY.findRoute,
+			'spherical-graph-action-route',
+			VIEW_CONTROL_COPY.findRouteDescription,
+		);
+		this.routeButton.dataset.routeState = 'idle';
+		this.routeButton.setAttribute('aria-pressed', 'false');
+		this.resetButton = createButton(
+			exploreGrid,
+			VIEW_CONTROL_COPY.resetCamera,
+			'spherical-graph-action-reset',
+			VIEW_CONTROL_COPY.resetCameraDescription,
+		);
+		this.fullscreenButton = createButton(
+			exploreGrid,
+			VIEW_CONTROL_COPY.fullscreen,
+			'spherical-graph-action-fullscreen',
+			VIEW_CONTROL_COPY.fullscreenDescription,
+		);
+		this.fullscreenButton.dataset.active = 'false';
+		this.fullscreenButton.setAttribute('aria-pressed', 'false');
+		this.fullscreenButton.classList.add('spherical-graph-control-span');
+		exploreGrid.append(
 			this.routeButton,
 			this.resetButton,
+			this.fullscreenButton,
+		);
+
+		const savedMap = createSection(
+			panel,
+			VIEW_CONTROL_COPY.savedMap,
+			VIEW_CONTROL_COPY.savedMapDescription,
+			'saved-map',
+		);
+		const savedMapGrid = savedMap.createDiv();
+		savedMapGrid.className = 'spherical-graph-controls-grid';
+		this.saveButton = createButton(
+			savedMapGrid,
+			VIEW_CONTROL_COPY.saveMap,
+			'spherical-graph-action-save',
+			VIEW_CONTROL_COPY.saveMapDescription,
+		);
+		this.loadButton = createButton(
+			savedMapGrid,
+			VIEW_CONTROL_COPY.loadMap,
+			'spherical-graph-action-load',
+			VIEW_CONTROL_COPY.loadMapDescription,
+		);
+		savedMapGrid.append(
 			this.saveButton,
 			this.loadButton,
-			this.fullscreenButton,
 		);
 
 		const filters = createSection(
 			panel,
-			VIEW_CONTROL_COPY.filters,
+			VIEW_CONTROL_COPY.visibleContent,
+			VIEW_CONTROL_COPY.visibleContentDescription,
 			'filters',
 		);
 		const filterGrid = filters.createDiv();
@@ -194,7 +228,8 @@ export class ViewToolbar {
 
 		const appearance = createSection(
 			panel,
-			VIEW_CONTROL_COPY.appearance,
+			VIEW_CONTROL_COPY.globe,
+			VIEW_CONTROL_COPY.globeDescription,
 			'appearance',
 		);
 		const surfaceLabel = appearance.createEl('label');
@@ -243,7 +278,7 @@ export class ViewToolbar {
 			surfaceLabel,
 		);
 
-		panel.append(actions, filters, appearance);
+		panel.append(layout, explore, savedMap, filters, appearance);
 		this.menu.append(summary, panel);
 		this.element.append(searchSlot, this.menu);
 		parent.append(this.element);
@@ -523,6 +558,7 @@ export class ViewToolbar {
 function createSection(
 	parent: HTMLElement,
 	label: string,
+	description: string,
 	kind: string,
 ): HTMLElement {
 	const section = parent.createEl('section');
@@ -531,7 +567,10 @@ function createSection(
 	const heading = section.createDiv();
 	heading.className = 'spherical-graph-controls-heading';
 	heading.textContent = label;
-	section.append(heading);
+	const hint = section.createDiv();
+	hint.className = 'spherical-graph-controls-hint';
+	hint.textContent = description;
+	section.append(heading, hint);
 	return section;
 }
 
@@ -539,13 +578,14 @@ function createButton(
 	parent: HTMLElement,
 	label: string,
 	className: string,
+	description = label,
 ): HTMLButtonElement {
 	const button = parent.createEl('button');
 	button.type = 'button';
 	button.className = `spherical-graph-toolbar-button ${className}`;
 	button.textContent = label;
-	button.title = label;
-	button.setAttribute('aria-label', label);
+	button.title = description;
+	button.setAttribute('aria-label', `${label}. ${description}`);
 	return button;
 }
 

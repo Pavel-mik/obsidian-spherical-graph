@@ -356,13 +356,10 @@ function completed(
 }
 
 describe("LayoutLifecycleController initialization and fixed states", () => {
-	it("waits for explicit initialization when there is no usable snapshot", async () => {
+	it("starts initialization immediately when there is no usable snapshot", async () => {
 		const h = harness();
 		const currentGraph = graph(["a.md", "b.md"]);
-		expect(h.controller.open(currentGraph)).toBe(false);
-		expect(h.controller.state).toEqual({ kind: "no-layout" });
-		expect(h.runner.inputs).toHaveLength(0);
-		expect(h.controller.startInitialize()).toBe(true);
+		expect(h.controller.open(currentGraph)).toBe(true);
 		expect(h.controller.state).toEqual({
 			kind: "initializing",
 			operationId: "op-1",
@@ -384,8 +381,7 @@ describe("LayoutLifecycleController initialization and fixed states", () => {
 	it("disposes a runner that completes synchronously during start", async () => {
 		const h = harness();
 		h.runner.messageOnStart = (input) => completed(input);
-		expect(h.controller.open(graph(["a.md"]))).toBe(false);
-		expect(h.controller.startInitialize()).toBe(true);
+		expect(h.controller.open(graph(["a.md"]))).toBe(true);
 		expect(h.controller.activeWorkerCount).toBe(0);
 		expect(h.runner.sessions[0]?.disposeCount).toBe(1);
 		await vi.waitFor(() => {
@@ -415,8 +411,7 @@ describe("LayoutLifecycleController initialization and fixed states", () => {
 			algorithmVersion: 99,
 		};
 		const h = harness(incompatible);
-		expect(h.controller.open(currentGraph, incompatible)).toBe(false);
-		expect(h.controller.startInitialize()).toBe(true);
+		expect(h.controller.open(currentGraph, incompatible)).toBe(true);
 		const input = currentOperation(h);
 		h.runner.emit(completed(input));
 		await vi.waitFor(() => {
@@ -437,10 +432,12 @@ describe("LayoutLifecycleController initialization and fixed states", () => {
 		expect(h.controller.activeWorkerCount).toBe(0);
 	});
 
-	it("does not auto-initialize from a later vault event in no-layout state", async () => {
+	it("does not restart a cancelled initialization from a later vault event", async () => {
 		const h = harness();
 		const initialGraph = graph(["a.md"]);
 		h.controller.open(initialGraph);
+		expect(h.controller.state.kind).toBe("initializing");
+		expect(h.controller.cancel()).toBe(true);
 		expect(h.controller.state.kind).toBe("no-layout");
 		const changed = graph(["a.md", "b.md"]);
 		const diff = diffGraphDescriptors(
@@ -449,7 +446,7 @@ describe("LayoutLifecycleController initialization and fixed states", () => {
 			changed.signature,
 		);
 		await h.controller.markGraphChanged(changed, diff);
-		expect(h.runner.inputs).toHaveLength(0);
+		expect(h.runner.inputs).toHaveLength(1);
 		expect(h.controller.state.kind).toBe("no-layout");
 	});
 });

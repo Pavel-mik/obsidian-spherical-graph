@@ -26,14 +26,17 @@ vault.
 
 ## Functional and lifecycle checks
 
-1. **First open / load-first startup**
+1. **First open / automatic Initialize**
 
 	- Run **Spherical Graph: Open graph** from the command palette.
 	- With an existing map, confirm it appears without an Initialize progress
 	  state, vault scan, or layout worker.
-	- With no saved map, confirm the view remains in **No saved layout** state
-	  until **Renew layout** is explicitly confirmed.
-	- Confirm no intermediate node positions are shown after explicit generation.
+	- With no saved map, confirm the plugin indexes the current vault and starts
+	  **Initialize** automatically without requiring **Renew layout**.
+	- Confirm the progress state is visible and no intermediate node positions
+	  are shown.
+	- Close and reopen the finished map. Confirm the saved map appears without a
+	  new vault scan or layout worker.
    - Inspect diagnostics or an instrumented run and confirm the layout worker
      receives one compact intrinsic territory raster before iteration begins.
      Confirm it returns the same raster with the final position buffer and the
@@ -193,7 +196,7 @@ vault.
     - Test **Solid**, **Transparent**, and **Hidden**.
     - Confirm Solid depth-hides the back hemisphere, Transparent provides an
       x-ray cue, Hidden removes only the surface mesh, and no mode moves nodes.
-    - Toggle **Map → Continents**. Confirm land, coastlines, islands, and
+    - Toggle **Map controls → Globe → Continents**. Confirm land, coastlines, islands, and
       cartographic labels disappear/reappear without changing the committed
       position buffer.
     - Create several top-level vault folders. Confirm every folder containing

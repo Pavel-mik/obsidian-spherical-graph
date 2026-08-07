@@ -40,6 +40,7 @@ import {
 	CURRENT_ALGORITHM_VERSION,
 	CURRENT_SCHEMA_VERSION,
 	DEFAULT_CAMERA_STATE,
+	MINIMUM_LOADABLE_ALGORITHM_VERSION,
 	type PersistedCameraState,
 	type PersistedLayoutSnapshot,
 } from './persistence/layoutState';
@@ -576,18 +577,20 @@ export default class SphericalGraphPlugin extends Plugin {
 			return;
 		}
 		const saved = this.dataStore.committedSnapshot;
+		const canRestoreSavedGraph =
+			saved !== undefined &&
+			saved.algorithmVersion >= MINIMUM_LOADABLE_ALGORITHM_VERSION &&
+			saved.algorithmVersion <= CURRENT_ALGORITHM_VERSION;
 		this.currentGraph =
-			saved === undefined
-				? GraphDataService.fromSnapshot({
-						markdownFiles: [],
-						attachmentFiles: [],
-						resolvedLinks: {},
-						unresolvedLinks: {},
-					}).buildGraph(graphFilters(this.settings))
-				: restoreGraphData(
+			canRestoreSavedGraph
+				? restoreGraphData(
 						saved.graphDescriptor,
 						saved.graphSignature,
 						this.dataStore.graphCache,
+					)
+				: await this.graphWorker.build(
+						this.graphService.snapshotSource(),
+						graphFilters(this.settings),
 					);
 		const planner = new SphericalLayoutPlanner(() => this.settings);
 		const solverRunner = new LayoutSolverRunnerAdapter();
@@ -642,7 +645,22 @@ export default class SphericalGraphPlugin extends Plugin {
 			this.broadcastStatus();
 		});
 		this.createGraphTracker();
-		lifecycle.open(this.currentGraph, saved);
+		const initializationStarted = lifecycle.open(
+			this.currentGraph,
+			saved,
+		);
+		if (!canRestoreSavedGraph) {
+			this.dataStore.scheduleGraphCacheSave(this.currentGraph);
+			this.diagnostic('layout.first-map', {
+				initializationStarted,
+				reason:
+					saved === undefined
+						? 'missing-snapshot'
+						: 'incompatible-snapshot',
+				nodeCount: this.currentGraph.nodes.length,
+				edgeCount: this.currentGraph.edges.length,
+			});
+		}
 		const active = this.app.workspace.getActiveFile();
 		this.setActiveNode(active?.path);
 	}
