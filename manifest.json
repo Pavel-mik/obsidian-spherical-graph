@@ -1,7 +1,7 @@
 {
 	"id": "spherical-graph",
 	"name": "Spherical Graph",
-	"version": "1.9.0",
+	"version": "1.9.1",
 	"minAppVersion": "1.7.2",
 	"description": "Explore your vault as a living globe: folders become continents, notes become cities, links become roads, tags orbit as satellites, and Route Finder reveals paths between ideas.",
 	"author": "Pavel-mik",

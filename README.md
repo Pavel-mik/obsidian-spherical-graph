@@ -55,11 +55,12 @@ remain visible. Phone mode disables hover, Auto rotate, and the normal
 atmosphere control. Tablet mode keeps Fullscreen, Auto rotate, and atmosphere.
 
 Touch input supports drag rotation, pinch zoom, and tap selection with a larger
-tap tolerance. Controls use 44 px targets and safe-area insets. Only one graph
-view is retained on mobile, rendering stops when Obsidian moves to the
-background, and an active layout calculation is cancelled to avoid an Android
-background freeze. Expensive Refresh and Renew actions remain available in
-the Map controls menu.
+tap tolerance. Controls use 44 px targets and safe-area insets. Map controls
+has a pinned close button, scrolls independently, and stops above Obsidian's
+bottom navigation. Only one graph view is retained on mobile, rendering stops
+when Obsidian moves to the background, and an active layout calculation is
+cancelled to avoid an Android background freeze. Expensive Refresh and Renew
+actions remain available in the Map controls menu.
 
 ## Why a sphere?
 
@@ -214,7 +215,7 @@ and a reliable rename keeps the old position under the new path. Select
 | Hide or show the cloud layer | Toggle **Atmosphere** in **Map controls → Globe** |
 | Save the complete map state now | Choose **Map controls → Saved map → Save map** |
 | Reload the last saved or synced map | Choose **Map controls → Saved map → Load map** |
-| Enter the control-free presentation globe | Choose **Map controls → Explore → Fullscreen**; press `Escape` to exit |
+| Enter the control-free presentation globe | Choose **Map controls → Explore → Fullscreen**; use **Exit fullscreen** or press `Escape` to return |
 | Change globe surface | Use **Map controls → Globe** |
 | Include pending changes | Choose **Map controls → Layout → Refresh layout** |
 | Build a new world | Choose **Map controls → Layout → Renew layout**, then confirm |

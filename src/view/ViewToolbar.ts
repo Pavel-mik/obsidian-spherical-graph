@@ -52,6 +52,8 @@ export class ViewToolbar {
 	readonly element: HTMLElement;
 	readonly search: SearchController;
 	private readonly menu: HTMLDetailsElement;
+	private readonly menuSummary: HTMLElement;
+	private readonly menuCloseButton: HTMLButtonElement;
 	private readonly refreshButton: HTMLButtonElement;
 	private readonly renewButton: HTMLButtonElement;
 	private readonly cancelButton: HTMLButtonElement;
@@ -88,14 +90,34 @@ export class ViewToolbar {
 
 		this.menu = this.element.createEl('details');
 		this.menu.className = 'spherical-graph-controls-menu';
-		const summary = this.menu.createEl('summary');
-		summary.className = 'spherical-graph-controls-summary';
-		summary.textContent = VIEW_CONTROL_COPY.graphControls;
-		summary.title = VIEW_CONTROL_COPY.graphControls;
-		summary.setAttribute('aria-label', VIEW_CONTROL_COPY.graphControls);
+		this.menuSummary = this.menu.createEl('summary');
+		this.menuSummary.className = 'spherical-graph-controls-summary';
+		this.menuSummary.textContent = VIEW_CONTROL_COPY.graphControls;
+		this.menuSummary.title = VIEW_CONTROL_COPY.graphControls;
+		this.menuSummary.setAttribute(
+			'aria-label',
+			VIEW_CONTROL_COPY.graphControls,
+		);
 
 		const panel = this.menu.createDiv();
 		panel.className = 'spherical-graph-controls-panel';
+		const panelHeader = panel.createDiv();
+		panelHeader.className = 'spherical-graph-controls-panel-header';
+		const panelTitle = panelHeader.createDiv();
+		panelTitle.className = 'spherical-graph-controls-panel-title';
+		panelTitle.textContent = VIEW_CONTROL_COPY.graphControls;
+		this.menuCloseButton = panelHeader.createEl('button');
+		this.menuCloseButton.type = 'button';
+		this.menuCloseButton.className =
+			'spherical-graph-controls-close';
+		this.menuCloseButton.textContent = '\u00d7';
+		this.menuCloseButton.title =
+			VIEW_CONTROL_COPY.closeGraphControls;
+		this.menuCloseButton.setAttribute(
+			'aria-label',
+			VIEW_CONTROL_COPY.closeGraphControls,
+		);
+		panelHeader.append(panelTitle, this.menuCloseButton);
 
 		const layout = createSection(
 			panel,
@@ -282,7 +304,7 @@ export class ViewToolbar {
 		);
 
 		panel.append(layout, explore, savedMap, filters, appearance);
-		this.menu.append(summary, panel);
+		this.menu.append(this.menuSummary, panel);
 		this.element.append(searchSlot, this.menu);
 		parent.append(this.element);
 		this.setFilterState(initialFilters);
@@ -298,6 +320,7 @@ export class ViewToolbar {
 			'click',
 			this.onFullscreen,
 		);
+		this.menuCloseButton.addEventListener('click', this.onMenuClose);
 		this.tagsToggle.input.addEventListener(
 			'change',
 			this.onFiltersChange,
@@ -441,6 +464,10 @@ export class ViewToolbar {
 			'click',
 			this.onFullscreen,
 		);
+		this.menuCloseButton.removeEventListener(
+			'click',
+			this.onMenuClose,
+		);
 		this.tagsToggle.input.removeEventListener(
 			'change',
 			this.onFiltersChange,
@@ -473,9 +500,20 @@ export class ViewToolbar {
 		this.element.remove();
 	}
 
-	private closeMenu(): void {
+	closeMenu(restoreFocus = false): boolean {
+		if (!this.menu.open) {
+			return false;
+		}
 		this.menu.open = false;
+		if (restoreFocus) {
+			this.menuSummary.focus({ preventScroll: true });
+		}
+		return true;
 	}
+
+	private readonly onMenuClose = (): void => {
+		this.closeMenu(true);
+	};
 
 	private readonly onRefresh = (): void => {
 		if (!this.refreshButton.disabled) {

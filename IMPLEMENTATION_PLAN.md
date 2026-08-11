@@ -47,3 +47,7 @@
   saved layout exists, while retaining load-first startup for every later open.
 - [x] Reorganize the compact menu into Layout, Explore, Saved map, Visible
   content, and Globe groups with concise intent hints and action tooltips.
+- [x] Make fullscreen and Map controls explicitly dismissible on touch devices,
+  keep the controls panel above mobile navigation with momentum scrolling,
+  frame newly generated globes, and decouple continent names from note-label
+  zoom suppression.

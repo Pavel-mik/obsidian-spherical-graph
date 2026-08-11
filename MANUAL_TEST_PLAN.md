@@ -35,6 +35,10 @@ vault.
 	  **Initialize** automatically without requiring **Renew layout**.
 	- Confirm the progress state is visible and no intermediate node positions
 	  are shown.
+	- When Initialize completes, confirm the camera automatically frames the
+	  complete globe with visible space around the atmosphere instead of opening
+	  at maximum zoom. Repeat after Renew; Refresh must preserve the current
+	  camera.
 	- Close and reopen the finished map. Confirm the saved map appears without a
 	  new vault scan or layout worker.
    - Inspect diagnostics or an instrumented run and confirm the layout worker
@@ -190,6 +194,13 @@ vault.
     - Confirm **Auto rotate** remains visible and operable in the bottom rail.
     - Move the view to a pop-out window.
     - Verify interaction, resize, owner-window animation, and cleanup.
+	- On a phone and tablet, open **Map controls**, scroll through every section,
+	  and confirm the final Globe controls stop above Obsidian's bottom bar.
+	  Close the menu with its pinned close button without activating an action;
+	  where a keyboard is present, confirm `Escape` does the same.
+	- On a tablet, enter Fullscreen and confirm the floating **Exit fullscreen**
+	  control returns to the standard graph. Repeat with `Escape` and the native
+	  Android back/fullscreen exit path.
 
 19. **Surface modes**
 
@@ -199,6 +210,9 @@ vault.
     - Toggle **Map controls → Globe → Continents**. Confirm land, coastlines, islands, and
       cartographic labels disappear/reappear without changing the committed
       position buffer.
+	- With Continents enabled, zoom below the note-label threshold and rotate the
+	  globe continuously. Confirm front-facing continent names stay visible even
+	  while ordinary note labels are suppressed.
     - Create several top-level vault folders. Confirm every folder containing
       linked notes forms exactly one non-overlapping continent with its current
       folder name.

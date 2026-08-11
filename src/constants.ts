@@ -34,7 +34,12 @@ export const BASE_TAG_MARKER_SIZE = 0.14;
 export const POSITION_NORM_TOLERANCE = 1e-5;
 export const MIN_VECTOR_NORM = 1e-12;
 
-export const DEFAULT_CAMERA_DISTANCE = 27;
+/**
+ * Leaves enough breathing room for the globe and its atmosphere at the
+ * default 45 degree field of view. The previous value only barely contained
+ * the surface and made a newly generated map look pre-zoomed.
+ */
+export const DEFAULT_CAMERA_DISTANCE = 32;
 export const MIN_CAMERA_DISTANCE = 12;
 export const MAX_CAMERA_DISTANCE = 60;
 

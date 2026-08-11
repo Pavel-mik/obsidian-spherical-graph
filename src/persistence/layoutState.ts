@@ -2,6 +2,7 @@ import {
 	applyRenameMapToDescriptor,
 	GraphRename,
 } from "../graph/graphDiff";
+import { DEFAULT_CAMERA_DISTANCE } from "../constants";
 import {
 	createGraphSignature,
 	deterministicUint32,
@@ -40,7 +41,7 @@ export interface PersistedCameraState {
 }
 
 export const DEFAULT_CAMERA_STATE: PersistedCameraState = Object.freeze({
-	position: Object.freeze([0, 0, 3] as const),
+	position: Object.freeze([0, 0, DEFAULT_CAMERA_DISTANCE] as const),
 	up: Object.freeze([0, 1, 0] as const),
 	target: Object.freeze([0, 0, 0] as const),
 });

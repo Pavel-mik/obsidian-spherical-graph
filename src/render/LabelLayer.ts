@@ -82,12 +82,12 @@ export class LabelLayer {
 	}
 
 	render(camera: Camera, width: number, height: number): void {
-		if (this.interactionActive) {
-			this.hideAll();
-			return;
-		}
 		this.resizePool();
 		this.renderContinents(camera, width, height);
+		if (this.interactionActive) {
+			this.hideNodeLabels();
+			return;
+		}
 		const snapshot = this.snapshot;
 		const zoomVisuals = labelZoomVisuals(
 			camera.position.length(),
@@ -101,7 +101,7 @@ export class LabelLayer {
 			width <= 0 ||
 			height <= 0
 		) {
-			this.hideAll();
+			this.hideNodeLabels();
 			return;
 		}
 
@@ -301,11 +301,8 @@ export class LabelLayer {
 		}
 	}
 
-	private hideAll(): void {
+	private hideNodeLabels(): void {
 		for (const element of this.pool) {
-			element.hidden = true;
-		}
-		for (const element of this.continentPool) {
 			element.hidden = true;
 		}
 	}
