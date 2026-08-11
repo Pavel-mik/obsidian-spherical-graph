@@ -1,6 +1,6 @@
 # Validation
 
-## Cross-device Save/Load and pin synchronization validation (unreleased)
+## Cross-device Save/Load and pin synchronization release validation (1.9.2)
 
 - Date: 2026-08-11
 - Environment: Windows development vault, Node.js/npm project toolchain

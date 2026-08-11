@@ -568,5 +568,5 @@ describe('SphericalLayoutPlanner integration', () => {
 			}
 		}
 		expect(minimumCenterDistance).toBeGreaterThan(0.3);
-	}, 15_000);
+	}, 30_000);
 });

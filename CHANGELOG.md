@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-08-11
+
 ### Changed
 
 - Continuous camera gestures no longer rewrite the synchronized plugin-data
