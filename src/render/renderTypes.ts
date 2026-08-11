@@ -1,4 +1,5 @@
 import { AppearanceSettings } from '../settings/settings';
+import type { RuntimeRenderProfile } from '../platform/runtimeProfile';
 import { directoryRegionKey } from '../geography/directorySemantics';
 import { createIntrinsicSphericalGrid } from '../geography/sphericalGrid';
 
@@ -122,6 +123,7 @@ export interface RendererCallbacks {
 
 export interface RendererOptions {
 	appearance: AppearanceSettings;
+	profile: RuntimeRenderProfile;
 	camera?: CameraState;
 	callbacks?: RendererCallbacks;
 }

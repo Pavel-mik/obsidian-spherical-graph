@@ -31,6 +31,7 @@ export class LabelLayer {
 	private filters: RenderFilterState = DEFAULT_RENDER_FILTERS;
 	private readonly worldPosition = new Vector3();
 	private readonly projectedPosition = new Vector3();
+	private interactionActive = false;
 
 	constructor(
 		container: HTMLElement,
@@ -81,6 +82,10 @@ export class LabelLayer {
 	}
 
 	render(camera: Camera, width: number, height: number): void {
+		if (this.interactionActive) {
+			this.hideAll();
+			return;
+		}
 		this.resizePool();
 		this.renderContinents(camera, width, height);
 		const snapshot = this.snapshot;
@@ -300,6 +305,13 @@ export class LabelLayer {
 		for (const element of this.pool) {
 			element.hidden = true;
 		}
+		for (const element of this.continentPool) {
+			element.hidden = true;
+		}
+	}
+
+	setInteractionActive(active: boolean): void {
+		this.interactionActive = active;
 	}
 
 	private renderContinents(

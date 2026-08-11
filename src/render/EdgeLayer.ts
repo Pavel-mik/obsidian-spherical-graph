@@ -48,11 +48,13 @@ export class EdgeLayer {
 	private appearance: AppearanceSettings;
 	private theme: RenderTheme;
 	private filters: RenderFilterState = DEFAULT_RENDER_FILTERS;
+	private interactionActive = false;
 
 	constructor(
 		private readonly group: Group,
 		appearance: AppearanceSettings,
 		theme: RenderTheme,
+		private readonly segmentScale = 1,
 	) {
 		this.appearance = appearance;
 		this.theme = theme;
@@ -93,9 +95,14 @@ export class EdgeLayer {
 			if (start === undefined || end === undefined) {
 				continue;
 			}
-			const segments = Math.min(
-				adaptiveSegmentCount(start, end),
-				maxSegmentsPerEdge(snapshot.edges.length),
+			const segments = Math.max(
+				2,
+				Math.round(
+					Math.min(
+						adaptiveSegmentCount(start, end),
+						maxSegmentsPerEdge(snapshot.edges.length),
+					) * this.segmentScale,
+				),
 			);
 			const points = sampleGeodesicArc(
 				start,
@@ -171,7 +178,7 @@ export class EdgeLayer {
 			this.appearance.edgeZoomThresholdPercent,
 		);
 		if (this.lines !== undefined) {
-			this.lines.visible = visible;
+			this.lines.visible = visible && !this.interactionActive;
 		}
 		if (this.selectedRibbon !== undefined) {
 			this.selectedRibbon.visible = visible;
@@ -179,6 +186,10 @@ export class EdgeLayer {
 		if (this.routeRibbon !== undefined) {
 			this.routeRibbon.visible = visible;
 		}
+	}
+
+	setInteractionActive(active: boolean): void {
+		this.interactionActive = active;
 	}
 
 	updateTheme(theme: RenderTheme): void {

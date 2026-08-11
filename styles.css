@@ -2300,3 +2300,85 @@
 	width: 100vw;
 	height: 100vh;
 }
+
+/* Adaptive mobile shell. Rendering quality is selected in Settings, while
+   touch target sizing and safe areas follow the actual Obsidian device. */
+.spherical-graph-view[data-device="phone"],
+.spherical-graph-view[data-device="tablet"] {
+	--sg-control-height: 44px;
+}
+
+.spherical-graph-view[data-device="phone"] .spherical-graph-toolbar {
+	gap: 8px;
+	padding:
+		max(8px, env(safe-area-inset-top))
+		max(8px, env(safe-area-inset-right))
+		8px
+		max(8px, env(safe-area-inset-left));
+}
+
+.spherical-graph-view[data-device="phone"] .spherical-graph-toolbar-search {
+	flex: 1 1 calc(100% - 58px);
+	min-width: 0;
+}
+
+.spherical-graph-view[data-device="phone"] .spherical-graph-controls-panel {
+	position: fixed;
+	top: calc(max(8px, env(safe-area-inset-top)) + 56px);
+	right: max(8px, env(safe-area-inset-right));
+	bottom: max(8px, env(safe-area-inset-bottom));
+	left: max(8px, env(safe-area-inset-left));
+	width: auto;
+	max-height: none;
+	overscroll-behavior: contain;
+}
+
+.spherical-graph-view[data-device="phone"] .spherical-graph-status-rail {
+	min-height: 44px;
+	padding:
+		6px
+		max(10px, env(safe-area-inset-right))
+		max(6px, env(safe-area-inset-bottom))
+		max(10px, env(safe-area-inset-left));
+}
+
+.spherical-graph-view[data-device="phone"] .spherical-graph-inspector {
+	max-height: min(46dvh, 360px);
+	padding-bottom: max(10px, env(safe-area-inset-bottom));
+}
+
+.spherical-graph-view[data-device="phone"][data-presentation="true"],
+.spherical-graph-view[data-device="tablet"][data-presentation="true"] {
+	width: 100dvw;
+	height: 100dvh;
+}
+
+.spherical-graph-view[data-device="phone"][data-presentation="true"]
+	.spherical-graph-canvas,
+.spherical-graph-view[data-device="tablet"][data-presentation="true"]
+	.spherical-graph-canvas {
+	width: 100dvw;
+	height: 100dvh;
+}
+
+@media (pointer: coarse) {
+	.spherical-graph-view .spherical-graph-canvas {
+		touch-action: none;
+	}
+
+	.spherical-graph-view :is(
+		button,
+		input,
+		select,
+		summary,
+		.spherical-graph-filter-toggle,
+		.spherical-graph-auto-rotate
+	) {
+		min-height: 44px;
+	}
+
+	.spherical-graph-view .spherical-graph-search-result {
+		min-height: 44px;
+		padding-block: 10px;
+	}
+}

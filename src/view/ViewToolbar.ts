@@ -10,6 +10,7 @@ import {
 	SearchControllerCallbacks,
 } from './SearchController';
 import { VIEW_CONTROL_COPY } from './viewCopy';
+import type { RuntimeRenderProfile } from '../platform/runtimeProfile';
 
 export interface ViewToolbarCallbacks extends SearchControllerCallbacks {
 	onRefresh(): void;
@@ -74,6 +75,7 @@ export class ViewToolbar {
 		initialFilters: RenderFilterState = DEFAULT_RENDER_FILTERS,
 		initialContinentsVisible = true,
 		initialAtmosphereVisible = true,
+		profile?: RuntimeRenderProfile,
 	) {
 		this.element = parent.createDiv();
 		this.element.className = 'spherical-graph-toolbar';
@@ -272,6 +274,7 @@ export class ViewToolbar {
 			'atmosphere',
 		);
 		this.atmosphereToggle.input.checked = initialAtmosphereVisible;
+		this.atmosphereToggle.label.hidden = profile?.deviceClass === 'phone';
 		appearance.append(
 			this.continentsToggle.label,
 			this.atmosphereToggle.label,

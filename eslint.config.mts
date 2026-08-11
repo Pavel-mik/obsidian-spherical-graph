@@ -34,6 +34,18 @@ export default defineConfig(
 	},
 	...obsidianmd.configs.recommended,
 	{
+		files: ['scripts/**/*.{js,mjs,ts}', 'tests/**/*.ts', 'vitest.config.ts'],
+		languageOptions: {
+			globals: {
+				...globals.node,
+			},
+		},
+		rules: {
+			// Build tools and tests run under Node and are not included in main.js.
+			'obsidianmd/no-nodejs-modules': 'off',
+		},
+	},
+	{
 		files: [
 			'scripts/generate-test-vault.mjs',
 			'tests/scripts/generateTestVault.test.ts',

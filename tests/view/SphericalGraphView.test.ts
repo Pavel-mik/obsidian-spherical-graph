@@ -37,10 +37,20 @@ vi.mock('obsidian', () => {
 });
 
 import { SphericalGraphView } from '../../src/view/SphericalGraphView';
+import { resolveRuntimeRenderProfile } from '../../src/platform/runtimeProfile';
 
 function createView(): SphericalGraphView {
 	return new SphericalGraphView({} as WorkspaceLeaf, {
 		getSettings: () => DEFAULT_SPHERICAL_GRAPH_SETTINGS,
+		runtimeProfile: resolveRuntimeRenderProfile(
+			{
+				isMobileApp: false,
+				isAndroidApp: false,
+				isPhone: false,
+				isTablet: false,
+			},
+			{ phoneQuality: 'automatic', tabletQuality: 'automatic' },
+		),
 		callbacks: {
 			onRefresh: vi.fn(),
 			onRenew: vi.fn(),

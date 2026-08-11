@@ -70,6 +70,10 @@ import type {
 	ViewLifecycleState,
 	ViewStatusModel,
 } from './view/viewTypes';
+import {
+	currentRuntimePlatformFlags,
+	currentRuntimeRenderProfile,
+} from './platform';
 
 const COMMAND_IDS = {
 	open: 'open-graph',
@@ -139,22 +143,26 @@ export default class SphericalGraphPlugin extends Plugin {
 	private runtimeFailure: string | undefined;
 	private unloading = false;
 	private developmentLog: DevelopmentLog | undefined;
+	private syncBudgetNoticeShown = false;
 
 	override async onload(): Promise<void> {
+		const platformFlags = currentRuntimePlatformFlags();
 		const pluginDirectory =
 			this.manifest.dir ??
 			`${this.app.vault.configDir}/plugins/${this.manifest.id}`;
-		this.developmentLog = new DevelopmentLog(
-			this.app.vault.adapter,
-			normalizePath(
-				`${pluginDirectory}/spherical-graph-development.log`,
-			),
-		);
-		this.developmentLog.startSession({
-			pluginVersion: this.manifest.version,
-			schemaVersion: CURRENT_SCHEMA_VERSION,
-			algorithmVersion: CURRENT_ALGORITHM_VERSION,
-		});
+		if (!platformFlags.isMobileApp) {
+			this.developmentLog = new DevelopmentLog(
+				this.app.vault.adapter,
+				normalizePath(
+					`${pluginDirectory}/spherical-graph-development.log`,
+				),
+			);
+			this.developmentLog.startSession({
+				pluginVersion: this.manifest.version,
+				schemaVersion: CURRENT_SCHEMA_VERSION,
+				algorithmVersion: CURRENT_ALGORITHM_VERSION,
+			});
+		}
 		this.dataStore = new PluginDataStore(
 			{
 				loadData: () => this.loadData(),
@@ -173,6 +181,9 @@ export default class SphericalGraphPlugin extends Plugin {
 				},
 				onDiagnostic: (event, details) => {
 					this.diagnostic(`persistence.${event}`, details);
+					if (event === 'sync-budget') {
+						this.showSyncBudgetNotice(details ?? {});
+					}
 				},
 				createGeography: (graph, positions, seed, previous, territory) =>
 					this.geographyWorker.build(
@@ -213,6 +224,9 @@ export default class SphericalGraphPlugin extends Plugin {
 		this.app.workspace.onLayoutReady(() => {
 			if (!this.unloading) {
 				this.registerGraphEvents();
+				if (platformFlags.isMobileApp) {
+					this.retainSingleMobileView();
+				}
 			}
 		});
 		this.addSettingTab(
@@ -249,8 +263,13 @@ export default class SphericalGraphPlugin extends Plugin {
 	}
 
 	private createView(leaf: WorkspaceLeaf): SphericalGraphView {
+		const runtimeProfile = currentRuntimeRenderProfile({
+			phoneQuality: this.settings.appearance.phoneRenderQuality,
+			tabletQuality: this.settings.appearance.tabletRenderQuality,
+		});
 		const view = new SphericalGraphView(leaf, {
 			getSettings: () => this.settings,
+			runtimeProfile,
 			initialCamera: cameraForView(this.dataStore.state.camera),
 			callbacks: {
 				onRefresh: () =>
@@ -299,6 +318,14 @@ export default class SphericalGraphPlugin extends Plugin {
 				onManualSave: (camera) =>
 					this.saveMap(camera),
 				onManualLoad: () => this.loadMap(),
+				onAppHidden: () => {
+					if (
+						runtimeProfile.isMobile &&
+						this.lifecycleView.activeWorkerCount > 0
+					) {
+						this.lifecycle?.cancel();
+					}
+				},
 				onClose: () => {
 					window.setTimeout(() => {
 						if (
@@ -555,6 +582,13 @@ export default class SphericalGraphPlugin extends Plugin {
 				(view): view is SphericalGraphView =>
 					view instanceof SphericalGraphView,
 			);
+	}
+
+	private retainSingleMobileView(): void {
+		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
+		for (const leaf of leaves.slice(1)) {
+			leaf.detach();
+		}
 	}
 
 	private ensureRuntime(): Promise<void> {
@@ -1070,5 +1104,25 @@ export default class SphericalGraphPlugin extends Plugin {
 		details: Readonly<Record<string, unknown>> = {},
 	): void {
 		this.developmentLog?.record(event, details);
+	}
+
+	private showSyncBudgetNotice(
+		details: Readonly<Record<string, unknown>>,
+	): void {
+		if (this.syncBudgetNoticeShown) {
+			return;
+		}
+		this.syncBudgetNoticeShown = true;
+		const megabytes =
+			typeof details.byteLength === 'number'
+				? (details.byteLength / 1024 / 1024).toFixed(1)
+				: undefined;
+		const size = megabytes === undefined ? '' : ` (${megabytes} MB)`;
+		new Notice(
+			details.graphCacheDropped === true
+				? `Spherical Graph kept the saved map Sync-safe${size} by rebuilding its optional graph cache when needed.`
+				: `Spherical Graph data.json is approaching the Sync file limit${size}.`,
+			8_000,
+		);
 	}
 }

@@ -85,9 +85,9 @@ if (versions[manifest.version] !== manifest.minAppVersion) {
 		'versions.json must map the current plugin version to minAppVersion.',
 	);
 }
-if (manifest.isDesktopOnly !== true) {
+if (manifest.isDesktopOnly !== false) {
 	errors.push(
-		'manifest.json: this desktop-only WebGL plugin must set "isDesktopOnly" to true.',
+		'manifest.json: the adaptive desktop/mobile renderer requires "isDesktopOnly" to be false.',
 	);
 }
 if (
