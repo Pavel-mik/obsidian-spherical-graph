@@ -781,4 +781,87 @@ describe("PluginDataStore transactional writes", () => {
 		expect(loaded.pinnedNotePaths).toEqual(['synced.md']);
 		expect(adapter.saves).toHaveLength(0);
 	});
+
+	it("does not roll back a synced layout and pins from a stale device camera write", async () => {
+		const adapter = new MemoryAdapter();
+		const desktop = createStore(adapter);
+		const mobile = createStore(adapter);
+		await desktop.load();
+		const oldGraph = createGraph(["old.md"]);
+		const oldSnapshot = await desktop.commitCompletedResult({
+			graph: oldGraph,
+			mode: "initialize",
+			operationId: "desktop-old",
+			effectiveSeed: 1,
+			completedAt: 1,
+			positions: new Float32Array([1, 0, 0]),
+			expectedSnapshotId: null,
+		});
+		await desktop.setPinnedNotePath("old.md", true);
+		await mobile.load();
+
+		const newGraph = createGraph(["new.md"]);
+		const newSnapshot = await desktop.commitCompletedResult({
+			graph: newGraph,
+			mode: "initialize",
+			operationId: "desktop-new",
+			effectiveSeed: 2,
+			completedAt: 2,
+			positions: new Float32Array([0, 1, 0]),
+			expectedSnapshotId: oldSnapshot?.snapshotId ?? null,
+		});
+		await desktop.setPinnedNotePath("new.md", true);
+
+		await mobile.saveCamera({
+			position: [0, 0, 8],
+			up: [0, 1, 0],
+			target: [0, 0, 0],
+		});
+
+		const reloaded = await mobile.reload();
+		expect(reloaded.committedLayout?.snapshotId).toBe(
+			newSnapshot?.snapshotId,
+		);
+		expect(reloaded.committedLayout?.positionsByPath["new.md"]).toEqual([
+			0, 1, 0,
+		]);
+		expect(reloaded.pinnedNotePaths).toEqual(["new.md", "old.md"]);
+		expect(reloaded.camera.position).toEqual([0, 0, 8]);
+	});
+
+	it("merges a pin action with pins delivered by Sync after this device loaded", async () => {
+		const adapter = new MemoryAdapter();
+		const desktop = createStore(adapter);
+		const mobile = createStore(adapter);
+		await desktop.load();
+		await mobile.load();
+		await desktop.setPinnedNotePath("desktop.md", true);
+
+		await mobile.setPinnedNotePath("mobile.md", true);
+
+		expect((await desktop.reload()).pinnedNotePaths).toEqual([
+			"desktop.md",
+			"mobile.md",
+		]);
+	});
+
+	it("keeps synced pins when a stale device explicitly saves its camera", async () => {
+		const adapter = new MemoryAdapter();
+		const desktop = createStore(adapter);
+		const mobile = createStore(adapter, new ManualScheduler());
+		await desktop.load();
+		await mobile.load();
+		await desktop.setPinnedNotePath("desktop.md", true);
+		mobile.scheduleCameraSave({
+			position: [0, 0, 7],
+			up: [0, 1, 0],
+			target: [0, 0, 0],
+		});
+
+		await mobile.saveNow();
+
+		const saved = await desktop.reload();
+		expect(saved.pinnedNotePaths).toEqual(["desktop.md"]);
+		expect(saved.camera.position).toEqual([0, 0, 7]);
+	});
 });

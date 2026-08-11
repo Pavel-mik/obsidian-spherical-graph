@@ -277,18 +277,22 @@ map.
 
 ## Saving and Obsidian Sync
 
-Completed layouts are saved automatically. Camera changes and settings are
-debounced; pin changes are committed immediately. **Map controls → Saved map →
-Save map** flushes
-the current camera, settings, and pins into the same complete state on demand.
+Completed layouts are saved automatically. Settings are debounced and pin
+changes are committed immediately. Camera movement stays device-local until
+**Map controls → Saved map → Save map** stores the current viewpoint together
+with the complete layout, settings, and pins. Avoiding background camera writes
+also prevents an inactive device from rolling a newer synchronized map back.
 
 The only authoritative state file is Obsidian's standard
 `.obsidian/plugins/spherical-graph/data.json`. To carry the same layout and
 pins between devices, enable community-plugin data in
 [Obsidian Sync settings](https://obsidian.md/help/sync/settings) for the vault.
 No extra file is written into the vault root. If Sync updates plugin data while
-Obsidian is already running, reload the plugin or restart Obsidian before
-judging the restored map.
+Obsidian is already running, choose **Load map** after Sync finishes; the
+command re-reads `data.json`, invalidates any older local graph scan, and
+restores the synchronized positions, continents, camera, and pins as one map.
+Partial settings, cache, or pin writes first preserve newer fields already
+delivered by Sync.
 
 To stay below the 5 MB per-file ceiling of the Standard Sync plan, persistence
 uses a 4.5 MB safety budget. At the budget boundary it discards only the

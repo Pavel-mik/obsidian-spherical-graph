@@ -43,6 +43,7 @@ import {
 	MINIMUM_LOADABLE_ALGORITHM_VERSION,
 	type PersistedCameraState,
 	type PersistedLayoutSnapshot,
+	type PersistedPluginData,
 } from './persistence/layoutState';
 import { PluginDataStore } from './persistence/PluginDataStore';
 import { restoreGraphData } from './persistence/graphCache';
@@ -126,6 +127,7 @@ export default class SphericalGraphPlugin extends Plugin {
 	private readonly graphWorker = new GraphDataWorkerClient();
 	private readonly geographyWorker = new GeographyWorkerClient();
 	private graphTracker: GraphChangeTracker | undefined;
+	private graphTrackerGeneration = 0;
 	private lifecycle: LayoutLifecycleController | undefined;
 	private lifecycleView: LayoutLifecycleView = {
 		state: { kind: 'no-layout' },
@@ -245,10 +247,9 @@ export default class SphericalGraphPlugin extends Plugin {
 			window.clearTimeout(this.cancelNoticeTimer);
 			this.cancelNoticeTimer = undefined;
 		}
-		this.graphTracker?.dispose();
+		this.disposeGraphTracker();
 		this.graphWorker.dispose();
 		this.geographyWorker.dispose();
-		this.graphTracker = undefined;
 		this.unsubscribeLifecycle?.();
 		this.unsubscribeLifecycle = undefined;
 		this.lifecycle?.dispose();
@@ -299,14 +300,10 @@ export default class SphericalGraphPlugin extends Plugin {
 						this.showCancelledNotice();
 					}
 				},
-				onResetCamera: (camera) => {
-					this.dataStore.scheduleCameraSave(camera);
-				},
+				onResetCamera: () => undefined,
 				onOpenFile: (node, openInNewLeaf) =>
 					this.openFile(node, openInNewLeaf),
-				onCameraChange: (camera) => {
-					this.dataStore.scheduleCameraSave(camera);
-				},
+				onCameraChange: () => undefined,
 				onSurfaceModeChange: (mode) =>
 					this.changeSurfaceMode(mode),
 				onContinentsVisibilityChange: (visible) =>
@@ -709,7 +706,8 @@ export default class SphericalGraphPlugin extends Plugin {
 	}
 
 	private createGraphTracker(): void {
-		this.graphTracker?.dispose();
+		this.disposeGraphTracker();
+		const generation = this.graphTrackerGeneration;
 		this.graphTracker = new GraphChangeTracker({
 			graphService: this.graphService,
 			buildGraph: (filters) =>
@@ -723,9 +721,9 @@ export default class SphericalGraphPlugin extends Plugin {
 			getCommittedSignature: () =>
 				this.lifecycle?.committedSnapshot?.graphSignature,
 			onDiff: (observation) =>
-				this.handleGraphObservation(observation),
+				this.handleGraphObservation(observation, generation),
 			onObservation: (observation) =>
-				this.handleGraphObservation(observation),
+				this.handleGraphObservation(observation, generation),
 			onActiveFileChange: (path) => this.setActiveNode(path),
 			debounceMs: this.settings.data.graphChangeDebounceMs,
 			onError: (error) => {
@@ -737,9 +735,19 @@ export default class SphericalGraphPlugin extends Plugin {
 		});
 	}
 
+	private disposeGraphTracker(): void {
+		this.graphTrackerGeneration += 1;
+		this.graphTracker?.dispose();
+		this.graphTracker = undefined;
+	}
+
 	private async handleGraphObservation(
 		observation: GraphChangeObservation,
+		generation: number,
 	): Promise<void> {
+		if (generation !== this.graphTrackerGeneration) {
+			return;
+		}
 		this.currentGraph = observation.graph;
 		this.currentDiff = observation.diff;
 		const committedSnapshot = this.lifecycle?.committedSnapshot;
@@ -757,6 +765,9 @@ export default class SphericalGraphPlugin extends Plugin {
 			observation.graph,
 			observation.diff,
 		);
+		if (generation !== this.graphTrackerGeneration) {
+			return;
+		}
 		this.dataStore.scheduleGraphCacheSave(observation.graph);
 		this.broadcastPinnedNotes();
 		this.broadcastStatus();
@@ -975,10 +986,31 @@ export default class SphericalGraphPlugin extends Plugin {
 			new Notice('Cancel the active layout calculation before loading a map.');
 			return;
 		}
-		const persisted = await this.dataStore.reload();
+		/* Invalidate an in-flight local vault scan before reading the Sync file.
+		 * Otherwise its late callback can replace the just-restored graph with a
+		 * device-local observation. */
+		this.disposeGraphTracker();
+		let persisted: PersistedPluginData<SphericalGraphSettings>;
+		try {
+			persisted = await this.dataStore.reload();
+		} catch (error: unknown) {
+			this.createGraphTracker();
+			throw error;
+		}
 		const snapshot = persisted.committedLayout;
 		if (snapshot === null) {
+			this.createGraphTracker();
 			new Notice('No saved spherical map was found.');
+			return;
+		}
+		if (
+			snapshot.algorithmVersion < MINIMUM_LOADABLE_ALGORITHM_VERSION ||
+			snapshot.algorithmVersion > CURRENT_ALGORITHM_VERSION
+		) {
+			this.createGraphTracker();
+			new Notice(
+				'The synchronized map was created by an incompatible plugin version.',
+			);
 			return;
 		}
 		this.settings = cloneSphericalGraphSettings(persisted.settings);

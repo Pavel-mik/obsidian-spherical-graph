@@ -144,6 +144,9 @@ export class GraphChangeTracker {
 				diff,
 				reasons: Object.freeze(reasons),
 			});
+			if (this.disposed) {
+				return observation;
+			}
 			if (!diff.isEmpty) {
 				await this.options.onDiff(observation);
 			} else {

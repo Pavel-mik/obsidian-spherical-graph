@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-08-11
+
+### Changed
+
+- Continuous camera gestures no longer rewrite the synchronized plugin-data
+  envelope. The current viewpoint is persisted explicitly with **Save map**.
+
+### Fixed
+
+- Partial writes now merge against the latest `data.json`, preventing a stale
+  phone or tablet camera/settings write from rolling back a newer synchronized
+  layout, continent raster, or pin set.
+- Pin actions merge with pins that arrived through Obsidian Sync after the
+  device started, so favourites added on different devices are retained.
+- **Load map** now invalidates in-flight local graph observations before it
+  restores the synchronized state, preventing a late mobile vault scan from
+  replacing the loaded globe or triggering a different layout.
+
 ## [1.9.1] - 2026-08-11
 
 ### Changed
