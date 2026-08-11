@@ -5,6 +5,13 @@ import { TagLayer } from './TagLayer';
 
 const CLICK_DRAG_THRESHOLD_PX = 5;
 
+export interface PickingOptions {
+	enableHover?: boolean;
+	touchDragThresholdPx?: number;
+	touchPickRadiusPx?: number;
+	enableDoubleClick?: boolean;
+}
+
 export interface PickingCallbacks {
 	onHover(item: PickedGraphItem | undefined): void;
 	onSelect(item: PickedGraphItem | undefined): void;
@@ -29,6 +36,8 @@ export class PickingController {
 	private pointerStart: PointerStart | undefined;
 	private selectedNode: RenderNode | undefined;
 	private disposed = false;
+	private readonly activePointers = new Set<number>();
+	private multiTouchGesture = false;
 
 	constructor(
 		private readonly canvas: HTMLCanvasElement,
@@ -36,6 +45,7 @@ export class PickingController {
 		private readonly nodeLayer: NodeLayer,
 		private readonly tagLayer: TagLayer,
 		private readonly callbacks: PickingCallbacks,
+		private readonly options: PickingOptions = {},
 	) {
 		const parent = canvas.parentElement;
 		if (parent === null) {
@@ -79,6 +89,13 @@ export class PickingController {
 		if (event.button !== 0) {
 			return;
 		}
+		this.activePointers.add(event.pointerId);
+		if (this.activePointers.size > 1) {
+			this.multiTouchGesture = true;
+			if (this.pointerStart !== undefined) {
+				this.pointerStart.moved = true;
+			}
+		}
 		this.pointerStart = {
 			pointerId: event.pointerId,
 			x: event.clientX,
@@ -94,9 +111,19 @@ export class PickingController {
 				event.clientX - start.x,
 				event.clientY - start.y,
 			);
-			if (distance > CLICK_DRAG_THRESHOLD_PX) {
+			const threshold =
+				event.pointerType === 'touch'
+					? (this.options.touchDragThresholdPx ?? 12)
+					: CLICK_DRAG_THRESHOLD_PX;
+			if (distance > threshold) {
 				start.moved = true;
 			}
+		}
+
+		if (event.pointerType === 'touch' || this.options.enableHover === false) {
+			this.callbacks.onHover(undefined);
+			this.tooltip.hidden = true;
+			return;
 		}
 
 		const item = this.pick(event.clientX, event.clientY);
@@ -107,16 +134,29 @@ export class PickingController {
 	private readonly onPointerUp = (event: PointerEvent): void => {
 		const start = this.pointerStart;
 		this.pointerStart = undefined;
+		this.activePointers.delete(event.pointerId);
+		const wasMultiTouch = this.multiTouchGesture;
+		if (this.activePointers.size === 0) {
+			this.multiTouchGesture = false;
+		}
 		if (
 			event.button !== 0 ||
 			start === undefined ||
 			start.pointerId !== event.pointerId ||
-			start.moved
+			start.moved ||
+			wasMultiTouch
 		) {
 			return;
 		}
 
-		const item = this.pick(event.clientX, event.clientY);
+		const item =
+			event.pointerType === 'touch'
+				? this.pickWithTolerance(
+						event.clientX,
+						event.clientY,
+						this.options.touchPickRadiusPx ?? 10,
+					)
+				: this.pick(event.clientX, event.clientY);
 		if (
 			item?.kind === 'node' &&
 			(event.ctrlKey || event.metaKey)
@@ -129,7 +169,11 @@ export class PickingController {
 		this.callbacks.onSelect(item);
 	};
 
-	private readonly onPointerCancel = (): void => {
+	private readonly onPointerCancel = (event: PointerEvent): void => {
+		this.activePointers.delete(event.pointerId);
+		if (this.activePointers.size === 0) {
+			this.multiTouchGesture = false;
+		}
 		this.pointerStart = undefined;
 	};
 
@@ -139,6 +183,9 @@ export class PickingController {
 	};
 
 	private readonly onDoubleClick = (event: MouseEvent): void => {
+		if (this.options.enableDoubleClick === false) {
+			return;
+		}
 		const item = this.pick(event.clientX, event.clientY);
 		if (item?.kind === 'node') {
 			this.callbacks.onOpen(
@@ -220,6 +267,33 @@ export class PickingController {
 		return candidates.sort(
 			(left, right) => left.distance - right.distance,
 		)[0]?.item;
+	}
+
+	private pickWithTolerance(
+		clientX: number,
+		clientY: number,
+		radius: number,
+	): PickedGraphItem | undefined {
+		const center = this.pick(clientX, clientY);
+		if (center !== undefined || radius <= 0) {
+			return center;
+		}
+		for (const [x, y] of [
+			[radius, 0],
+			[-radius, 0],
+			[0, radius],
+			[0, -radius],
+			[radius * 0.7, radius * 0.7],
+			[-radius * 0.7, radius * 0.7],
+			[radius * 0.7, -radius * 0.7],
+			[-radius * 0.7, -radius * 0.7],
+		] as const) {
+			const item = this.pick(clientX + x, clientY + y);
+			if (item !== undefined) {
+				return item;
+			}
+		}
+		return undefined;
 	}
 
 	private updateTooltip(

@@ -7,6 +7,7 @@ import {
 	SphericalGraphSettings,
 	SurfaceMode,
 } from '../settings/settings';
+import type { RuntimeRenderProfile } from '../platform/runtimeProfile';
 
 export interface ViewGraphDiffSummary {
 	addedNodeIds: readonly string[];
@@ -81,12 +82,14 @@ export interface SphericalGraphViewCallbacks {
 	onPinChange(node: RenderNode, pinned: boolean): Promise<void> | void;
 	onManualSave(camera: CameraState): Promise<void> | void;
 	onManualLoad(): Promise<void> | void;
+	onAppHidden?(): Promise<void> | void;
 	onClose(): Promise<void> | void;
 }
 
 export interface SphericalGraphViewOptions {
 	getSettings(): SphericalGraphSettings;
 	callbacks: SphericalGraphViewCallbacks;
+	runtimeProfile: RuntimeRenderProfile;
 	initialCamera?: CameraState;
 }
 

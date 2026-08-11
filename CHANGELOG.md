@@ -6,6 +6,28 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-08-11
+
+### Added
+
+- Adaptive Android phone and tablet renderer profiles with Automatic,
+  Battery saver, and High quality settings.
+- Touch-first picking with larger tap tolerance, pinch-compatible gesture
+  handling, 44 px controls, mobile safe areas, and dynamic viewport fullscreen.
+- A Sync-safe persistence budget that preserves the canonical layout,
+  continents, camera, settings, and pins while dropping only the rebuildable
+  graph cache when `data.json` approaches 4.5 MB.
+
+### Changed
+
+- Mobile rendering lowers pixel density and geometry budgets, defers decorative
+  layers, temporarily hides labels/base roads during gestures, and throttles
+  continuous frames. Desktop rendering retains its existing profile.
+- Phones omit Auto rotate and the normal atmosphere control; tablets retain
+  the presentation experience. Mobile views suspend rendering and cancel an
+  active layout worker when Obsidian moves to the background.
+- The plugin manifest now allows installation on mobile devices.
+
 ## [1.8.1] - 2026-08-07
 
 ### Added
@@ -524,7 +546,8 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.8.1...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.0...HEAD
+[1.9.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.8.1...1.9.0
 [1.8.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.8.0...1.8.1
 [1.8.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.7.0...1.8.0
 [1.7.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.6.1...1.7.0

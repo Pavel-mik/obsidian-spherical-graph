@@ -68,12 +68,14 @@ export class TagLayer {
 	private readonly linkColor = new Color();
 	private readonly labelRoot: HTMLElement | undefined;
 	private readonly labelPool: HTMLElement[] = [];
+	private interactionActive = false;
 
 	constructor(
 		private readonly group: Group,
 		appearance: AppearanceSettings,
 		theme: RenderTheme,
 		container?: HTMLElement,
+		private readonly maxVisibleLabels = MAX_VISIBLE_TAG_LABELS,
 	) {
 		this.appearance = appearance;
 		this.applySilverTheme(theme);
@@ -218,6 +220,7 @@ export class TagLayer {
 			this.appearance.labelZoomThresholdPercent,
 		);
 		if (
+			this.interactionActive ||
 			!this.visible ||
 			!this.appearance.showLabels ||
 			zoomVisuals.opacity <= 0.01 ||
@@ -489,7 +492,7 @@ export class TagLayer {
 			return;
 		}
 		const desired = Math.min(
-			MAX_VISIBLE_TAG_LABELS,
+			this.maxVisibleLabels,
 			this.snapshot?.tags.length ?? 0,
 		);
 		while (this.labelPool.length < desired) {
@@ -502,6 +505,10 @@ export class TagLayer {
 		while (this.labelPool.length > desired) {
 			this.labelPool.pop()?.remove();
 		}
+	}
+
+	setInteractionActive(active: boolean): void {
+		this.interactionActive = active;
 	}
 
 	private hideLabels(): void {

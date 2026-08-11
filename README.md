@@ -40,9 +40,26 @@ longer invents corridors between cities after layout.
 ## Requirements
 
 - Obsidian 1.7.2 or later.
-- Desktop app. The renderer, worker lifecycle, and resource profile are not
-  supported on mobile.
+- Desktop, Android phone, or Android tablet. iPhone and iPad use the same
+  mobile profile but still require device testing before they are considered
+  fully supported.
 - No account, API key, internet connection, or paid service is required.
+
+## Mobile behavior
+
+The globe keeps the same saved layout on desktop and mobile. Automatic mobile
+profiles reduce GPU pixel density, label budgets, road/land tessellation, and
+continuous-frame rate without moving a city. While a touch gesture is active,
+ordinary labels and base roads are temporarily hidden; selections and routes
+remain visible. Phone mode disables hover, Auto rotate, and the normal
+atmosphere control. Tablet mode keeps Fullscreen, Auto rotate, and atmosphere.
+
+Touch input supports drag rotation, pinch zoom, and tap selection with a larger
+tap tolerance. Controls use 44 px targets and safe-area insets. Only one graph
+view is retained on mobile, rendering stops when Obsidian moves to the
+background, and an active layout calculation is cancelled to avoid an Android
+background freeze. Expensive Refresh and Renew actions remain available in
+the Map controls menu.
 
 ## Why a sphere?
 
@@ -122,7 +139,9 @@ and a reliable rename keeps the old position under the new path. Select
 - Transactional committed snapshot, schema migrations, stable camera state,
   saved graph metadata, exact continent territory raster, tags, auxiliary nodes, pins, and safe
   rename/prune handling. The complete `data.json` map can be carried by
-  Obsidian Sync and restored with **Load map** without a vault scan.
+  Obsidian Sync and restored with **Load map**. When the optional derived graph
+  cache is compacted for Sync safety, the vault is indexed again while the
+  canonical layout and geography remain unchanged.
 - Short-lived inline Web Workers isolate layout solving, live-vault graph
   indexing, post-layout continental analysis, and detailed land meshing from
   Obsidian's UI thread. Large maps use an adaptive land-detail ceiling.
@@ -174,6 +193,8 @@ and a reliable rename keeps the old position under the new path. Select
 | Action | Control |
 | --- | --- |
 | Rotate | Drag empty canvas space |
+| Rotate on touch | Drag with one finger |
+| Zoom on touch | Pinch with two fingers |
 | Start or stop automatic rotation | Toggle **Auto rotate** in the bottom status rail |
 | Zoom | Wheel or supported pinch gesture |
 | Inspect | Hover a node |
@@ -212,6 +233,9 @@ Manual or automatic rotation changes only the camera and never a node position.
 
 ### Appearance
 
+- separate **Phone render quality** and **Tablet render quality** profiles:
+  Automatic (recommended), Battery saver, and High quality; reopen the graph
+  view after changing a profile
 - relative **Globe size** and degree scaling; a larger Globe value makes city
   markers and the coral selection frame smaller without moving the layout.
   Initialize and Renew automatically choose this value from the vault's note
@@ -264,6 +288,13 @@ pins between devices, enable community-plugin data in
 No extra file is written into the vault root. If Sync updates plugin data while
 Obsidian is already running, reload the plugin or restart Obsidian before
 judging the restored map.
+
+To stay below the 5 MB per-file ceiling of the Standard Sync plan, persistence
+uses a 4.5 MB safety budget. At the budget boundary it discards only the
+rebuildable graph cache; committed positions, continent ownership, camera,
+settings, and pins remain authoritative. If those canonical fields alone
+exceed the budget, the save is rejected instead of writing an unsyncable or
+partial state.
 
 ## Installation
 
@@ -347,7 +378,9 @@ Spherical Graph is designed for private, offline vault use:
 
 ## Known limitations
 
-- Desktop only; mobile interaction and resource behavior are not validated.
+- Android uses adaptive phone/tablet profiles, but final release QA is still
+  required on representative low-memory phones and tablets. Very large vaults
+  are intentionally outside the phone use case and must fail gracefully.
 - Arbitrary non-planar graphs can still have crossing edges on a sphere.
 - Labels are intentionally capped and fade with zoom, so not every visible
   note is labelled at every camera distance. Narrow panes can lower the

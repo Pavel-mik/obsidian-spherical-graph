@@ -216,6 +216,7 @@ export class SphereLayer {
 		appearance: AppearanceSettings,
 		theme: RenderTheme,
 		private readonly onInvalidate?: () => void,
+		private readonly landDetailScale = 1,
 	) {
 		this.appearance = appearance;
 		this.theme = theme;
@@ -318,9 +319,14 @@ export class SphereLayer {
 		) {
 			return;
 		}
-		const detail = adaptiveLandDetail(
-			snapshot.nodes.length,
-			snapshot.edges.length,
+		const detail = Math.max(
+			8,
+			Math.round(
+				adaptiveLandDetail(
+					snapshot.nodes.length,
+					snapshot.edges.length,
+				) * this.landDetailScale,
+			),
 		);
 		const seed = hashString(snapshot.layoutRevision);
 		if (this.landWorker !== undefined) {

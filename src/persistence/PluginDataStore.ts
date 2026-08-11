@@ -6,6 +6,7 @@ import type {
 	PersistedContinentalGeography,
 } from "../geography";
 import { migratePluginData } from "./migrations";
+import { prepareSyncSafeData } from "./syncBudget";
 import {
 	createPersistedGraphCache,
 	PersistedGraphCache,
@@ -429,9 +430,8 @@ export class PluginDataStore<TSettings> {
 				camera,
 				pinnedNotePaths,
 			});
-			await this.adapter.saveData(next);
-			this.data = next;
-			return next;
+			this.data = await this.persistEnvelope(next);
+			return this.data;
 		});
 	}
 
@@ -534,8 +534,7 @@ export class PluginDataStore<TSettings> {
 				committedLayout: snapshot,
 				graphCache: createPersistedGraphCache(input.graph),
 			});
-			await this.adapter.saveData(next);
-			this.data = next;
+			this.data = await this.persistEnvelope(next);
 			this.diagnostic("commit.persisted", {
 				mode: input.mode,
 				nodeCount: input.graph.nodes.length,
@@ -570,8 +569,7 @@ export class PluginDataStore<TSettings> {
 						? this.data.graphCache
 						: null,
 			});
-			await this.adapter.saveData(next);
-			this.data = next;
+			this.data = await this.persistEnvelope(next);
 			return snapshot;
 		});
 	}
@@ -608,8 +606,7 @@ export class PluginDataStore<TSettings> {
 				graphCache: null,
 				pinnedNotePaths: renamedPins,
 			});
-			await this.adapter.saveData(next);
-			this.data = next;
+			this.data = await this.persistEnvelope(next);
 			return renamed ?? undefined;
 		});
 	}
@@ -644,8 +641,7 @@ export class PluginDataStore<TSettings> {
 				graphCache: null,
 				pinnedNotePaths: prunedPins,
 			});
-			await this.adapter.saveData(next);
-			this.data = next;
+			this.data = await this.persistEnvelope(next);
 			return pruned ?? undefined;
 		});
 	}
@@ -657,8 +653,7 @@ export class PluginDataStore<TSettings> {
 				...this.data,
 				settings: parsed,
 			});
-			await this.adapter.saveData(next);
-			this.data = next;
+			this.data = await this.persistEnvelope(next);
 		});
 		return parsed;
 	}
@@ -672,8 +667,7 @@ export class PluginDataStore<TSettings> {
 				...this.data,
 				camera: parsed,
 			});
-			await this.adapter.saveData(next);
-			this.data = next;
+			this.data = await this.persistEnvelope(next);
 		});
 		return parsed;
 	}
@@ -693,8 +687,7 @@ export class PluginDataStore<TSettings> {
 				...this.data,
 				pinnedNotePaths,
 			});
-			await this.adapter.saveData(next);
-			this.data = next;
+			this.data = await this.persistEnvelope(next);
 		});
 		return pinnedNotePaths;
 	}
@@ -727,8 +720,7 @@ export class PluginDataStore<TSettings> {
 				...this.data,
 				pinnedNotePaths,
 			});
-			await this.adapter.saveData(envelope);
-			this.data = envelope;
+			this.data = await this.persistEnvelope(envelope);
 			return pinnedNotePaths;
 		});
 	}
@@ -774,8 +766,7 @@ export class PluginDataStore<TSettings> {
 				...this.data,
 				pinnedNotePaths,
 			});
-			await this.adapter.saveData(envelope);
-			this.data = envelope;
+			this.data = await this.persistEnvelope(envelope);
 			return pinnedNotePaths;
 		});
 	}
@@ -798,8 +789,7 @@ export class PluginDataStore<TSettings> {
 				...this.data,
 				pinnedNotePaths,
 			});
-			await this.adapter.saveData(envelope);
-			this.data = envelope;
+			this.data = await this.persistEnvelope(envelope);
 			return pinnedNotePaths;
 		});
 	}
@@ -866,8 +856,7 @@ export class PluginDataStore<TSettings> {
 					pinnedNotePaths ?? this.data.pinnedNotePaths,
 				graphCache: graphCache ?? this.data.graphCache,
 			});
-			await this.adapter.saveData(next);
-			this.data = next;
+			this.data = await this.persistEnvelope(next);
 		});
 	}
 
@@ -900,9 +889,8 @@ export class PluginDataStore<TSettings> {
 				pinnedNotePaths:
 					pinnedNotePaths ?? this.data.pinnedNotePaths,
 			});
-			await this.adapter.saveData(next);
-			this.data = next;
-			return next;
+			this.data = await this.persistEnvelope(next);
+			return this.data;
 		});
 	}
 
@@ -922,6 +910,22 @@ export class PluginDataStore<TSettings> {
 		return this.options.parseSettings === undefined
 			? deepMergeValidated(this.options.defaultSettings, value)
 			: this.options.parseSettings(value);
+	}
+
+	private async persistEnvelope(
+		envelope: PersistedPluginData<TSettings>,
+	): Promise<PersistedPluginData<TSettings>> {
+		const prepared = prepareSyncSafeData(envelope);
+		if (prepared.graphCacheDropped || prepared.warning) {
+			this.diagnostic("sync-budget", {
+				byteLength: prepared.byteLength,
+				graphCacheDropped: prepared.graphCacheDropped,
+				warning: prepared.warning,
+			});
+		}
+		const safeEnvelope = freezeEnvelope(prepared.data);
+		await this.adapter.saveData(safeEnvelope);
+		return safeEnvelope;
 	}
 
 	private diagnostic(

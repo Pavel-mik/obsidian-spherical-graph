@@ -27,6 +27,8 @@ git diff --check
 ```
 
 - [ ] Perform the relevant scenarios in `MANUAL_TEST_PLAN.md`.
+- [ ] Complete `MOBILE_QA.md` on at least one Android phone and one Android
+      tablet before advertising the build as Android-tested.
 - [ ] Record the result in `VALIDATION.md`.
 
 ## GitHub release

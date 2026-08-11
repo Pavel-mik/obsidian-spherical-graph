@@ -32,6 +32,12 @@ export interface SphericalGraphSettingTabController {
 const COPY = {
 	dataHeading: 'Data',
 	appearanceHeading: 'Appearance',
+	phoneRenderQuality: 'Phone render quality',
+	phoneRenderQualityDescription:
+		'Automatic is recommended. Changes apply when the graph view is reopened.',
+	tabletRenderQuality: 'Tablet render quality',
+	tabletRenderQualityDescription:
+		'Balance presentation quality and battery use. Changes apply when the graph view is reopened.',
 	advancedHeading: 'Advanced layout',
 	refreshHeading: 'Refresh preservation',
 	excludedFolders: 'Excluded folders',
@@ -219,6 +225,44 @@ export class SphericalGraphSettingTab extends PluginSettingTab {
 		new Setting(this.containerEl)
 			.setName(COPY.appearanceHeading)
 			.setHeading();
+
+		new Setting(this.containerEl)
+			.setName(COPY.phoneRenderQuality)
+			.setDesc(COPY.phoneRenderQualityDescription)
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption('automatic', 'Automatic')
+					.addOption('battery-saver', 'Battery saver')
+					.addOption('high-quality', 'High quality')
+					.setValue(settings.appearance.phoneRenderQuality)
+					.onChange((value) =>
+						this.commit(settings, 'appearance', (next) => {
+							next.appearance.phoneRenderQuality =
+								value === 'battery-saver' || value === 'high-quality'
+									? value
+									: 'automatic';
+						}),
+					),
+			);
+
+		new Setting(this.containerEl)
+			.setName(COPY.tabletRenderQuality)
+			.setDesc(COPY.tabletRenderQualityDescription)
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption('automatic', 'Automatic')
+					.addOption('battery-saver', 'Battery saver')
+					.addOption('high-quality', 'High quality')
+					.setValue(settings.appearance.tabletRenderQuality)
+					.onChange((value) =>
+						this.commit(settings, 'appearance', (next) => {
+							next.appearance.tabletRenderQuality =
+								value === 'battery-saver' || value === 'high-quality'
+									? value
+									: 'automatic';
+						}),
+					),
+			);
 
 		this.addNumberSetting(
 			this.containerEl,

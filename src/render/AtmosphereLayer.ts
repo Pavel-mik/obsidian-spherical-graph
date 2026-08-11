@@ -79,6 +79,8 @@ export interface AtmosphereLayerOptions {
 	visible?: boolean;
 	color?: ColorRepresentation;
 	opacity?: number;
+	widthSegments?: number;
+	heightSegments?: number;
 }
 
 /**
@@ -87,7 +89,7 @@ export interface AtmosphereLayerOptions {
  * drawn, avoiding the visual impression of a glass globe.
  */
 export class AtmosphereLayer {
-	private readonly geometry = new SphereGeometry(1, 64, 40);
+	private readonly geometry: SphereGeometry;
 	private readonly color = new Color();
 	private readonly material: ShaderMaterial;
 	private readonly mesh: Mesh;
@@ -98,6 +100,11 @@ export class AtmosphereLayer {
 		private readonly group: Group,
 		options: AtmosphereLayerOptions = {},
 	) {
+		this.geometry = new SphereGeometry(
+			1,
+			Math.max(12, Math.round(options.widthSegments ?? 64)),
+			Math.max(8, Math.round(options.heightSegments ?? 40)),
+		);
 		this.heightPercent = normalizeAtmosphereHeightPercent(
 			options.heightPercent,
 		);

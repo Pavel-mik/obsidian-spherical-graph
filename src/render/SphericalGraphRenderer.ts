@@ -43,6 +43,7 @@ import {
 	automaticRotationAngle,
 } from './autoRotation';
 import { cameraZoomInPercent } from './labelVisibility';
+import type { RuntimeRenderProfile } from '../platform/runtimeProfile';
 
 interface FocusAnimation {
 	startedAt: number;
@@ -89,6 +90,7 @@ export class SphericalGraphRenderer {
 	private readonly pickingController: PickingController;
 	private readonly callbacks: RendererCallbacks;
 	private readonly autoRotationPause: AutoRotationPauseController;
+	private readonly profile: RuntimeRenderProfile;
 	private appearance: AppearanceSettings;
 	private theme: RenderTheme;
 	private snapshot: PreparedRenderSnapshot | undefined;
@@ -98,6 +100,8 @@ export class SphericalGraphRenderer {
 	private resizeObserver: ResizeObserver | undefined;
 	private themeObserver: MutationObserver | undefined;
 	private animationFrame: number | undefined;
+	private detailFrame: number | undefined;
+	private continuousTimer: number | undefined;
 	private focusAnimation: FocusAnimation | undefined;
 	private autoRotationRequested = false;
 	private autoRotationActive = false;
@@ -108,6 +112,7 @@ export class SphericalGraphRenderer {
 	private pixelRatio = 0;
 	private disposed = false;
 	private contextLost = false;
+	private suspended = false;
 
 	constructor(
 		private readonly container: HTMLElement,
@@ -120,7 +125,8 @@ export class SphericalGraphRenderer {
 		}
 		this.ownerWindow = ownerWindow;
 		this.callbacks = options.callbacks ?? {};
-		this.appearance = { ...options.appearance };
+		this.profile = options.profile;
+		this.appearance = this.profileAppearance(options.appearance);
 		this.theme = this.readTheme();
 		this.autoRotationPause = new AutoRotationPauseController({
 			scheduler: {
@@ -142,14 +148,16 @@ export class SphericalGraphRenderer {
 		this.canvas.tabIndex = 0;
 		this.canvas.setAttribute(
 			'aria-label',
-			'Interactive spherical graph. Drag to rotate and use the wheel to zoom.',
+			this.profile.isMobile
+				? 'Interactive spherical graph. Drag to rotate, pinch to zoom, and tap a city or satellite to select it.'
+				: 'Interactive spherical graph. Drag to rotate and use the wheel to zoom.',
 		);
 
 		this.webglRenderer = new WebGLRenderer({
 			canvas: this.canvas,
-			antialias: true,
+			antialias: this.profile.antialias,
 			alpha: true,
-			powerPreference: 'high-performance',
+			powerPreference: this.profile.powerPreference,
 		});
 		this.webglRenderer.outputColorSpace = 'srgb';
 		this.container.append(this.canvas);
@@ -176,11 +184,13 @@ export class SphericalGraphRenderer {
 			this.appearance,
 			this.theme,
 			() => this.requestRender(),
+			this.profile.landDetailScale,
 		);
 		this.edgeLayer = new EdgeLayer(
 			this.graphGroup,
 			this.appearance,
 			this.theme,
+			this.profile.edgeSegmentScale,
 		);
 		this.nodeLayer = new NodeLayer(
 			this.graphGroup,
@@ -197,10 +207,13 @@ export class SphericalGraphRenderer {
 			this.appearance,
 			this.theme,
 			this.container,
+			Math.min(96, this.profile.maxLabels),
 		);
 		this.atmosphereLayer = new AtmosphereLayer(this.graphGroup, {
 			heightPercent: this.appearance.atmosphereHeightPercent,
 			visible: false,
+			widthSegments: this.profile.atmosphereWidthSegments,
+			heightSegments: this.profile.atmosphereHeightSegments,
 		});
 		this.labelLayer = new LabelLayer(
 			this.container,
@@ -243,6 +256,12 @@ export class SphericalGraphRenderer {
 					this.callbacks.onOpenNode?.(node, openInNewLeaf);
 				},
 			},
+			{
+				enableHover: this.profile.enableHoverPicking,
+				touchDragThresholdPx: 12,
+				touchPickRadiusPx: 10,
+				enableDoubleClick: !this.profile.isMobile,
+			},
 		);
 
 		this.canvas.addEventListener(
@@ -261,13 +280,32 @@ export class SphericalGraphRenderer {
 	setSnapshot(snapshot: RenderGraphSnapshot): void {
 		this.assertUsable();
 		const prepared = prepareRenderSnapshot(snapshot);
-		this.sphereLayer.setSnapshot(prepared);
 		this.nodeLayer.setSnapshot(prepared);
 		this.pinLayer.setSnapshot(prepared);
-		this.edgeLayer.setSnapshot(prepared);
-		this.tagLayer.setSnapshot(prepared);
-		this.labelLayer.setSnapshot(prepared);
 		this.snapshot = prepared;
+		if (this.detailFrame !== undefined) {
+			this.ownerWindow.cancelAnimationFrame(this.detailFrame);
+			this.detailFrame = undefined;
+		}
+		const applyDetailLayers = (): void => {
+			if (this.disposed || this.snapshot !== prepared) {
+				return;
+			}
+			this.sphereLayer.setSnapshot(prepared);
+			this.edgeLayer.setSnapshot(prepared);
+			this.tagLayer.setSnapshot(prepared);
+			this.labelLayer.setSnapshot(prepared);
+			this.applySelection();
+			this.requestRender();
+		};
+		if (this.profile.deferDecorativeLayers) {
+			this.detailFrame = this.ownerWindow.requestAnimationFrame(() => {
+				this.detailFrame = undefined;
+				applyDetailLayers();
+			});
+		} else {
+			applyDetailLayers();
+		}
 
 		if (
 			this.selection.selectedNodeId !== undefined &&
@@ -293,7 +331,7 @@ export class SphericalGraphRenderer {
 
 	updateAppearance(appearance: AppearanceSettings): void {
 		this.assertUsable();
-		this.appearance = { ...appearance };
+		this.appearance = this.profileAppearance(appearance);
 		this.nodeLayer.updateAppearance(this.appearance);
 		this.pinLayer.updateAppearance(this.appearance);
 		this.edgeLayer.updateAppearance(this.appearance);
@@ -344,6 +382,7 @@ export class SphericalGraphRenderer {
 	}
 
 	setAutoRotation(enabled: boolean): void {
+		enabled = enabled && this.profile.supportsAutoRotation;
 		if (this.autoRotationRequested === enabled) {
 			return;
 		}
@@ -366,6 +405,27 @@ export class SphericalGraphRenderer {
 			return;
 		}
 		this.presentationMode = enabled;
+		this.requestRender();
+	}
+
+	setSuspended(suspended: boolean): void {
+		if (this.suspended === suspended) {
+			return;
+		}
+		this.suspended = suspended;
+		this.lastAutoRotationTimestamp = undefined;
+		if (suspended) {
+			if (this.animationFrame !== undefined) {
+				this.ownerWindow.cancelAnimationFrame(this.animationFrame);
+				this.animationFrame = undefined;
+			}
+			if (this.continuousTimer !== undefined) {
+				this.ownerWindow.clearTimeout(this.continuousTimer);
+				this.continuousTimer = undefined;
+			}
+			this.atmosphereLayer.setVisible(false);
+			return;
+		}
 		this.requestRender();
 	}
 
@@ -488,6 +548,14 @@ export class SphericalGraphRenderer {
 			this.ownerWindow.cancelAnimationFrame(this.animationFrame);
 			this.animationFrame = undefined;
 		}
+		if (this.detailFrame !== undefined) {
+			this.ownerWindow.cancelAnimationFrame(this.detailFrame);
+			this.detailFrame = undefined;
+		}
+		if (this.continuousTimer !== undefined) {
+			this.ownerWindow.clearTimeout(this.continuousTimer);
+			this.continuousTimer = undefined;
+		}
 		this.resizeObserver?.disconnect();
 		this.resizeObserver = undefined;
 		this.themeObserver?.disconnect();
@@ -527,11 +595,22 @@ export class SphericalGraphRenderer {
 
 	private readonly onControlsStart = (): void => {
 		this.cancelFocus();
+		if (this.profile.hideBaseEdgesDuringInteraction) {
+			this.edgeLayer.setInteractionActive(true);
+		}
+		if (this.profile.hideLabelsDuringInteraction) {
+			this.labelLayer.setInteractionActive(true);
+			this.tagLayer.setInteractionActive(true);
+		}
 		this.autoRotationPause.beginUserInteraction();
 	};
 
 	private readonly onControlsEnd = (): void => {
+		this.edgeLayer.setInteractionActive(false);
+		this.labelLayer.setInteractionActive(false);
+		this.tagLayer.setInteractionActive(false);
 		this.autoRotationPause.endUserInteraction();
+		this.requestRender();
 		this.emitCameraChange();
 	};
 
@@ -619,6 +698,7 @@ export class SphericalGraphRenderer {
 		if (
 			this.disposed ||
 			this.contextLost ||
+			this.suspended ||
 			this.animationFrame !== undefined
 		) {
 			return;
@@ -647,9 +727,23 @@ export class SphericalGraphRenderer {
 			autoRotationContinues ||
 			atmosphereContinues
 		) {
-			this.requestRender();
+			this.scheduleContinuousRender();
 		}
 	};
+
+	private scheduleContinuousRender(): void {
+		if (this.profile.continuousFrameIntervalMs <= 0) {
+			this.requestRender();
+			return;
+		}
+		if (this.continuousTimer !== undefined || this.suspended) {
+			return;
+		}
+		this.continuousTimer = this.ownerWindow.setTimeout(() => {
+			this.continuousTimer = undefined;
+			this.requestRender();
+		}, this.profile.continuousFrameIntervalMs);
+	}
 
 	private advanceAutoRotation(timestamp: number): boolean {
 		if (!this.autoRotationActive) {
@@ -677,7 +771,7 @@ export class SphericalGraphRenderer {
 
 	private advanceAtmosphere(timestamp: number): boolean {
 		const enabled =
-			this.presentationMode ||
+			(this.presentationMode && this.profile.presentationUsesAtmosphere) ||
 			(this.appearance.showAtmosphere &&
 				this.autoRotationRequested);
 		if (!enabled) {
@@ -861,6 +955,13 @@ export class SphericalGraphRenderer {
 		if (this.disposed) {
 			throw new Error('SphericalGraphRenderer has been disposed.');
 		}
+	}
+
+	private profileAppearance(appearance: AppearanceSettings): AppearanceSettings {
+		return {
+			...appearance,
+			maxLabels: Math.min(appearance.maxLabels, this.profile.maxLabels),
+		};
 	}
 }
 

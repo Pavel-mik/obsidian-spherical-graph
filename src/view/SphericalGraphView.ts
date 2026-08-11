@@ -163,6 +163,8 @@ export class SphericalGraphView extends ItemView {
 		this.contentEl.classList.add('spherical-graph-view-content');
 		this.root = this.contentEl.createDiv();
 		this.root.className = 'spherical-graph-view';
+		this.root.dataset.device = this.options.runtimeProfile.deviceClass;
+		this.root.dataset.quality = this.options.runtimeProfile.qualityMode;
 		this.stage = this.root.createDiv();
 		this.stage.className = 'spherical-graph-stage';
 		this.contentEl.append(this.root);
@@ -232,11 +234,16 @@ export class SphericalGraphView extends ItemView {
 			this.displayFilters,
 			this.currentSettings.appearance.showContinents,
 			this.currentSettings.appearance.showAtmosphere,
+			this.options.runtimeProfile,
 		);
 		this.root.append(this.stage);
 		this.root.ownerDocument.addEventListener(
 			'fullscreenchange',
 			this.onFullscreenChange,
+		);
+		this.root.ownerDocument.addEventListener(
+			'visibilitychange',
+			this.onVisibilityChange,
 		);
 
 		const statusRail = this.root.createDiv();
@@ -267,6 +274,8 @@ export class SphericalGraphView extends ItemView {
 			autoRotateIndicator,
 			autoRotateText,
 		);
+		this.autoRotateLabel.hidden =
+			!this.options.runtimeProfile.supportsAutoRotation;
 		this.autoRotateToggle.addEventListener(
 			'change',
 			this.onAutoRotateToggle,
@@ -282,6 +291,7 @@ export class SphericalGraphView extends ItemView {
 		try {
 			this.renderer = new SphericalGraphRenderer(this.stage, {
 				appearance: this.currentSettings.appearance,
+				profile: this.options.runtimeProfile,
 				camera: this.options.initialCamera,
 				callbacks: {
 					onOpenNode: (node, openInNewLeaf) => {
@@ -346,6 +356,10 @@ export class SphericalGraphView extends ItemView {
 		this.root?.ownerDocument.removeEventListener(
 			'fullscreenchange',
 			this.onFullscreenChange,
+		);
+		this.root?.ownerDocument.removeEventListener(
+			'visibilitychange',
+			this.onVisibilityChange,
 		);
 		this.renderer?.dispose();
 		this.renderer = undefined;
@@ -1017,7 +1031,9 @@ export class SphericalGraphView extends ItemView {
 		root.dataset.presentation = 'true';
 		this.toolbar?.setFullscreenActive(true);
 		this.renderer?.setPresentationMode(true);
-		this.setAutoRotation(true);
+		if (this.options.runtimeProfile.supportsAutoRotation) {
+			this.setAutoRotation(true);
+		}
 		if (typeof root.requestFullscreen === 'function') {
 			void root
 				.requestFullscreen({ navigationUI: 'hide' })
@@ -1079,6 +1095,14 @@ export class SphericalGraphView extends ItemView {
 			root.ownerDocument.fullscreenElement !== root
 		) {
 			this.exitPresentationMode();
+		}
+	};
+
+	private readonly onVisibilityChange = (): void => {
+		const hidden = this.root?.ownerDocument.visibilityState === 'hidden';
+		this.renderer?.setSuspended(hidden);
+		if (hidden) {
+			this.invoke(() => this.options.callbacks.onAppHidden?.());
 		}
 	};
 

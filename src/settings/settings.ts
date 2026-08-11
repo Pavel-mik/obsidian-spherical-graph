@@ -11,6 +11,10 @@ import {
 	MIN_TAG_ORBIT_HEIGHT_PERCENT,
 	SPHERE_RADIUS,
 } from '../constants';
+import {
+	RENDER_QUALITY_MODES,
+	type RenderQualityMode,
+} from '../platform/renderQuality';
 
 export const SURFACE_MODES = ['solid', 'transparent', 'hidden'] as const;
 
@@ -44,6 +48,8 @@ export interface AppearanceSettings {
 	surfaceOpacity: number;
 	backgroundFollowsTheme: boolean;
 	focusAnimationDurationMs: number;
+	phoneRenderQuality: RenderQualityMode;
+	tabletRenderQuality: RenderQualityMode;
 }
 
 export interface LayoutSettings {
@@ -108,6 +114,8 @@ export const DEFAULT_SPHERICAL_GRAPH_SETTINGS: SphericalGraphSettings = {
 		surfaceOpacity: 0.92,
 		backgroundFollowsTheme: true,
 		focusAnimationDurationMs: 450,
+		phoneRenderQuality: 'automatic',
+		tabletRenderQuality: 'automatic',
 	},
 	layout: {
 		baseSeed: 42,
@@ -181,6 +189,16 @@ function surfaceModeValue(
 	return typeof value === 'string' &&
 		(SURFACE_MODES as readonly string[]).includes(value)
 		? (value as SurfaceMode)
+		: fallback;
+}
+
+function renderQualityModeValue(
+	value: unknown,
+	fallback: RenderQualityMode,
+): RenderQualityMode {
+	return typeof value === 'string' &&
+		(RENDER_QUALITY_MODES as readonly string[]).includes(value)
+		? (value as RenderQualityMode)
 		: fallback;
 }
 
@@ -399,6 +417,14 @@ export function parseSphericalGraphSettings(
 				appearance.focusAnimationDurationMs,
 				defaults.appearance.focusAnimationDurationMs,
 				{ min: 0, max: 5_000, integer: true },
+			),
+			phoneRenderQuality: renderQualityModeValue(
+				appearance.phoneRenderQuality,
+				defaults.appearance.phoneRenderQuality,
+			),
+			tabletRenderQuality: renderQualityModeValue(
+				appearance.tabletRenderQuality,
+				defaults.appearance.tabletRenderQuality,
 			),
 		},
 		layout: {
