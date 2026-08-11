@@ -125,6 +125,22 @@ export interface ReplacePersistedStateOptions {
 	readonly renames?: readonly GraphRename[];
 }
 
+interface PersistedFieldOwnership {
+	readonly settings?: boolean;
+	readonly layout?: boolean;
+	readonly graphCache?: boolean;
+	readonly camera?: boolean;
+	readonly pins?: boolean;
+}
+
+const OWN_COMPLETE_ENVELOPE: PersistedFieldOwnership = Object.freeze({
+	settings: true,
+	layout: true,
+	graphCache: true,
+	camera: true,
+	pins: true,
+});
+
 const DEFAULT_SCHEDULER: PersistenceScheduler = {
 	set: (callback, delayMs) => window.setTimeout(callback, delayMs),
 	clear: (handle) => {
@@ -248,6 +264,32 @@ function equalStringArrays(
 	);
 }
 
+function sameLayoutRevision(
+	left: PersistedLayoutSnapshot | null,
+	right: PersistedLayoutSnapshot | null,
+): boolean {
+	return (
+		left?.snapshotId === right?.snapshotId &&
+		left?.graphSignature === right?.graphSignature &&
+		left?.completedAt === right?.completedAt
+	);
+}
+
+function sameCameraState(
+	left: PersistedCameraState,
+	right: PersistedCameraState,
+): boolean {
+	return (
+		left.position.every((value, index) => value === right.position[index]) &&
+		left.up.every((value, index) => value === right.up[index]) &&
+		left.target.every((value, index) => value === right.target[index])
+	);
+}
+
+function sameJsonValue(left: unknown, right: unknown): boolean {
+	return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export class PluginDataStore<TSettings> {
 	private readonly adapter: PluginDataAdapter;
 	private readonly options: PluginDataStoreOptions<TSettings>;
@@ -322,6 +364,11 @@ export class PluginDataStore<TSettings> {
 	}
 
 	private async loadFromAdapter(): Promise<PersistedPluginData<TSettings>> {
+		this.data = await this.readAdapterState();
+		return this.data;
+	}
+
+	private async readAdapterState(): Promise<PersistedPluginData<TSettings>> {
 		const migrated = migratePluginData(await this.adapter.loadData());
 		const snapshot =
 			migrated.committedLayout === null
@@ -329,7 +376,7 @@ export class PluginDataStore<TSettings> {
 				: validatePersistedLayoutSnapshot(
 						migrated.committedLayout,
 					);
-		this.data = freezeEnvelope({
+		return freezeEnvelope({
 			schemaVersion: CURRENT_SCHEMA_VERSION,
 			settings: this.parseSettings(migrated.settings),
 			committedLayout: snapshot ?? null,
@@ -345,7 +392,6 @@ export class PluginDataStore<TSettings> {
 				migrated.pinnedNotePaths,
 			),
 		});
-		return this.data;
 	}
 
 	/**
@@ -430,7 +476,10 @@ export class PluginDataStore<TSettings> {
 				camera,
 				pinnedNotePaths,
 			});
-			this.data = await this.persistEnvelope(next);
+			this.data = await this.persistEnvelope(
+				next,
+				OWN_COMPLETE_ENVELOPE,
+			);
 			return this.data;
 		});
 	}
@@ -534,7 +583,10 @@ export class PluginDataStore<TSettings> {
 				committedLayout: snapshot,
 				graphCache: createPersistedGraphCache(input.graph),
 			});
-			this.data = await this.persistEnvelope(next);
+			this.data = await this.persistEnvelope(next, {
+				layout: true,
+				graphCache: true,
+			});
 			this.diagnostic("commit.persisted", {
 				mode: input.mode,
 				nodeCount: input.graph.nodes.length,
@@ -569,7 +621,10 @@ export class PluginDataStore<TSettings> {
 						? this.data.graphCache
 						: null,
 			});
-			this.data = await this.persistEnvelope(next);
+			this.data = await this.persistEnvelope(next, {
+				layout: true,
+				graphCache: true,
+			});
 			return snapshot;
 		});
 	}
@@ -606,7 +661,11 @@ export class PluginDataStore<TSettings> {
 				graphCache: null,
 				pinnedNotePaths: renamedPins,
 			});
-			this.data = await this.persistEnvelope(next);
+			this.data = await this.persistEnvelope(next, {
+				layout: true,
+				graphCache: true,
+				pins: true,
+			});
 			return renamed ?? undefined;
 		});
 	}
@@ -641,7 +700,11 @@ export class PluginDataStore<TSettings> {
 				graphCache: null,
 				pinnedNotePaths: prunedPins,
 			});
-			this.data = await this.persistEnvelope(next);
+			this.data = await this.persistEnvelope(next, {
+				layout: true,
+				graphCache: true,
+				pins: true,
+			});
 			return pruned ?? undefined;
 		});
 	}
@@ -653,7 +716,7 @@ export class PluginDataStore<TSettings> {
 				...this.data,
 				settings: parsed,
 			});
-			this.data = await this.persistEnvelope(next);
+			this.data = await this.persistEnvelope(next, { settings: true });
 		});
 		return parsed;
 	}
@@ -667,7 +730,7 @@ export class PluginDataStore<TSettings> {
 				...this.data,
 				camera: parsed,
 			});
-			this.data = await this.persistEnvelope(next);
+			this.data = await this.persistEnvelope(next, { camera: true });
 		});
 		return parsed;
 	}
@@ -687,7 +750,7 @@ export class PluginDataStore<TSettings> {
 				...this.data,
 				pinnedNotePaths,
 			});
-			this.data = await this.persistEnvelope(next);
+			this.data = await this.persistEnvelope(next, { pins: true });
 		});
 		return pinnedNotePaths;
 	}
@@ -701,7 +764,8 @@ export class PluginDataStore<TSettings> {
 			return this.data.pinnedNotePaths;
 		}
 		return this.enqueue(async () => {
-			const next = new Set(this.data.pinnedNotePaths);
+			const latest = await this.readAdapterState();
+			const next = new Set(latest.pinnedNotePaths);
 			if (pinned) {
 				next.add(normalized);
 			} else {
@@ -711,16 +775,17 @@ export class PluginDataStore<TSettings> {
 			if (
 				equalStringArrays(
 					pinnedNotePaths,
-					this.data.pinnedNotePaths,
+					latest.pinnedNotePaths,
 				)
 			) {
-				return this.data.pinnedNotePaths;
+				this.data = latest;
+				return latest.pinnedNotePaths;
 			}
 			const envelope = freezeEnvelope({
-				...this.data,
+				...latest,
 				pinnedNotePaths,
 			});
-			this.data = await this.persistEnvelope(envelope);
+			this.data = await this.persistEnvelope(envelope, { pins: true });
 			return pinnedNotePaths;
 		});
 	}
@@ -747,9 +812,10 @@ export class PluginDataStore<TSettings> {
 				);
 		}
 		return this.enqueue(async () => {
+			const latest = await this.readAdapterState();
 			const pinnedNotePaths =
 				renamePinnedNotePathsFromVault(
-					this.data.pinnedNotePaths,
+					latest.pinnedNotePaths,
 					oldPath,
 					newPath,
 					scope,
@@ -757,16 +823,17 @@ export class PluginDataStore<TSettings> {
 			if (
 				equalStringArrays(
 					pinnedNotePaths,
-					this.data.pinnedNotePaths,
+					latest.pinnedNotePaths,
 				)
 			) {
-				return this.data.pinnedNotePaths;
+				this.data = latest;
+				return latest.pinnedNotePaths;
 			}
 			const envelope = freezeEnvelope({
-				...this.data,
+				...latest,
 				pinnedNotePaths,
 			});
-			this.data = await this.persistEnvelope(envelope);
+			this.data = await this.persistEnvelope(envelope, { pins: true });
 			return pinnedNotePaths;
 		});
 	}
@@ -777,7 +844,8 @@ export class PluginDataStore<TSettings> {
 			return this.data.pinnedNotePaths;
 		}
 		return this.enqueue(async () => {
-			const next = new Set(this.data.pinnedNotePaths);
+			const latest = await this.readAdapterState();
+			const next = new Set(latest.pinnedNotePaths);
 			const pinned = !next.has(normalized);
 			if (pinned) {
 				next.add(normalized);
@@ -786,10 +854,10 @@ export class PluginDataStore<TSettings> {
 			}
 			const pinnedNotePaths = validatePinnedNotePaths([...next]);
 			const envelope = freezeEnvelope({
-				...this.data,
+				...latest,
 				pinnedNotePaths,
 			});
-			this.data = await this.persistEnvelope(envelope);
+			this.data = await this.persistEnvelope(envelope, { pins: true });
 			return pinnedNotePaths;
 		});
 	}
@@ -856,7 +924,12 @@ export class PluginDataStore<TSettings> {
 					pinnedNotePaths ?? this.data.pinnedNotePaths,
 				graphCache: graphCache ?? this.data.graphCache,
 			});
-			this.data = await this.persistEnvelope(next);
+			this.data = await this.persistEnvelope(next, {
+				settings: settings !== undefined,
+				camera: camera !== undefined,
+				pins: pinnedNotePaths !== undefined,
+				graphCache: graphCache !== undefined,
+			});
 		});
 	}
 
@@ -889,7 +962,13 @@ export class PluginDataStore<TSettings> {
 				pinnedNotePaths:
 					pinnedNotePaths ?? this.data.pinnedNotePaths,
 			});
-			this.data = await this.persistEnvelope(next);
+			this.data = await this.persistEnvelope(next, {
+				settings: true,
+				layout: true,
+				graphCache: true,
+				camera: true,
+				pins: pinnedNotePaths !== undefined,
+			});
 			return this.data;
 		});
 	}
@@ -914,8 +993,66 @@ export class PluginDataStore<TSettings> {
 
 	private async persistEnvelope(
 		envelope: PersistedPluginData<TSettings>,
+		ownership: PersistedFieldOwnership = OWN_COMPLETE_ENVELOPE,
 	): Promise<PersistedPluginData<TSettings>> {
-		const prepared = prepareSyncSafeData(envelope);
+		/*
+		 * Obsidian Sync replaces data.json as one document. A second device can
+		 * therefore deliver a newer layout or pin set while this instance still
+		 * has an older in-memory envelope. Before a partial write (for example a
+		 * settings update), retain every field that operation does not own from
+		 * the latest on-disk document. This prevents a harmless local zoom or
+		 * settings change from rolling back a synchronized map or its pins.
+		 */
+		const latest =
+			ownership === OWN_COMPLETE_ENVELOPE
+				? undefined
+				: await this.readAdapterState();
+		const externalLayoutChanged =
+			latest !== undefined &&
+			!sameLayoutRevision(
+				latest.committedLayout,
+				this.data.committedLayout,
+			);
+		const externalSettingsChanged =
+			latest !== undefined &&
+			!sameJsonValue(latest.settings, this.data.settings);
+		const externalCameraChanged =
+			latest !== undefined &&
+			!sameCameraState(latest.camera, this.data.camera);
+		const externalPinsChanged =
+			latest !== undefined &&
+			!equalStringArrays(
+				latest.pinnedNotePaths,
+				this.data.pinnedNotePaths,
+			);
+		const merged =
+			latest === undefined
+				? envelope
+				: freezeEnvelope({
+						schemaVersion: CURRENT_SCHEMA_VERSION,
+						settings:
+							!ownership.settings && externalSettingsChanged
+								? latest.settings
+								: envelope.settings,
+						committedLayout:
+							!ownership.layout && externalLayoutChanged
+								? latest.committedLayout
+								: envelope.committedLayout,
+						graphCache:
+							ownership.layout ||
+							(ownership.graphCache && !externalLayoutChanged)
+								? envelope.graphCache
+								: latest.graphCache,
+						camera:
+							!ownership.camera && externalCameraChanged
+								? latest.camera
+								: envelope.camera,
+						pinnedNotePaths:
+							!ownership.pins && externalPinsChanged
+								? latest.pinnedNotePaths
+								: envelope.pinnedNotePaths,
+					});
+		const prepared = prepareSyncSafeData(merged);
 		if (prepared.graphCacheDropped || prepared.warning) {
 			this.diagnostic("sync-budget", {
 				byteLength: prepared.byteLength,

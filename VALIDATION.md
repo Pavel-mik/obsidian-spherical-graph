@@ -1,5 +1,29 @@
 # Validation
 
+## Cross-device Save/Load and pin synchronization validation (unreleased)
+
+- Date: 2026-08-11
+- Environment: Windows development vault, Node.js/npm project toolchain
+- `npm test -- --run tests/graph/GraphChangeTracker.test.ts tests/persistence/PluginDataStore.test.ts`:
+  PASS; 2 files, 33 tests
+- `npm run check`: PASS
+- ESLint and strict TypeScript: PASS
+- Vitest: PASS; 57 files, 338 tests
+- Production build and release metadata validation: PASS
+- `git diff --check`: PASS; Windows line-ending notices only
+
+The persistence regressions simulate desktop and mobile data stores sharing
+one Sync-delivered document. They verify that stale camera/settings writes do
+not roll back a newer committed layout or pin list, a pin action merges with
+pins received after startup, and explicit Save map retains externally delivered
+pins. Graph tracker coverage also verifies that an asynchronous vault rebuild
+finishing after disposal cannot publish over a manually loaded map.
+
+Continuous camera gestures no longer write `data.json`; Save map remains the
+explicit operation that synchronizes the viewpoint. A real multi-device
+Obsidian Sync session was not available in this environment, so delivery timing
+and mobile rendering remain manual checks in `docs/MOBILE_QA.md`.
+
 ## Mobile navigation and generated-map framing release validation (1.9.1)
 
 - Date: 2026-08-11

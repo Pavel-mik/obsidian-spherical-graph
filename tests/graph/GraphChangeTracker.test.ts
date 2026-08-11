@@ -177,4 +177,42 @@ describe("GraphChangeTracker", () => {
 		expect(onObservation).toHaveBeenCalledOnce();
 		tracker.dispose();
 	});
+
+	it("does not publish an in-flight rebuild after disposal", async () => {
+		const source = new Source();
+		const service = new GraphDataService(source);
+		const committed = service.buildGraph();
+		source.files.push({ path: "b.md", basename: "b" });
+		const rebuilt = service.buildGraph();
+		let resolveBuild: ((graph: typeof rebuilt) => void) | undefined;
+		const buildGraph = vi.fn(
+			() =>
+				new Promise<typeof rebuilt>((resolve) => {
+					resolveBuild = resolve;
+				}),
+		);
+		const onDiff = vi.fn();
+		const onObservation = vi.fn();
+		const tracker = new GraphChangeTracker({
+			graphService: service,
+			buildGraph,
+			getFilters: () => ({}),
+			getCommittedDescriptor: () => committed.descriptor,
+			getCommittedSignature: () => committed.signature,
+			onDiff,
+			onObservation,
+			debounceMs: 10_000,
+			scheduler: new ManualScheduler(),
+		});
+
+		tracker.markVaultChanged("create");
+		const flushing = tracker.flush();
+		await vi.waitFor(() => expect(buildGraph).toHaveBeenCalledOnce());
+		tracker.dispose();
+		resolveBuild?.(rebuilt);
+		await flushing;
+
+		expect(onDiff).not.toHaveBeenCalled();
+		expect(onObservation).not.toHaveBeenCalled();
+	});
 });

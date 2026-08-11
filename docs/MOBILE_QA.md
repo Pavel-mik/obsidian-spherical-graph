@@ -31,7 +31,10 @@ preparing a public release.
 
 - Generate and save on desktop; sync to mobile; choose **Load map** and verify
   positions, continents, pins, and camera match.
-- Modify pins/camera on mobile, sync back, reload, and verify no layout drift.
+- Modify pins on mobile, use **Save map** for a changed camera, sync back,
+  reload, and verify no layout drift.
+- Leave a second device on an older map, move its camera without choosing
+  **Save map**, then sync again and verify the newer map and pins remain intact.
 - Test a state above the 3 MB warning threshold. If the 4.5 MB budget is
   crossed, verify only the derived graph cache is removed and the canonical
   layout reloads after a vault re-index.
