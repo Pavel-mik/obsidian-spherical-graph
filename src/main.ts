@@ -791,9 +791,11 @@ export default class SphericalGraphPlugin extends Plugin {
 			graph,
 			renames,
 		);
+		const frameGlobe =
+			autoSize && shouldAutoSizeGlobe(snapshot.modeThatCreatedIt);
 		this.reconcileCurrentDiff(snapshot);
 		for (const view of this.graphViews()) {
-			view.setSnapshot(this.renderSnapshot);
+			view.setSnapshot(this.renderSnapshot, { frameGlobe });
 		}
 		this.broadcastStatus();
 	}

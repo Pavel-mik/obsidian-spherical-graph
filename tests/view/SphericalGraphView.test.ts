@@ -37,6 +37,7 @@ vi.mock('obsidian', () => {
 });
 
 import { SphericalGraphView } from '../../src/view/SphericalGraphView';
+import { ViewToolbar } from '../../src/view/ViewToolbar';
 import { resolveRuntimeRenderProfile } from '../../src/platform/runtimeProfile';
 
 function createView(): SphericalGraphView {
@@ -85,6 +86,8 @@ describe('SphericalGraphView Renew prompt', () => {
 			renew: 'Renew layout',
 			cancelCalculation: 'Cancel calculation',
 			resetCamera: 'Reset camera',
+			closeGraphControls: 'Close map controls',
+			exitFullscreen: 'Exit fullscreen',
 			tags: 'Tags',
 			showTags: 'Show tags',
 			hideTags: 'Hide tags',
@@ -127,5 +130,47 @@ describe('SphericalGraphView Renew prompt', () => {
 		});
 		expect(view.promptRenew()).toBe(true);
 		expect(mocks.openModal).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('SphericalGraphView touch dismissals', () => {
+	it('closes Map controls without requiring a command selection', () => {
+		const toolbar = Object.create(ViewToolbar.prototype) as ViewToolbar;
+		const menu = { open: true };
+		const focus = vi.fn();
+		Reflect.set(toolbar, 'menu', menu);
+		Reflect.set(toolbar, 'menuSummary', { focus });
+
+		expect(toolbar.closeMenu(true)).toBe(true);
+		expect(menu.open).toBe(false);
+		expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+		expect(toolbar.closeMenu()).toBe(false);
+	});
+
+	it('restores the standard view when presentation ends', () => {
+		const view = createView();
+		const exitButton = { hidden: false };
+		const root = {
+			dataset: { presentation: 'true' } as Record<string, string>,
+			ownerDocument: { fullscreenElement: null },
+		};
+		const setFullscreenActive = vi.fn();
+		const setPresentationMode = vi.fn();
+		const setAutoRotation = vi.fn();
+		Reflect.set(view, 'presentationMode', true);
+		Reflect.set(view, 'root', root);
+		Reflect.set(view, 'presentationExitButton', exitButton);
+		Reflect.set(view, 'toolbar', { setFullscreenActive });
+		Reflect.set(view, 'renderer', {
+			setPresentationMode,
+			setAutoRotation,
+		});
+
+		expect(view.toggleFullscreen()).toBe(true);
+		expect(exitButton.hidden).toBe(true);
+		expect(root.dataset.presentation).toBeUndefined();
+		expect(setFullscreenActive).toHaveBeenCalledWith(false);
+		expect(setPresentationMode).toHaveBeenCalledWith(false);
+		expect(setAutoRotation).toHaveBeenCalledWith(false);
 	});
 });

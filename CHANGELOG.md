@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-08-11
+
+### Changed
+
+- Newly initialized and renewed maps now open with the complete globe and its
+  atmosphere comfortably framed instead of starting at maximum zoom.
+- Continent names remain visible independently of note-label zoom thresholds
+  and stay rendered during touch rotation.
+
+### Fixed
+
+- Fullscreen presentation now has a persistent, touch-friendly exit control in
+  addition to the Escape key and native fullscreen controls.
+- Map controls now include an explicit close button and a momentum-scrolling
+  mobile/tablet panel that clears Obsidian's bottom navigation and safe area.
+
 ## [1.9.0] - 2026-08-11
 
 ### Added
@@ -546,7 +562,8 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.0...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.1...HEAD
+[1.9.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.0...1.9.1
 [1.9.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.8.1...1.9.0
 [1.8.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.8.0...1.8.1
 [1.8.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.7.0...1.8.0

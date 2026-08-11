@@ -89,6 +89,8 @@ export class SphericalGraphView extends ItemView {
 	private autoRotationBeforePresentation = false;
 	private presentationMode = false;
 	private presentationRequestToken = 0;
+	private presentationExitButton: HTMLButtonElement | undefined;
+	private frameGlobeOnNextSnapshot = false;
 	private root: HTMLElement | undefined;
 	private stage: HTMLElement | undefined;
 	private stateOverlay: HTMLElement | undefined;
@@ -118,6 +120,10 @@ export class SphericalGraphView extends ItemView {
 			if (this.presentationMode) {
 				event.stopPropagation();
 				this.exitPresentationMode();
+				return false;
+			}
+			if (this.toolbar?.closeMenu(true)) {
+				event.stopPropagation();
 				return false;
 			}
 			const search = this.toolbar?.search;
@@ -235,6 +241,23 @@ export class SphericalGraphView extends ItemView {
 			this.currentSettings.appearance.showContinents,
 			this.currentSettings.appearance.showAtmosphere,
 			this.options.runtimeProfile,
+		);
+		this.presentationExitButton = this.root.createEl('button');
+		this.presentationExitButton.type = 'button';
+		this.presentationExitButton.className =
+			'spherical-graph-presentation-exit';
+		this.presentationExitButton.textContent =
+			VIEW_CONTROL_COPY.exitFullscreen;
+		this.presentationExitButton.title =
+			VIEW_CONTROL_COPY.exitFullscreenDescription;
+		this.presentationExitButton.setAttribute(
+			'aria-label',
+			`${VIEW_CONTROL_COPY.exitFullscreen}. ${VIEW_CONTROL_COPY.exitFullscreenDescription}`,
+		);
+		this.presentationExitButton.hidden = true;
+		this.presentationExitButton.addEventListener(
+			'click',
+			this.onPresentationExit,
 		);
 		this.root.append(this.stage);
 		this.root.ownerDocument.addEventListener(
@@ -369,6 +392,12 @@ export class SphericalGraphView extends ItemView {
 		);
 		this.autoRotateToggle = undefined;
 		this.autoRotateLabel = undefined;
+		this.presentationExitButton?.removeEventListener(
+			'click',
+			this.onPresentationExit,
+		);
+		this.presentationExitButton?.remove();
+		this.presentationExitButton = undefined;
 		this.autoRotationEnabled = false;
 		this.toolbar?.dispose();
 		this.toolbar = undefined;
@@ -404,7 +433,11 @@ export class SphericalGraphView extends ItemView {
 		this.updateStateOverlay();
 	}
 
-	setSnapshot(snapshot: RenderGraphSnapshot): void {
+	setSnapshot(
+		snapshot: RenderGraphSnapshot,
+		options: { readonly frameGlobe?: boolean } = {},
+	): void {
+		this.frameGlobeOnNextSnapshot ||= options.frameGlobe === true;
 		this.model = {
 			...this.model,
 			snapshot,
@@ -416,6 +449,7 @@ export class SphericalGraphView extends ItemView {
 		};
 		if (this.opened) {
 			this.applySnapshot(snapshot);
+			this.applyPendingGlobeFrame();
 			this.updateStateOverlay();
 		}
 	}
@@ -584,6 +618,7 @@ export class SphericalGraphView extends ItemView {
 		}
 		if (this.model.snapshot !== undefined) {
 			this.applySnapshot(this.model.snapshot);
+			this.applyPendingGlobeFrame();
 		}
 		this.renderer?.setActiveNode(this.model.activeNodeId);
 		this.renderer?.setPinnedNodeIds([...this.pinnedNodeIds]);
@@ -629,6 +664,14 @@ export class SphericalGraphView extends ItemView {
 				'The saved graph could not be rendered.',
 			);
 		}
+	}
+
+	private applyPendingGlobeFrame(): void {
+		if (!this.frameGlobeOnNextSnapshot || this.renderer === undefined) {
+			return;
+		}
+		this.frameGlobeOnNextSnapshot = false;
+		this.renderer.resetCamera();
 	}
 
 	private handleNodeSelection(
@@ -1029,6 +1072,9 @@ export class SphericalGraphView extends ItemView {
 		this.presentationMode = true;
 		this.autoRotationBeforePresentation = this.autoRotationEnabled;
 		root.dataset.presentation = 'true';
+		if (this.presentationExitButton !== undefined) {
+			this.presentationExitButton.hidden = false;
+		}
 		this.toolbar?.setFullscreenActive(true);
 		this.renderer?.setPresentationMode(true);
 		if (this.options.runtimeProfile.supportsAutoRotation) {
@@ -1071,6 +1117,9 @@ export class SphericalGraphView extends ItemView {
 		if (root !== undefined) {
 			delete root.dataset.presentation;
 		}
+		if (this.presentationExitButton !== undefined) {
+			this.presentationExitButton.hidden = true;
+		}
 		this.toolbar?.setFullscreenActive(false);
 		this.renderer?.setPresentationMode(false);
 		this.setAutoRotation(this.autoRotationBeforePresentation);
@@ -1086,6 +1135,10 @@ export class SphericalGraphView extends ItemView {
 			}
 		}
 	}
+
+	private readonly onPresentationExit = (): void => {
+		this.exitPresentationMode();
+	};
 
 	private readonly onFullscreenChange = (): void => {
 		const root = this.root;

@@ -1,5 +1,30 @@
 # Validation
 
+## Mobile navigation and generated-map framing release validation (1.9.1)
+
+- Date: 2026-08-11
+- Environment: Windows development vault, Node.js/npm project toolchain
+- `npm test -- --run tests/view/SphericalGraphView.test.ts tests/render/SphericalGraphRenderer.test.ts tests/persistence/PluginDataStore.test.ts`:
+  PASS; 3 files, 31 tests
+- `npm run check`: PASS
+- ESLint and strict TypeScript: PASS
+- Vitest: PASS; 57 files, 334 tests
+- Production build and release metadata validation: PASS
+- `git diff --check`: PASS; Windows line-ending notices only
+
+Automated regressions cover closing Map controls without choosing an action,
+restoring the standard presentation state, the Sync-persisted default camera,
+and a default camera distance that contains the complete atmosphere inside the
+45-degree desktop field of view. Code-path review confirms Initialize and Renew
+request framing while Refresh and saved-layout restore preserve the current
+camera. The label render path now updates continent names before independently
+suppressing ordinary note labels.
+
+An actual Android phone/tablet Obsidian GUI session was not available in this
+environment. Momentum scrolling, clearance above Obsidian's mobile bottom bar,
+the touch fullscreen exit control, and continuous continent-name visibility
+therefore remain explicit device checks in `MANUAL_TEST_PLAN.md`.
+
 ## Atmosphere, satellites, pins, and presentation release validation (1.7.0)
 
 - Date: 2026-07-30

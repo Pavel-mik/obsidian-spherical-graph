@@ -125,7 +125,7 @@ describe("PluginDataStore loading", () => {
 		expect(loaded.settings).toEqual(DEFAULT_SETTINGS);
 		expect(loaded.committedLayout).toBeNull();
 		expect(loaded.graphCache).toBeNull();
-		expect(loaded.camera.position).toEqual([0, 0, 3]);
+		expect(loaded.camera.position).toEqual([0, 0, 32]);
 		expect(loaded.pinnedNotePaths).toEqual([]);
 	});
 

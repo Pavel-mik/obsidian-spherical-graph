@@ -279,6 +279,10 @@
 	max-height: min(620px, calc(100vh - 120px));
 	padding: 13px;
 	overflow: auto;
+	overscroll-behavior: contain;
+	scrollbar-gutter: stable;
+	touch-action: pan-y;
+	-webkit-overflow-scrolling: touch;
 	border: 1px solid color-mix(in srgb, var(--sg-cyan) 58%, transparent);
 	background:
 		linear-gradient(135deg, rgba(33, 230, 255, 0.065), transparent 34%),
@@ -296,6 +300,55 @@
 		11px 100%,
 		0 calc(100% - 11px)
 	);
+}
+
+.spherical-graph-controls-panel-header {
+	position: sticky;
+	top: -13px;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin: -13px -13px 0;
+	padding: 10px 10px 9px 13px;
+	border-block-end: 1px solid
+		color-mix(in srgb, var(--sg-cyan-dim) 42%, transparent);
+	background: color-mix(in srgb, var(--sg-panel) 98%, transparent);
+}
+
+.spherical-graph-controls-panel-title {
+	color: var(--sg-cyan-soft);
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.spherical-graph-controls-close {
+	display: inline-grid;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	min-width: 34px;
+	min-height: 34px;
+	padding: 0;
+	border: 1px solid color-mix(in srgb, var(--sg-cyan-dim) 70%, transparent);
+	border-radius: 4px;
+	background: var(--sg-panel-raised);
+	color: var(--sg-text);
+	font-size: 24px;
+	font-weight: 300;
+	line-height: 1;
+	cursor: var(--cursor);
+}
+
+.spherical-graph-controls-close:hover,
+.spherical-graph-controls-close:focus-visible {
+	border-color: var(--sg-coast);
+	background: var(--sg-panel-hover);
+	box-shadow: 0 0 0 2px rgba(212, 181, 114, 0.14);
+	outline: 0;
 }
 
 .spherical-graph-controls-section {
@@ -2287,6 +2340,42 @@
 	display: none !important;
 }
 
+.spherical-graph-presentation-exit {
+	position: fixed;
+	top: max(12px, env(safe-area-inset-top));
+	right: max(12px, env(safe-area-inset-right));
+	z-index: 10002;
+	min-width: 44px;
+	min-height: 44px;
+	padding: 0 14px;
+	border: 1px solid rgba(212, 181, 114, 0.72);
+	border-radius: 999px;
+	background: rgba(7, 19, 31, 0.82);
+	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.38);
+	backdrop-filter: blur(10px);
+	color: var(--sg-text);
+	font: 600 12px/1 var(--font-interface), "Segoe UI", sans-serif;
+	cursor: var(--cursor);
+}
+
+.spherical-graph-presentation-exit::before {
+	margin-inline-end: 7px;
+	content: "\u00d7";
+	font-size: 18px;
+	font-weight: 400;
+	vertical-align: -1px;
+}
+
+.spherical-graph-presentation-exit:hover,
+.spherical-graph-presentation-exit:focus-visible {
+	border-color: var(--sg-coast);
+	background: rgba(16, 35, 50, 0.94);
+	box-shadow:
+		0 0 0 2px rgba(212, 181, 114, 0.2),
+		0 8px 28px rgba(0, 0, 0, 0.38);
+	outline: 0;
+}
+
 .spherical-graph-view[data-presentation="true"] .spherical-graph-stage {
 	grid-row: 1;
 	grid-column: 1;
@@ -2306,6 +2395,7 @@
 .spherical-graph-view[data-device="phone"],
 .spherical-graph-view[data-device="tablet"] {
 	--sg-control-height: 44px;
+	--sg-mobile-navbar-clearance: var(--mobile-navbar-height, 56px);
 }
 
 .spherical-graph-view[data-device="phone"] .spherical-graph-toolbar {
@@ -2322,15 +2412,28 @@
 	min-width: 0;
 }
 
-.spherical-graph-view[data-device="phone"] .spherical-graph-controls-panel {
+.spherical-graph-view[data-device="phone"] .spherical-graph-controls-panel,
+.spherical-graph-view[data-device="tablet"] .spherical-graph-controls-panel {
 	position: fixed;
 	top: calc(max(8px, env(safe-area-inset-top)) + 56px);
 	right: max(8px, env(safe-area-inset-right));
-	bottom: max(8px, env(safe-area-inset-bottom));
+	bottom: calc(
+		max(8px, env(safe-area-inset-bottom)) +
+			var(--sg-mobile-navbar-clearance)
+	);
+	max-height: none;
+	overflow-x: hidden;
+	overflow-y: auto;
+	align-content: start;
+}
+
+.spherical-graph-view[data-device="phone"] .spherical-graph-controls-panel {
 	left: max(8px, env(safe-area-inset-left));
 	width: auto;
-	max-height: none;
-	overscroll-behavior: contain;
+}
+
+.spherical-graph-view[data-device="tablet"] .spherical-graph-controls-panel {
+	width: min(430px, calc(100dvw - 28px));
 }
 
 .spherical-graph-view[data-device="phone"] .spherical-graph-status-rail {

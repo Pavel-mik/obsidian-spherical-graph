@@ -6,6 +6,7 @@ import { UI_STRINGS } from '../i18n';
  */
 export const VIEW_CONTROL_COPY = {
 	graphControls: 'Map controls',
+	closeGraphControls: 'Close map controls',
 	layout: 'Layout',
 	layoutDescription: 'Update note positions',
 	explore: 'Explore',
@@ -31,6 +32,8 @@ export const VIEW_CONTROL_COPY = {
 	loadMapDescription: 'Restore the last saved or synced map.',
 	fullscreen: 'Fullscreen',
 	fullscreenDescription: 'Open a distraction-free rotating globe.',
+	exitFullscreen: 'Exit fullscreen',
+	exitFullscreenDescription: 'Return to the standard graph view.',
 	autoRotate: 'Auto rotate',
 	findRoute: UI_STRINGS.routeIdle,
 	findRouteDescription: 'Find every shortest path between two notes.',
