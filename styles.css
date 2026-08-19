@@ -1,6 +1,6 @@
-.spherical-graph-view-content {
+.view-content.spherical-graph-view-content {
 	height: 100%;
-	padding: 0 !important;
+	padding: 0;
 	overflow: hidden;
 }
 
@@ -222,14 +222,6 @@
 		linear-gradient(135deg, rgba(33, 230, 255, 0.08), transparent 58%),
 		var(--sg-panel-raised);
 	box-shadow: inset 0 0 0 1px rgba(2, 5, 11, 0.56);
-	clip-path: polygon(
-		0 0,
-		calc(100% - 7px) 0,
-		100% 7px,
-		100% 100%,
-		7px 100%,
-		0 calc(100% - 7px)
-	);
 	color: var(--sg-text);
 	font-size: 12px;
 	font-weight: 650;
@@ -292,14 +284,6 @@
 		0 0 24px rgba(33, 230, 255, 0.09),
 		inset 0 0 0 1px rgba(2, 5, 11, 0.78);
 	backdrop-filter: blur(14px);
-	clip-path: polygon(
-		0 0,
-		calc(100% - 11px) 0,
-		100% 11px,
-		100% 100%,
-		11px 100%,
-		0 calc(100% - 11px)
-	);
 }
 
 .spherical-graph-controls-panel-header {
@@ -521,18 +505,6 @@
 
 .spherical-graph-view input.spherical-graph-search-input {
 	appearance: none;
-}
-
-.spherical-graph-toolbar-button,
-.spherical-graph-surface-select {
-	clip-path: polygon(
-		0 0,
-		calc(100% - 7px) 0,
-		100% 7px,
-		100% 100%,
-		7px 100%,
-		0 calc(100% - 7px)
-	);
 }
 
 .spherical-graph-toolbar-button {
@@ -875,14 +847,6 @@
 	box-shadow:
 		0 0 9px color-mix(in srgb, var(--sg-tag) 14%, transparent),
 		inset 0 0 8px rgba(2, 5, 11, 0.52);
-	clip-path: polygon(
-		0 0,
-		calc(100% - 5px) 0,
-		100% 5px,
-		100% 100%,
-		5px 100%,
-		0 calc(100% - 5px)
-	);
 	color: color-mix(in srgb, var(--sg-tag-soft) 76%, var(--sg-muted));
 	font-family: var(--sg-mono);
 	font-size: 9px;
@@ -966,14 +930,6 @@
 		0 0 0 1px rgba(2, 5, 11, 0.72),
 		-14px 18px 44px rgba(0, 0, 0, 0.44),
 		0 0 25px rgba(33, 230, 255, 0.075);
-	clip-path: polygon(
-		0 0,
-		calc(100% - 13px) 0,
-		100% 13px,
-		100% 100%,
-		13px 100%,
-		0 calc(100% - 13px)
-	);
 	color: var(--sg-text);
 	font-family: var(--sg-mono);
 	pointer-events: auto;
@@ -1144,13 +1100,14 @@
 	box-shadow: 0 0 7px var(--sg-cyan);
 }
 
-.spherical-graph-inspector-primary {
-	display: grid !important;
+.spherical-graph-view
+	button.spherical-graph-inspector-link.spherical-graph-inspector-primary {
+	display: grid;
 	grid-template-columns: auto minmax(0, 1fr);
-	padding: 8px 7px !important;
-	border-color: rgba(33, 230, 255, 0.16) !important;
-	background: rgba(33, 230, 255, 0.04) !important;
-	font-size: 14px !important;
+	padding: 8px 7px;
+	border-color: rgba(33, 230, 255, 0.16);
+	background: rgba(33, 230, 255, 0.04);
+	font-size: 14px;
 	font-weight: 700;
 }
 
@@ -1159,10 +1116,11 @@
 	align-self: center;
 }
 
-.spherical-graph-inspector-tag-primary {
+.spherical-graph-view
+	button.spherical-graph-inspector-link.spherical-graph-inspector-tag-primary {
 	grid-template-columns: auto minmax(0, 1fr);
-	border-color: color-mix(in srgb, var(--sg-tag) 28%, transparent) !important;
-	background: color-mix(in srgb, var(--sg-tag) 7%, transparent) !important;
+	border-color: color-mix(in srgb, var(--sg-tag) 28%, transparent);
+	background: color-mix(in srgb, var(--sg-tag) 7%, transparent);
 	color: var(--sg-tag-soft);
 }
 
@@ -1282,14 +1240,6 @@
 	box-shadow:
 		0 0 0 1px rgba(2, 5, 11, 0.75),
 		0 0 18px rgba(255, 79, 216, 0.2);
-	clip-path: polygon(
-		0 0,
-		calc(100% - 9px) 0,
-		100% 9px,
-		100% 100%,
-		9px 100%,
-		0 calc(100% - 9px)
-	);
 	color: var(--sg-text);
 	font-family: var(--sg-mono);
 	font-size: 11px;
@@ -1434,14 +1384,6 @@
 	box-shadow:
 		0 0 0 1px rgba(2, 5, 11, 0.85),
 		0 0 24px rgba(33, 230, 255, 0.12);
-	clip-path: polygon(
-		0 0,
-		calc(100% - 10px) 0,
-		100% 10px,
-		100% 100%,
-		10px 100%,
-		0 calc(100% - 10px)
-	);
 	color: var(--sg-muted);
 	font-family: var(--sg-mono);
 	font-size: 12px;
@@ -1469,14 +1411,6 @@
 .spherical-graph-search-input {
 	width: 100%;
 	padding: 0 11px;
-	clip-path: polygon(
-		0 0,
-		calc(100% - 8px) 0,
-		100% 8px,
-		100% 100%,
-		8px 100%,
-		0 calc(100% - 8px)
-	);
 }
 
 .spherical-graph-search-input::placeholder {
@@ -1499,14 +1433,6 @@
 		0 0 0 1px rgba(2, 5, 11, 0.88),
 		0 14px 32px rgba(0, 0, 0, 0.58),
 		0 0 18px rgba(33, 230, 255, 0.1);
-	clip-path: polygon(
-		0 0,
-		calc(100% - 10px) 0,
-		100% 10px,
-		100% 100%,
-		10px 100%,
-		0 calc(100% - 10px)
-	);
 }
 
 .spherical-graph-search-result {
@@ -1553,7 +1479,7 @@
 	letter-spacing: 0.025em;
 }
 
-.modal:has(.spherical-graph-renew-modal) {
+.modal.spherical-graph-renew-dialog {
 	--sg-panel: #06101a;
 	--sg-panel-raised: #091622;
 	--sg-cyan: #21e6ff;
@@ -1571,14 +1497,6 @@
 		0 0 0 1px #02050b,
 		0 18px 64px rgba(0, 0, 0, 0.66),
 		0 0 28px rgba(33, 230, 255, 0.14);
-	clip-path: polygon(
-		0 0,
-		calc(100% - 12px) 0,
-		100% 12px,
-		100% 100%,
-		12px 100%,
-		0 calc(100% - 12px)
-	);
 }
 
 .spherical-graph-renew-modal {
@@ -1617,17 +1535,9 @@
 	color: var(--sg-text);
 	font-family: var(--sg-mono);
 	font-size: 12px;
-	clip-path: polygon(
-		0 0,
-		calc(100% - 7px) 0,
-		100% 7px,
-		100% 100%,
-		7px 100%,
-		0 calc(100% - 7px)
-	);
 }
 
-.modal:has(.spherical-graph-renew-modal)
+.modal.spherical-graph-renew-dialog
 	.spherical-graph-modal-actions
 	button {
 	border-color: var(--sg-cyan-dim);
@@ -1635,17 +1545,17 @@
 	color: var(--sg-text);
 }
 
-.modal:has(.spherical-graph-renew-modal)
+.modal.spherical-graph-renew-dialog
 	.spherical-graph-modal-actions
 	button:hover,
-.modal:has(.spherical-graph-renew-modal)
+.modal.spherical-graph-renew-dialog
 	.spherical-graph-modal-actions
 	button:focus-visible {
 	border-color: var(--sg-cyan);
 	box-shadow: 0 0 14px rgba(33, 230, 255, 0.18);
 }
 
-.modal:has(.spherical-graph-renew-modal)
+.modal.spherical-graph-renew-dialog
 	.spherical-graph-modal-actions
 	.mod-cta {
 	border-color: var(--sg-magenta);
@@ -1664,10 +1574,6 @@
 	cursor: pointer;
 	color: var(--text-normal);
 	font-weight: var(--font-semibold);
-}
-
-.spherical-graph-view [hidden] {
-	display: none !important;
 }
 
 @keyframes spherical-graph-scanline-drift {
@@ -1765,10 +1671,10 @@
 	.spherical-graph-view *,
 	.spherical-graph-view *::before,
 	.spherical-graph-view *::after {
-		scroll-behavior: auto !important;
-		transition-duration: 0.01ms !important;
-		animation-duration: 0.01ms !important;
-		animation-iteration-count: 1 !important;
+		scroll-behavior: auto;
+		transition-duration: 0.01ms;
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
 	}
 }
 
@@ -1848,7 +1754,6 @@
 	border-radius: 4px;
 	background: var(--sg-panel-raised);
 	box-shadow: none;
-	clip-path: none;
 	color: var(--sg-text);
 	font-size: 12px;
 	font-weight: 600;
@@ -1881,7 +1786,6 @@
 	background: #0b1b28;
 	box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
 	backdrop-filter: none;
-	clip-path: none;
 }
 
 .spherical-graph-controls-section + .spherical-graph-controls-section {
@@ -1936,7 +1840,6 @@
 	border-radius: 4px;
 	background: var(--sg-panel-raised);
 	box-shadow: none;
-	clip-path: none;
 	color: var(--sg-text);
 	font-family: var(--font-interface), "Segoe UI", sans-serif;
 	font-size: 12px;
@@ -2055,7 +1958,6 @@
 	border-radius: 3px;
 	background: rgba(23, 33, 39, 0.86);
 	box-shadow: none;
-	clip-path: none;
 	color: var(--sg-tag-soft);
 	font-family: var(--font-interface), "Segoe UI", sans-serif;
 	font-weight: 550;
@@ -2088,7 +1990,6 @@
 	background: rgba(10, 25, 37, 0.95);
 	box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3);
 	backdrop-filter: none;
-	clip-path: none;
 	color: var(--sg-text);
 	font-family: var(--font-interface), "Segoe UI", sans-serif;
 }
@@ -2181,7 +2082,6 @@
 	border-radius: 4px;
 	background: #0b1b28;
 	box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
-	clip-path: none;
 	color: var(--sg-text);
 	font-family: var(--font-interface), "Segoe UI", sans-serif;
 }
@@ -2193,7 +2093,7 @@
 	color: var(--sg-text);
 }
 
-.modal:has(.spherical-graph-renew-modal) {
+.modal.spherical-graph-renew-dialog {
 	--sg-panel: #0b1b28;
 	--sg-panel-raised: #102332;
 	--sg-cyan: #d4b572;
@@ -2206,7 +2106,6 @@
 	border-radius: 4px;
 	background: #0b1b28;
 	box-shadow: 0 18px 64px rgba(0, 0, 0, 0.55);
-	clip-path: none;
 }
 
 .spherical-graph-settings-advanced {
@@ -2232,7 +2131,7 @@
 	margin: -1px;
 	overflow: hidden;
 	clip: rect(0 0 0 0);
-	clip-path: inset(50%);
+	opacity: 0;
 	white-space: nowrap;
 }
 
@@ -2280,9 +2179,7 @@
 	outline: none;
 }
 
-.spherical-graph-auto-rotate:has(
-		.spherical-graph-auto-rotate-checkbox:disabled
-	) {
+.spherical-graph-auto-rotate.is-disabled {
 	cursor: default;
 	opacity: 0.45;
 }
@@ -2337,7 +2234,7 @@
 		.spherical-graph-state-overlay,
 		.spherical-graph-inspector
 	) {
-	display: none !important;
+	display: none;
 }
 
 .spherical-graph-presentation-exit {

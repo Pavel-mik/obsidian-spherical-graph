@@ -56,12 +56,4 @@ export default defineConfig(
 			'obsidianmd/hardcoded-config-path': 'off',
 		},
 	},
-	{
-		files: ['src/settings/SphericalGraphSettingTab.ts'],
-		rules: {
-			// The declarative settings definitions are an Obsidian 1.13 API;
-			// this plugin intentionally supports the declared 1.7.2 minimum.
-			'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
-		},
-	},
 );

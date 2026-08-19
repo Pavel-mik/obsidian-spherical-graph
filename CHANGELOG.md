@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-08-19
+
+### Changed
+
+- Settings are now declared for Obsidian 1.13+ search and rendering while the
+  imperative settings tab remains available on older supported releases.
+- Development types now track the Obsidian 1.13 settings API, without raising
+  the plugin's runtime minimum version.
+
+### Fixed
+
+- Removed all Scorecard-reported `clip-path`, `!important`, and `:has()` CSS
+  usage. Explicit state classes and higher-specificity selectors preserve the
+  same controls, dialogs, fullscreen mode, and reduced-motion behavior.
+- Added regression coverage for the CSS compatibility rules and declarative
+  settings definitions.
+- Updated vulnerable transitive development dependencies; `npm audit` reports
+  no known vulnerabilities.
+
 ## [1.9.2] - 2026-08-11
 
 ### Changed
