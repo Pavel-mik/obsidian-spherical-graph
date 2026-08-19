@@ -120,7 +120,7 @@ function isMarkdownFile(file: unknown): file is TFile {
  * solver directly.
  */
 export default class SphericalGraphPlugin extends Plugin {
-	private settings: SphericalGraphSettings =
+	override settings: SphericalGraphSettings =
 		cloneSphericalGraphSettings(DEFAULT_SETTINGS);
 	private dataStore!: PluginDataStore<SphericalGraphSettings>;
 	private graphService!: GraphDataService;

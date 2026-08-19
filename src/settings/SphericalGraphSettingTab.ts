@@ -1,8 +1,11 @@
 import {
 	App,
+	type ButtonComponent,
 	Plugin,
 	PluginSettingTab,
 	Setting,
+	type SettingDefinition,
+	type SettingDefinitionItem,
 	TextComponent,
 } from 'obsidian';
 import {
@@ -125,6 +128,450 @@ export class SphericalGraphSettingTab extends PluginSettingTab {
 		this.controller = controller;
 	}
 
+	/**
+	 * Obsidian 1.13+ renders and indexes these definitions for settings search.
+	 * The imperative display() implementation remains below as the supported
+	 * fallback for older Obsidian releases.
+	 */
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		return [
+			{
+				type: 'group',
+				heading: COPY.dataHeading,
+				items: [
+					this.excludedFoldersDefinition(),
+					this.numberDefinition(
+						COPY.debounce,
+						COPY.debounceDescription,
+						'data.graphChangeDebounceMs',
+						{ min: 100, max: 10_000, step: 50 },
+						DEFAULT_SPHERICAL_GRAPH_SETTINGS.data
+							.graphChangeDebounceMs,
+					),
+					this.numberDefinition(
+						COPY.pendingLimit,
+						COPY.pendingLimitDescription,
+						'data.pendingDiffListLimit',
+						{ min: 1, max: 500, step: 1 },
+						DEFAULT_SPHERICAL_GRAPH_SETTINGS.data
+							.pendingDiffListLimit,
+					),
+				],
+			},
+			{
+				type: 'group',
+				heading: COPY.appearanceHeading,
+				items: this.appearanceDefinitions(),
+			},
+			{
+				type: 'page',
+				name: COPY.advancedHeading,
+				desc: 'Fine-tune deterministic layout and refresh preservation.',
+				items: [
+					{
+						type: 'group',
+						heading: COPY.advancedHeading,
+						items: this.layoutDefinitions(),
+					},
+					{
+						type: 'group',
+						heading: COPY.refreshHeading,
+						items: this.refreshDefinitions(),
+					},
+					{
+						type: 'group',
+						heading: 'Defaults',
+						items: [this.restoreDefinition()],
+					},
+				],
+			},
+		];
+	}
+
+	getControlValue(key: string): unknown {
+		const target = this.resolveSettingKey(key);
+		if (target === undefined) {
+			return undefined;
+		}
+		const settings = this.controller.getSettings();
+		const values = settings[target.scope] as unknown as Record<
+			string,
+			unknown
+		>;
+		return values[target.property];
+	}
+
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		const target = this.resolveSettingKey(key);
+		if (target === undefined) {
+			throw new Error(`Unknown Spherical Graph setting: ${key}`);
+		}
+		const next = cloneSphericalGraphSettings(
+			this.controller.getSettings(),
+		);
+		const values = next[target.scope] as unknown as Record<
+			string,
+			unknown
+		>;
+		if (!Object.prototype.hasOwnProperty.call(values, target.property)) {
+			throw new Error(`Unknown Spherical Graph setting: ${key}`);
+		}
+		values[target.property] = value;
+		await this.controller.updateSettings(
+			parseSphericalGraphSettings(next),
+			target.scope,
+		);
+	}
+
+	private appearanceDefinitions(): SettingDefinition[] {
+		const defaults = DEFAULT_SPHERICAL_GRAPH_SETTINGS.appearance;
+		return [
+			{
+				name: COPY.phoneRenderQuality,
+				desc: COPY.phoneRenderQualityDescription,
+				control: {
+					type: 'dropdown',
+					key: 'appearance.phoneRenderQuality',
+					defaultValue: defaults.phoneRenderQuality,
+					options: {
+						automatic: 'Automatic',
+						'battery-saver': 'Battery saver',
+						'high-quality': 'High quality',
+					},
+				},
+			},
+			{
+				name: COPY.tabletRenderQuality,
+				desc: COPY.tabletRenderQualityDescription,
+				control: {
+					type: 'dropdown',
+					key: 'appearance.tabletRenderQuality',
+					defaultValue: defaults.tabletRenderQuality,
+					options: {
+						automatic: 'Automatic',
+						'battery-saver': 'Battery saver',
+						'high-quality': 'High quality',
+					},
+				},
+			},
+			this.numberDefinition(
+				COPY.globeSize,
+				COPY.globeSizeDescription,
+				'appearance.globeSize',
+				{ min: 40, max: 400, step: 5 },
+				defaults.globeSize,
+			),
+			this.numberDefinition(
+				COPY.tagOrbitHeight,
+				COPY.tagOrbitHeightDescription,
+				'appearance.tagOrbitHeightPercent',
+				{
+					min: MIN_TAG_ORBIT_HEIGHT_PERCENT,
+					max: MAX_TAG_ORBIT_HEIGHT_PERCENT,
+					step: 1,
+				},
+				defaults.tagOrbitHeightPercent,
+			),
+			this.toggleDefinition(
+				COPY.showContinents,
+				COPY.showContinentsDescription,
+				'appearance.showContinents',
+				defaults.showContinents,
+			),
+			this.toggleDefinition(
+				COPY.showAtmosphere,
+				COPY.showAtmosphereDescription,
+				'appearance.showAtmosphere',
+				defaults.showAtmosphere,
+			),
+			this.numberDefinition(
+				COPY.atmosphereHeight,
+				COPY.atmosphereHeightDescription,
+				'appearance.atmosphereHeightPercent',
+				{
+					min: MIN_ATMOSPHERE_HEIGHT_PERCENT,
+					max: MAX_ATMOSPHERE_HEIGHT_PERCENT,
+					step: 1,
+				},
+				defaults.atmosphereHeightPercent,
+			),
+			this.toggleDefinition(
+				COPY.tagViewProtection,
+				COPY.tagViewProtectionDescription,
+				'appearance.tagViewProtectionEnabled',
+				defaults.tagViewProtectionEnabled,
+			),
+			this.toggleDefinition(
+				COPY.sizeByDegree,
+				undefined,
+				'appearance.sizeNodesByDegree',
+				defaults.sizeNodesByDegree,
+			),
+			this.numberDefinition(
+				COPY.edgeOpacity,
+				undefined,
+				'appearance.edgeOpacity',
+				{ min: 0, max: 1, step: 0.01 },
+				defaults.edgeOpacity,
+			),
+			this.numberDefinition(
+				COPY.edgeZoomThreshold,
+				COPY.edgeZoomThresholdDescription,
+				'appearance.edgeZoomThresholdPercent',
+				{ min: 0, max: 100, step: 5 },
+				defaults.edgeZoomThresholdPercent,
+			),
+			this.toggleDefinition(
+				COPY.showLabels,
+				undefined,
+				'appearance.showLabels',
+				defaults.showLabels,
+			),
+			this.numberDefinition(
+				COPY.maxLabels,
+				undefined,
+				'appearance.maxLabels',
+				{ min: 0, max: 200, step: 1 },
+				defaults.maxLabels,
+			),
+			this.numberDefinition(
+				COPY.labelZoomThreshold,
+				COPY.labelZoomThresholdDescription,
+				'appearance.labelZoomThresholdPercent',
+				{ min: 0, max: 100, step: 5 },
+				defaults.labelZoomThresholdPercent,
+			),
+			{
+				name: COPY.surfaceMode,
+				control: {
+					type: 'dropdown',
+					key: 'appearance.surfaceMode',
+					defaultValue: defaults.surfaceMode,
+					options: {
+						solid: 'Solid',
+						transparent: 'Transparent',
+						hidden: 'Hidden',
+					},
+				},
+			},
+			this.numberDefinition(
+				COPY.surfaceOpacity,
+				undefined,
+				'appearance.surfaceOpacity',
+				{ min: 0, max: 1, step: 0.01 },
+				defaults.surfaceOpacity,
+			),
+			this.toggleDefinition(
+				COPY.followTheme,
+				undefined,
+				'appearance.backgroundFollowsTheme',
+				defaults.backgroundFollowsTheme,
+			),
+			this.numberDefinition(
+				COPY.focusDuration,
+				COPY.focusDurationDescription,
+				'appearance.focusAnimationDurationMs',
+				{ min: 0, max: 5_000, step: 50 },
+				defaults.focusAnimationDurationMs,
+			),
+		];
+	}
+
+	private layoutDefinitions(): SettingDefinition[] {
+		const defaults = DEFAULT_SPHERICAL_GRAPH_SETTINGS.layout;
+		return [
+			this.numberDefinition(COPY.baseSeed, undefined, 'layout.baseSeed', { min: 0, max: 0xffff_ffff, step: 1 }, defaults.baseSeed),
+			this.numberDefinition(COPY.springStrength, undefined, 'layout.springStrength', { min: 0, max: 10, step: 0.001 }, defaults.springStrength),
+			this.numberDefinition(COPY.repulsionStrength, undefined, 'layout.repulsionStrength', { min: 0, max: 10, step: 0.001 }, defaults.repulsionStrength),
+			this.numberDefinition(COPY.centroidStrength, undefined, 'layout.centroidCoverageStrength', { min: 0, max: 10, step: 0.001 }, defaults.centroidCoverageStrength),
+			this.numberDefinition(COPY.isotropyStrength, undefined, 'layout.isotropyStrength', { min: 0, max: 10, step: 0.001 }, defaults.isotropyStrength),
+			this.numberDefinition(COPY.damping, undefined, 'layout.damping', { min: 0, max: 0.999, step: 0.001 }, defaults.damping),
+			this.numberDefinition(COPY.initialStep, undefined, 'layout.initialStep', { min: 0.000_1, max: 1, step: 0.000_1 }, defaults.initialStep),
+			this.numberDefinition(COPY.maxVelocity, undefined, 'layout.maxAngularVelocity', { min: 0.001, max: 1, step: 0.001 }, defaults.maxAngularVelocity),
+			this.numberDefinition(COPY.maxIterations, undefined, 'layout.maxIterations', { min: 1, max: 100_000, step: 1 }, defaults.maxIterations),
+			this.numberDefinition(COPY.convergence, undefined, 'layout.convergenceTolerance', { min: 1e-8, max: 0.1, step: 0.000_01 }, defaults.convergenceTolerance),
+			this.numberDefinition(COPY.exactThreshold, undefined, 'layout.exactRepulsionThreshold', { min: 2, max: 5_000, step: 1 }, defaults.exactRepulsionThreshold),
+			this.numberDefinition(COPY.negativeSamples, undefined, 'layout.negativeSamplesPerNode', { min: 1, max: 256, step: 1 }, defaults.negativeSamplesPerNode),
+			this.numberDefinition(COPY.progressInterval, COPY.progressIntervalDescription, 'layout.progressReportIntervalMs', { min: 100, max: 5_000, step: 25 }, defaults.progressReportIntervalMs),
+		];
+	}
+
+	private refreshDefinitions(): SettingDefinition[] {
+		const defaults = DEFAULT_SPHERICAL_GRAPH_SETTINGS.refresh;
+		return [
+			this.numberDefinition(COPY.warmup, undefined, 'refresh.newNodeWarmupIterations', { min: 0, max: 100_000, step: 1 }, defaults.newNodeWarmupIterations),
+			this.numberDefinition(COPY.hops, undefined, 'refresh.affectedNeighborhoodHops', { min: 0, max: 10, step: 1 }, defaults.affectedNeighborhoodHops),
+			this.numberDefinition(COPY.anchor, undefined, 'refresh.anchorStrength', { min: 0, max: 100, step: 0.01 }, defaults.anchorStrength),
+			this.numberDefinition(COPY.affectedMultiplier, undefined, 'refresh.affectedNodeAnchorMultiplier', { min: 0, max: 1, step: 0.01 }, defaults.affectedNodeAnchorMultiplier),
+			this.numberDefinition(COPY.maxDisplacement, COPY.maxDisplacementDescription, 'refresh.maxOldNodeDisplacementDegrees', { min: 0.1, max: 90, step: 0.1 }, defaults.maxOldNodeDisplacementDegrees),
+			this.numberDefinition(COPY.largeChange, undefined, 'refresh.largeChangeWarningRatio', { min: 0, max: 1, step: 0.01 }, defaults.largeChangeWarningRatio),
+		];
+	}
+
+	private numberDefinition(
+		name: string,
+		desc: string | undefined,
+		key: string,
+		options: NumberInputOptions,
+		defaultValue: number,
+	): SettingDefinition {
+		return {
+			name,
+			desc,
+			control: {
+				type: 'number',
+				key,
+				defaultValue,
+				...options,
+			},
+		};
+	}
+
+	private toggleDefinition(
+		name: string,
+		desc: string | undefined,
+		key: string,
+		defaultValue: boolean,
+	): SettingDefinition {
+		return {
+			name,
+			desc,
+			control: { type: 'toggle', key, defaultValue },
+		};
+	}
+
+	private excludedFoldersDefinition(): SettingDefinition {
+		return {
+			name: COPY.excludedFolders,
+			desc: COPY.excludedFoldersDescription,
+			aliases: ['Ignored folders', 'Excluded directories'],
+			render: (setting) => {
+				this.renderExcludedFoldersControl(setting, () =>
+					this.refreshSettingsTab(),
+				);
+			},
+		};
+	}
+
+	private restoreDefinition(): SettingDefinition {
+		return {
+			name: COPY.restore,
+			desc: COPY.restoreDescription,
+			render: (setting) => {
+				setting.addButton((button) =>
+					this.setDestructiveButton(button)
+						.setButtonText(COPY.restore)
+						.onClick(async () => {
+							const defaults = DEFAULT_SPHERICAL_GRAPH_SETTINGS;
+							const next = cloneSphericalGraphSettings(
+								this.controller.getSettings(),
+							);
+							next.layout = { ...defaults.layout };
+							next.refresh = { ...defaults.refresh };
+							await this.controller.updateSettings(next, 'layout');
+							this.refreshSettingsTab();
+						}),
+				);
+			},
+		};
+	}
+
+	private renderExcludedFoldersControl(
+		setting: Setting,
+		onUpdated: () => void,
+	): void {
+		const paths = [
+			...this.controller.getSettings().data.excludedFolderPrefixes,
+		];
+		setting.addButton((button) => {
+			button
+				.setButtonText('Choose folders')
+				.setTooltip('Choose excluded vault folders')
+				.onClick(() => {
+					new ExcludedFolderModal(this.app, paths, (nextPaths) => {
+						void this.updateExcludedFolders(nextPaths).then(onUpdated);
+					}).open();
+				});
+		});
+		const chips = setting.settingEl.createDiv({
+			cls: 'spherical-graph-folder-chips',
+		});
+		if (paths.length === 0) {
+			chips.createSpan({
+				text: 'None selected',
+				cls: 'spherical-graph-folder-chip-empty',
+			});
+		}
+		for (const path of paths) {
+			const chip = chips.createSpan({
+				cls: 'spherical-graph-folder-chip',
+			});
+			chip.createSpan({ text: path });
+			const remove = chip.createEl('button', {
+				text: '×',
+				attr: {
+					type: 'button',
+					'aria-label': `Include ${path} again`,
+					title: `Include ${path} again`,
+				},
+			});
+			remove.addEventListener('click', () => {
+				void this.updateExcludedFolders(
+					paths.filter((entry) => entry !== path),
+				).then(onUpdated);
+			});
+		}
+	}
+
+	private async updateExcludedFolders(
+		paths: readonly string[],
+	): Promise<void> {
+		const next = cloneSphericalGraphSettings(
+			this.controller.getSettings(),
+		);
+		next.data.excludedFolderPrefixes = [...paths];
+		await this.controller.updateSettings(next, 'data');
+	}
+
+	private resolveSettingKey(
+		key: string,
+	): { scope: SettingsChangeScope; property: string } | undefined {
+		const [scope, property, extra] = key.split('.');
+		if (
+			extra !== undefined ||
+			property === undefined ||
+			(scope !== 'appearance' &&
+				scope !== 'data' &&
+				scope !== 'layout' &&
+				scope !== 'refresh')
+		) {
+			return undefined;
+		}
+		return { scope, property };
+	}
+
+	private refreshSettingsTab(): void {
+		const compatibleTab = this as unknown as {
+			update?: () => void;
+			display: () => void;
+		};
+		if (typeof compatibleTab.update === 'function') {
+			compatibleTab.update();
+			return;
+		}
+		compatibleTab.display();
+	}
+
+	private setDestructiveButton(
+		button: ButtonComponent,
+	): ButtonComponent {
+		const compatibleButton = button as unknown as {
+			setDestructive?: () => ButtonComponent;
+			setWarning: () => ButtonComponent;
+		};
+		return compatibleButton.setDestructive?.() ?? compatibleButton.setWarning();
+	}
+
 	display(): void {
 		this.containerEl.empty();
 
@@ -159,7 +606,7 @@ export class SphericalGraphSettingTab extends PluginSettingTab {
 									(next) => {
 										next.data.excludedFolderPrefixes = [...paths];
 									},
-								).then(() => this.display());
+								).then(() => this.refreshSettingsTab());
 							},
 						).open();
 					});
@@ -192,7 +639,7 @@ export class SphericalGraphSettingTab extends PluginSettingTab {
 						next.data.excludedFolderPrefixes.filter(
 							(entry) => entry !== path,
 						);
-				}).then(() => this.display());
+				}).then(() => this.refreshSettingsTab());
 			});
 		}
 
@@ -498,8 +945,7 @@ export class SphericalGraphSettingTab extends PluginSettingTab {
 			.setName(COPY.restore)
 			.setDesc(COPY.restoreDescription)
 			.addButton((button) =>
-				button
-					.setWarning()
+				this.setDestructiveButton(button)
 					.setButtonText(COPY.restore)
 					.onClick(async () => {
 						const defaults = DEFAULT_SPHERICAL_GRAPH_SETTINGS;
@@ -512,7 +958,7 @@ export class SphericalGraphSettingTab extends PluginSettingTab {
 							next,
 							'layout',
 						);
-						this.display();
+						this.refreshSettingsTab();
 					}),
 			);
 	}

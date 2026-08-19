@@ -349,6 +349,7 @@ export class SphericalGraphView extends ItemView {
 			this.renderer.setFilters(this.displayFilters);
 			this.renderer.setPinnedNodeIds([...this.pinnedNodeIds]);
 			this.autoRotateToggle.disabled = false;
+			this.updateAutoRotateControl();
 		} catch (error) {
 			this.runtimeError = errorMessage(
 				error,
@@ -1015,6 +1016,7 @@ export class SphericalGraphView extends ItemView {
 		}
 		toggle.checked = this.autoRotationEnabled;
 		label.dataset.active = String(this.autoRotationEnabled);
+		label.classList.toggle('is-disabled', toggle.disabled);
 		label.title = this.autoRotationEnabled
 			? 'Stop automatic globe rotation'
 			: 'Start automatic globe rotation';
@@ -1250,6 +1252,7 @@ class RenewConfirmationModal extends Modal {
 	}
 
 	onOpen(): void {
+		this.modalEl.classList.add('spherical-graph-renew-dialog');
 		this.contentEl.empty();
 		this.contentEl.classList.add('spherical-graph-renew-modal');
 		this.contentEl.createEl('h2', {

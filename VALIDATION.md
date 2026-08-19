@@ -1,5 +1,25 @@
 # Validation
 
+## Obsidian Scorecard compliance release validation (1.9.3)
+
+- Date: 2026-08-19
+- Environment: Windows development vault, Node.js/npm project toolchain
+- `npm run check`: PASS
+- ESLint and strict TypeScript: PASS
+- Vitest: PASS; 58 files, 340 tests
+- Production build and release metadata validation: PASS
+- `npm audit`: PASS; 0 known vulnerabilities
+- Static Scorecard regression: PASS; zero `clip-path`, `!important`, or
+  `:has()` occurrences in `styles.css`, and declarative settings definitions
+  are present for Obsidian 1.13+
+- `git diff --check`: PASS; Windows line-ending notices only
+
+The settings tab keeps the legacy imperative rendering path for Obsidian
+versions before 1.13 and uses the declarative definitions only when the newer
+host API calls them. The public malware-scan availability disclosure is
+controlled by Obsidian's release-review infrastructure and cannot be produced
+or suppressed by plugin runtime code.
+
 ## Cross-device Save/Load and pin synchronization release validation (1.9.2)
 
 - Date: 2026-08-11
