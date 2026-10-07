@@ -55,6 +55,6 @@
 		"vitest": "^4.1.10"
 	},
 	"dependencies": {
-		"three": "^0.185.1"
+		"three": "^0.186.1"
 	}
 }
