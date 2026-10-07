@@ -1,8 +1,8 @@
 import { GraphDataService } from "./GraphDataService";
+import { RenameJournal } from "./RenameJournal";
 import {
 	diffGraphDescriptors,
 	GraphDiff,
-	GraphRenameHint,
 } from "./graphDiff";
 import {
 	GraphData,
@@ -51,6 +51,7 @@ export interface GraphChangeTrackerOptions {
 	) => void | Promise<void>;
 	readonly onActiveFileChange?: (path: string | undefined) => void;
 	readonly debounceMs: number;
+	readonly renameJournal?: RenameJournal;
 	readonly scheduler?: GraphChangeScheduler;
 	readonly onError?: (error: unknown) => void;
 }
@@ -71,7 +72,7 @@ export class GraphChangeTracker {
 	private readonly options: GraphChangeTrackerOptions;
 	private readonly scheduler: GraphChangeScheduler;
 	private readonly reasons = new Set<GraphChangeReason>();
-	private readonly renameHints: GraphRenameHint[] = [];
+	private readonly renameJournal: RenameJournal;
 	private timer: unknown;
 	private disposed = false;
 	private flushChain: Promise<GraphChangeObservation | undefined> =
@@ -80,6 +81,7 @@ export class GraphChangeTracker {
 	constructor(options: GraphChangeTrackerOptions) {
 		this.options = options;
 		this.scheduler = options.scheduler ?? DEFAULT_SCHEDULER;
+		this.renameJournal = options.renameJournal ?? new RenameJournal();
 	}
 
 	get hasQueuedGraphChange(): boolean {
@@ -94,16 +96,11 @@ export class GraphChangeTracker {
 		this.schedule();
 	}
 
-	markRenamed(oldPath: string, newPath: string): void {
+	markRenamed(oldPath: string, newPath: string, scope: 'file' | 'folder' = 'file'): void {
 		if (this.disposed) {
 			return;
 		}
-		this.renameHints.push({
-			oldPath,
-			newPath,
-			reliability: "reliable",
-			source: "vault-event",
-		});
+		this.renameJournal.record(oldPath, newPath, scope);
 		this.reasons.add("rename");
 		this.schedule();
 	}
@@ -121,12 +118,12 @@ export class GraphChangeTracker {
 		}
 		this.clearTimer();
 		const reasons = [...this.reasons];
-		const hints = [...this.renameHints];
 		this.reasons.clear();
-		this.renameHints.length = 0;
 
-		const run = async (): Promise<GraphChangeObservation> => {
+		const run = async (): Promise<GraphChangeObservation | undefined> => {
+			if (this.disposed) return undefined;
 			const previous = this.options.getCommittedDescriptor();
+			const hints = this.renameJournal.hintsFor(previous);
 			const filters = this.options.getFilters();
 			const graph =
 				this.options.buildGraph === undefined
@@ -165,7 +162,6 @@ export class GraphChangeTracker {
 		this.disposed = true;
 		this.clearTimer();
 		this.reasons.clear();
-		this.renameHints.length = 0;
 	}
 
 	private schedule(): void {
@@ -173,7 +169,7 @@ export class GraphChangeTracker {
 		this.timer = this.scheduler.set(() => {
 			this.timer = undefined;
 			void this.flush().catch((error: unknown) => {
-				this.options.onError?.(error);
+				if (!this.disposed) this.options.onError?.(error);
 			});
 		}, Math.max(0, this.options.debounceMs));
 	}

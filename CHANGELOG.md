@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve note identity across repeated scans, chained renames, folder moves,
+  and renames made while Refresh is running.
+- Allow cancellation during post-layout geography and validation, terminate the
+  geography worker, and reject cancelled results before the final save begins.
+- Prevent hover, selection, and opening of notes hidden behind the solid globe.
+- Wait for the link index before the first layout and process completed link
+  resolution even when the earlier metadata event has already been consumed.
+- Rebuild missing or incompatible graph metadata caches at startup and Load map
+  while preserving the saved topology and positions.
+- Validate Refresh displacement caps and hard-fixed nodes independently of the
+  worker, retaining the constraints before its input buffers are transferred.
+
 ## [1.9.3] - 2026-08-19
 
 ### Changed

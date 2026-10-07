@@ -141,7 +141,7 @@ function busyStatus(
 		isBusy: true,
 		canRefresh: false,
 		canRenew: false,
-		canCancel: true,
+		canCancel: model.canCancel ?? true,
 	};
 }
 

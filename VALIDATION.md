@@ -1,5 +1,25 @@
 # Validation
 
+## Graph consistency fixes (unreleased)
+
+- Date: 2026-10-07
+- Environment: Windows development vault, Node.js/npm project toolchain
+- `npm run check`: PASS
+- ESLint and strict TypeScript: PASS
+- Vitest: PASS; 62 files, 364 tests
+- Production build and release metadata validation: PASS (version 1.9.3)
+
+Regressions cover retained file/folder rename identity across scans and Refresh,
+late cancellation before persistence, geography-worker termination, solid-globe
+picking occlusion, metadata readiness and resolved-event routing, cache recovery
+on startup and Load map, and rejection of Refresh results that violate anchor
+limits. A real solver result passes the independent preservation validation;
+transferred input buffers cannot erase the retained constraints.
+
+The Obsidian event integration uses a mocked host. No actual Obsidian GUI or
+mobile session was tested in this run. The corresponding manual scenarios are
+recorded in `MANUAL_TEST_PLAN.md`.
+
 ## Obsidian Scorecard compliance release validation (1.9.3)
 
 - Date: 2026-08-19

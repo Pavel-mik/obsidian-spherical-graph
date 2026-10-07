@@ -2,6 +2,8 @@ import { Camera, Raycaster, Vector2 } from 'three';
 import { NodeLayer } from './NodeLayer';
 import { RenderNode, RenderTag } from './renderTypes';
 import { TagLayer } from './TagLayer';
+import { isPointOccludedByGlobe } from './tagGeometry';
+import type { SurfaceMode } from '../settings/settings';
 
 const CLICK_DRAG_THRESHOLD_PX = 5;
 
@@ -10,6 +12,7 @@ export interface PickingOptions {
 	touchDragThresholdPx?: number;
 	touchPickRadiusPx?: number;
 	enableDoubleClick?: boolean;
+	getSurfaceMode?: () => SurfaceMode;
 }
 
 export interface PickingCallbacks {
@@ -42,8 +45,8 @@ export class PickingController {
 	constructor(
 		private readonly canvas: HTMLCanvasElement,
 		private readonly camera: Camera,
-		private readonly nodeLayer: NodeLayer,
-		private readonly tagLayer: TagLayer,
+		private readonly nodeLayer: Pick<NodeLayer, 'mesh' | 'nodeForInstance'>,
+		private readonly tagLayer: Pick<TagLayer, 'mesh' | 'isTagPickable' | 'tagForInstance'>,
 		private readonly callbacks: PickingCallbacks,
 		private readonly options: PickingOptions = {},
 	) {
@@ -228,8 +231,12 @@ export class PickingController {
 		}> = [];
 		const nodeMesh = this.nodeLayer.mesh;
 		if (nodeMesh !== undefined && nodeMesh.count > 0) {
-			const intersection =
-				this.raycaster.intersectObject(nodeMesh, false)[0];
+			const intersection = this.raycaster.intersectObject(nodeMesh, false).find((hit) =>
+				hit.instanceId !== undefined &&
+				this.nodeLayer.nodeForInstance(hit.instanceId) !== undefined &&
+				((this.options.getSurfaceMode?.() ?? 'solid') !== 'solid' ||
+					!isPointOccludedByGlobe(this.raycaster.ray.origin, hit.point)),
+			);
 			const node =
 				intersection?.instanceId === undefined
 					? undefined
