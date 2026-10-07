@@ -1,6 +1,21 @@
 # Validation
 
-## Fullscreen, mobile controls, and rotation fixes (unreleased)
+## Release preparation (1.9.4)
+
+- Date: 2026-10-07
+- `npm ci`: PASS; installed the locked dependency tree
+- `RELEASE_TAG=1.9.4 npm run check`: PASS (ESLint, strict TypeScript, 62 test
+  files / 371 tests, production build, and matching release metadata)
+- `npm audit --omit=dev`: PASS; 0 known production vulnerabilities
+- Install-time audit reported 10 development-dependency vulnerabilities
+  (6 moderate, 4 high); dependency updates are outside this metadata release
+- `git diff --check`: PASS
+
+This patch release packages the graph consistency and interaction fixes below.
+Browser checks and physical-device limitations remain as recorded; release
+preparation does not constitute additional Android hardware testing.
+
+## Fullscreen, mobile controls, and rotation fixes (1.9.4)
 
 - Date: 2026-10-07
 - `npm run check`: PASS (ESLint, strict TypeScript, production build, release validation)
@@ -31,7 +46,7 @@ and restoration path. Actual Obsidian mobile shell behavior, physical Android
 Back, display cutouts, and device navigation bars require the device scenarios
 in `docs/MOBILE_QA.md`; they were not tested on physical hardware in this run.
 
-## Graph consistency fixes (unreleased)
+## Graph consistency fixes (1.9.4)
 
 - Date: 2026-10-07
 - Environment: Windows development vault, Node.js/npm project toolchain
