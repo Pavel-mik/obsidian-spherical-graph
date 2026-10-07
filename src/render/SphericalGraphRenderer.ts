@@ -60,6 +60,7 @@ interface WindowWithObservers extends Window {
 
 const CAMERA_TARGET = new Vector3(0, 0, 0);
 const IDENTITY_QUATERNION = new Quaternion();
+const NORTH_SOUTH_AXIS = new Vector3(0, 1, 0);
 export const RENDERER_CAMERA_NEAR_PLANE = 0.25;
 const ATMOSPHERE_MAX_OPACITY = 0.82;
 const ATMOSPHERE_FADE_START_ZOOM_PERCENT = 64;
@@ -759,9 +760,12 @@ export class SphericalGraphRenderer {
 		const angle = automaticRotationAngle(timestamp - previous);
 		if (angle > 0) {
 			const rotation = new Quaternion().setFromAxisAngle(
-				this.camera.up.clone().normalize(),
+				NORTH_SOUTH_AXIS,
 				angle,
 			);
+			// Orbit the entire camera frame about the globe's fixed polar axis.
+			// Rotating position AND up preserves the chosen viewing latitude and
+			// roll: both poles stay fixed on screen while the surface turns.
 			this.camera.position.applyQuaternion(rotation);
 			this.camera.up.applyQuaternion(rotation).normalize();
 			this.camera.lookAt(CAMERA_TARGET);
@@ -786,7 +790,7 @@ export class SphericalGraphRenderer {
 				);
 		this.atmosphereLayer.setOpacity(opacity);
 		this.atmosphereLayer.setVisible(opacity > 0.004);
-		return this.atmosphereLayer.render(timestamp, this.camera.up);
+		return this.atmosphereLayer.render(timestamp);
 	}
 
 	private advanceFocusAnimation(timestamp: number): boolean {

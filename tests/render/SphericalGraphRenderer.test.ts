@@ -6,7 +6,6 @@ import {
 } from '../../src/constants';
 import { atmosphereRadiusForHeight } from '../../src/render/AtmosphereLayer';
 import { RENDERER_CAMERA_NEAR_PLANE, SphericalGraphRenderer } from '../../src/render/SphericalGraphRenderer';
-import { automaticRotationAngle } from '../../src/render/autoRotation';
 
 interface RotationHarness {
 	advanceAutoRotation(timestamp: number): boolean;
@@ -17,25 +16,43 @@ interface RotationHarness {
 }
 
 describe('SphericalGraphRenderer automatic rotation', () => {
-	it('continues around the axis selected by an arcball gesture without snapping', () => {
+	it.each([
+		['equatorial', new Vector3(0, 1, 0), 0],
+		['tilted and rolled', new Vector3(1, 0, 1).normalize(), 0.8],
+		['upside down', new Vector3(1, 0, 1).normalize(), 2.6],
+		['looking along the polar axis', new Vector3(1, 0, 0), Math.PI / 2],
+	] as const)('keeps the poles fixed on screen from a %s view while the surface turns', (_, axis, angle) => {
 		const renderer = Object.create(SphericalGraphRenderer.prototype) as RotationHarness;
 		const camera = new PerspectiveCamera();
 		camera.position.set(0, 0, 32);
-		const gesture = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 1).normalize(), 0.8);
+		const gesture = new Quaternion().setFromAxisAngle(axis, angle);
 		camera.position.applyQuaternion(gesture);
 		camera.up.applyQuaternion(gesture);
-		const axis = camera.up.clone();
+		camera.lookAt(0, 0, 0);
+		camera.updateMatrixWorld();
+		const north = new Vector3(0, 10, 0);
+		const south = new Vector3(0, -10, 0);
+		const equator = new Vector3(10, 0, 0);
+		const screenNorth = north.clone().project(camera);
+		const screenSouth = south.clone().project(camera);
+		const screenEquator = equator.clone().project(camera);
 		const position = camera.position.clone();
+		const orientation = camera.quaternion.clone();
 		renderer.camera = camera;
 		renderer.autoRotationActive = true;
 		Reflect.set(renderer, 'controls', { update: vi.fn() });
 		renderer.advanceAutoRotation(3000);
 		expect(camera.position.equals(position)).toBe(true);
-		renderer.advanceAutoRotation(3016);
-		const expected = position.applyAxisAngle(axis, automaticRotationAngle(16));
-		expect(camera.position.distanceTo(expected)).toBeLessThan(1e-10);
-		expect(camera.up.distanceTo(axis)).toBeLessThan(1e-10);
-		expect(camera.position.length()).toBeCloseTo(32);
+		expect(camera.quaternion.equals(orientation)).toBe(true);
+		for (let frame = 1; frame <= 120; frame += 1) {
+			renderer.advanceAutoRotation(3000 + frame * 64);
+			camera.updateMatrixWorld();
+			expect(north.clone().project(camera).distanceTo(screenNorth)).toBeLessThan(1e-10);
+			expect(south.clone().project(camera).distanceTo(screenSouth)).toBeLessThan(1e-10);
+			expect(camera.position.y).toBeCloseTo(position.y, 10);
+			expect(camera.position.length()).toBeCloseTo(32, 10);
+		}
+		expect(equator.clone().project(camera).distanceTo(screenEquator)).toBeGreaterThan(0.01);
 	});
 
 	it('allows phone auto rotation only during presentation', () => {

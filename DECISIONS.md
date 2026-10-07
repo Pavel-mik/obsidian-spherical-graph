@@ -47,10 +47,14 @@
   hint; phones rely on host Back and auto-rotate only during presentation.
 - Phone controls remain inside the graph pane, with clearance for Obsidian's
   navigation bar and the device safe area. Tablet spacing is unchanged.
-- Automatic camera orbit uses the current camera up vector. Atmospheric drift
-  accumulates rotations about that same axis with the opposite world-space
-  sign, because positive camera orbit makes the planet appear to turn in the
-  negative direction. Clouds complete a relative turn every 7.5 minutes.
+- Automatic rotation uses the globe's fixed north-south axis (world Y).
+  Camera position and up rotate together, preserving the viewing latitude and
+  roll chosen by the user: the poles remain stationary on screen while the
+  surface turns. Camera up is a viewing direction, never the globe's spin axis.
+  Atmospheric drift uses the same fixed polar axis with the opposite
+  world-space sign, because positive camera orbit makes the planet appear to
+  turn in the negative direction. Clouds complete a relative turn every
+  7.5 minutes.
 - Renew already retains pins through the shared persistence envelope and
   repositions their meshes by note identity. Regression tests cover both
   synced pin changes and reordered nodes; no persistence-format change is needed.
