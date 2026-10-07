@@ -58,6 +58,7 @@ export interface PluginDataStoreOptions<TSettings> {
 		seed: number,
 		previous?: PersistedContinentalGeography,
 		territory?: DirectoryTerritorySource,
+		signal?: AbortSignal,
 	) => Promise<PersistedContinentalGeography>;
 }
 
@@ -99,6 +100,8 @@ function geographyDetails(
 }
 
 export interface CommitCompletedResultInput {
+	readonly signal?: AbortSignal;
+	readonly onWriteStarted?: () => void;
 	readonly graph: GraphData;
 	readonly mode: CompletedLayoutInput["mode"];
 	readonly operationId: string;
@@ -504,6 +507,10 @@ export class PluginDataStore<TSettings> {
 		}
 		return this.enqueue(async () => {
 			const current = this.data.committedLayout;
+			input.signal?.throwIfAborted();
+			if (this.disposed) {
+				return undefined;
+			}
 			const currentId = current?.snapshotId ?? null;
 			if (currentId !== input.expectedSnapshotId) {
 				this.diagnostic("commit.rejected", {
@@ -543,12 +550,14 @@ export class PluginDataStore<TSettings> {
 						? current?.geography
 						: undefined,
 					input.territory,
+					input.signal,
 				);
 			} catch (error: unknown) {
 				this.diagnostic("geography.failed", errorDetails(error));
 				throw error;
 			}
 			this.diagnostic("geography.completed", geographyDetails(geography));
+			input.signal?.throwIfAborted();
 			const completedInput = {
 				snapshotId: `layout-${input.operationId}`,
 				graph: input.graph,
@@ -586,6 +595,12 @@ export class PluginDataStore<TSettings> {
 			this.data = await this.persistEnvelope(next, {
 				layout: true,
 				graphCache: true,
+			}, () => {
+				input.signal?.throwIfAborted();
+				if (this.disposed) {
+					throw new Error('The layout store was disposed before saving.');
+				}
+				input.onWriteStarted?.();
 			});
 			this.diagnostic("commit.persisted", {
 				mode: input.mode,
@@ -994,6 +1009,7 @@ export class PluginDataStore<TSettings> {
 	private async persistEnvelope(
 		envelope: PersistedPluginData<TSettings>,
 		ownership: PersistedFieldOwnership = OWN_COMPLETE_ENVELOPE,
+		beforeWrite?: () => void,
 	): Promise<PersistedPluginData<TSettings>> {
 		/*
 		 * Obsidian Sync replaces data.json as one document. A second device can
@@ -1061,6 +1077,7 @@ export class PluginDataStore<TSettings> {
 			});
 		}
 		const safeEnvelope = freezeEnvelope(prepared.data);
+		beforeWrite?.();
 		await this.adapter.saveData(safeEnvelope);
 		return safeEnvelope;
 	}

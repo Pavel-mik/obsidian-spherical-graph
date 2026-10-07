@@ -259,6 +259,36 @@ describe("PluginDataStore transactional writes", () => {
 		expect(store.graphCache?.graphSignature).toBe(result?.graphSignature);
 	});
 
+	it.each(['geography', 'disk-read'] as const)("does not save when cancelled during %s", async (stage) => {
+		const adapter = new MemoryAdapter();
+		const abort = new AbortController();
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => { release = resolve; });
+		const emptyGeography = { version: CONTINENTAL_GEOGRAPHY_VERSION, continents: [], islandNodeIds: [] } as const;
+		const createGeography = vi.fn(async () => {
+			if (stage === 'geography') await gate;
+			return emptyGeography;
+		});
+		const store = new PluginDataStore(adapter, { defaultSettings: DEFAULT_SETTINGS, createGeography });
+		await store.load();
+		const onWriteStarted = vi.fn();
+		const load = vi.spyOn(adapter, 'loadData');
+		if (stage === 'disk-read') load.mockImplementation(async () => { await gate; return adapter.raw; });
+		const pending = store.commitCompletedResult({
+			graph: createGraph(['a.md']), mode: 'initialize', operationId: 'cancelled',
+			effectiveSeed: 1, completedAt: 1, positions: new Float32Array([1, 0, 0]),
+			expectedSnapshotId: null, signal: abort.signal, onWriteStarted,
+		});
+		const rejected = expect(pending).rejects.toThrow();
+		await vi.waitFor(() => expect(stage === 'geography' ? createGeography : load).toHaveBeenCalled());
+		abort.abort();
+		release?.();
+		await rejected;
+		expect(adapter.saves).toHaveLength(0);
+		expect(onWriteStarted).not.toHaveBeenCalled();
+		expect(store.committedSnapshot).toBeUndefined();
+	});
+
 	it("diagnoses the exact reason an async geography result cannot commit", async () => {
 		const adapter = new MemoryAdapter();
 		const diagnostics: Array<{

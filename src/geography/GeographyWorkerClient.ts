@@ -9,6 +9,7 @@ import type {
 } from './geography-worker-entry';
 
 interface ActiveBuild {
+	cleanup(): void;
 	readonly worker: Worker;
 	readonly objectUrl: string;
 	reject(error: Error): void;
@@ -24,7 +25,11 @@ export class GeographyWorkerClient {
 		seed: number,
 		previous?: PersistedContinentalGeography,
 		territory?: DirectoryTerritorySource,
+		signal?: AbortSignal,
 	): Promise<PersistedContinentalGeography> {
+		if (signal?.aborted) {
+			return Promise.reject(new Error('The geography build was cancelled.'));
+		}
 		if (this.active !== undefined) {
 			return Promise.reject(new Error('A geography build is already active.'));
 		}
@@ -41,7 +46,12 @@ export class GeographyWorkerClient {
 			);
 		}
 		return new Promise((resolve, reject) => {
+			const onAbort = (): void => {
+				close();
+				reject(new Error('The geography build was cancelled.'));
+			};
 			const active: ActiveBuild = {
+				cleanup: () => signal?.removeEventListener('abort', onAbort),
 				worker,
 				objectUrl,
 				reject: (error) => reject(error),
@@ -52,9 +62,11 @@ export class GeographyWorkerClient {
 					return;
 				}
 				this.active = undefined;
+				active.cleanup();
 				worker.terminate();
 				URL.revokeObjectURL(objectUrl);
 			};
+			signal?.addEventListener('abort', onAbort, { once: true });
 			worker.onmessage = (event: MessageEvent<unknown>) => {
 				const response = event.data as Partial<GeographyWorkerResponse>;
 				if (response.requestId !== requestId) {
@@ -121,6 +133,7 @@ export class GeographyWorkerClient {
 			return;
 		}
 		this.active = undefined;
+		active.cleanup();
 		active.worker.terminate();
 		URL.revokeObjectURL(active.objectUrl);
 		active.reject(new Error('The geography build was cancelled.'));

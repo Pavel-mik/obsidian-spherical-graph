@@ -1,11 +1,12 @@
 import type { DevelopmentDiagnosticSink } from "../diagnostics/DevelopmentLog";
+import { captureRefreshValidation, respectsRefreshConstraints, type RefreshValidation } from './refreshValidation';
 import {
 	diffGraphDescriptors,
 	GraphDiff,
 	GraphDiffSummary,
 	GraphRenameHint,
 } from "../graph/graphDiff";
-import { GraphData } from "../graph/graphTypes";
+import { GraphData, GraphDescriptor } from "../graph/graphTypes";
 import {
 	CommitCompletedResultInput,
 } from "../persistence/PluginDataStore";
@@ -123,6 +124,7 @@ export interface CommittedLayoutSink {
 	commit(
 		snapshot: PersistedLayoutSnapshot,
 		currentGraph: GraphData,
+		diff?: GraphDiff,
 	): void;
 	/**
 	 * Updates names/topology/visibility while retaining the exact committed
@@ -141,6 +143,7 @@ export interface LayoutLifecycleControllerOptions {
 	readonly persistence: LayoutSnapshotPersistence;
 	readonly sink: CommittedLayoutSink;
 	readonly getBaseSeed: () => number;
+	readonly getRenameHints?: (descriptor: GraphDescriptor) => readonly GraphRenameHint[];
 	readonly createOperationId?: () => string;
 	readonly now?: () => number;
 	readonly normTolerance?: number;
@@ -160,6 +163,9 @@ export type LayoutLifecycleListener = (
 ) => void;
 
 interface ActiveOperation {
+	refreshValidation?: RefreshValidation;
+	readonly abortController: AbortController;
+	writeStarted: boolean;
 	readonly operationId: string;
 	readonly mode: LayoutOperationMode;
 	readonly graph: GraphData;
@@ -227,6 +233,14 @@ export class LayoutLifecycleController {
 
 	get activeWorkerCount(): 0 | 1 {
 		return this.workerCount;
+	}
+
+	get isBusy(): boolean {
+		return this.activeOperation !== undefined;
+	}
+
+	get canCancel(): boolean {
+		return this.activeOperation !== undefined && !this.activeOperation.writeStarted && !this.disposed;
 	}
 
 	subscribe(listener: LayoutLifecycleListener): () => void {
@@ -380,12 +394,13 @@ export class LayoutLifecycleController {
 		const operation = this.activeOperation;
 		if (
 			operation === undefined ||
-			operation.terminalReceived ||
+			operation.writeStarted ||
 			this.disposed
 		) {
 			return false;
 		}
 		operation.terminalReceived = true;
+		operation.abortController.abort();
 		try {
 			operation.session?.cancel(operation.operationId);
 		} finally {
@@ -403,6 +418,9 @@ export class LayoutLifecycleController {
 			return;
 		}
 		const operation = this.activeOperation;
+		if (operation !== undefined && !operation.writeStarted) {
+			operation.abortController.abort();
+		}
 		if (operation !== undefined && !operation.terminalReceived) {
 			operation.terminalReceived = true;
 			try {
@@ -456,6 +474,8 @@ export class LayoutLifecycleController {
 			graph.signature,
 		);
 		const operation: ActiveOperation = {
+			abortController: new AbortController(),
+			writeStarted: false,
 			operationId,
 			mode,
 			graph,
@@ -483,6 +503,9 @@ export class LayoutLifecycleController {
 				graphSignature: graph.signature,
 				effectiveSeed,
 			};
+			if (mode === 'refresh') {
+				operation.refreshValidation = captureRefreshValidation(input.refresh, graph.nodes.length);
+			}
 		} catch (error: unknown) {
 			this.setError(
 				error instanceof Error
@@ -680,6 +703,13 @@ export class LayoutLifecycleController {
 					);
 					return;
 				}
+				if (operation.refreshValidation !== undefined &&
+					!respectsRefreshConstraints(message.positions, operation.refreshValidation)) {
+					this.activeOperation = undefined;
+					this.progressValue = undefined;
+					this.setError('The completed Refresh moved notes beyond their preservation limits.');
+					return;
+				}
 				void this.commitCompleted(operation, message);
 				return;
 			}
@@ -710,6 +740,11 @@ export class LayoutLifecycleController {
 					CURRENT_ALGORITHM_VERSION,
 				normTolerance: this.options.normTolerance,
 				territory: message.territory,
+				signal: operation.abortController.signal,
+				onWriteStarted: () => {
+					operation.writeStarted = true;
+					this.emit();
+				},
 			});
 		} catch (error: unknown) {
 			this.diagnostic("commit.failed", this.errorDetails(error));
@@ -756,7 +791,7 @@ export class LayoutLifecycleController {
 			snapshot.graphDescriptor,
 			currentGraph.descriptor,
 			currentGraph.signature,
-			this.residualRenameHints(),
+			this.options.getRenameHints?.(snapshot.graphDescriptor) ?? this.residualRenameHints(),
 			snapshot.graphSignature,
 		);
 		if (
@@ -784,7 +819,7 @@ export class LayoutLifecycleController {
 				// as pending rather than risking a destructive rollback.
 			}
 		}
-		this.options.sink.commit(snapshot, currentGraph);
+		this.options.sink.commit(snapshot, currentGraph, residualDiff);
 		this.activeOperation = undefined;
 		this.progressValue = undefined;
 		this.currentDiff = residualDiff;

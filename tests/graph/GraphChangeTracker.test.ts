@@ -178,6 +178,57 @@ describe("GraphChangeTracker", () => {
 		tracker.dispose();
 	});
 
+	it("retains and composes renames across dirty scans and explicit Refresh", async () => {
+		const source = new Source();
+		const service = new GraphDataService(source);
+		const committed = service.buildGraph();
+		const tracker = new GraphChangeTracker({
+			graphService: service,
+			getFilters: () => ({}),
+			getCommittedDescriptor: () => committed.descriptor,
+			onDiff: vi.fn(),
+			debounceMs: 100,
+			scheduler: new ManualScheduler(),
+		});
+		source.files = [{ path: 'b.md', basename: 'b' }, { path: 'new.md', basename: 'new' }];
+		tracker.markRenamed('a.md', 'b.md');
+		const first = await tracker.flush();
+		expect(first?.diff.requiresLayout).toBe(true);
+		tracker.markVaultChanged('filter');
+		expect((await tracker.flush())?.diff.renamedNodes).toEqual([{ oldPath: 'a.md', newPath: 'b.md' }]);
+		source.files[0] = { path: 'c.md', basename: 'c' };
+		tracker.markRenamed('b.md', 'c.md');
+		const chained = await tracker.flush();
+		expect(chained?.diff.renamedNodes).toEqual([{ oldPath: 'a.md', newPath: 'c.md' }]);
+		expect(chained?.diff.addedNodeIds).toEqual(['new.md']);
+		expect(chained?.diff.removedNodeIds).toEqual([]);
+		tracker.dispose();
+	});
+
+	it("keeps descendant identities after a folder rename without matching sibling prefixes", async () => {
+		const source = new Source();
+		source.files = ['Old/a.md', 'Old/Nested/b.md', 'Older/c.md'].map((path) => ({ path, basename: path }));
+		const service = new GraphDataService(source);
+		const committed = service.buildGraph();
+		const tracker = new GraphChangeTracker({
+			graphService: service,
+			getFilters: () => ({}),
+			getCommittedDescriptor: () => committed.descriptor,
+			onDiff: vi.fn(),
+			debounceMs: 100,
+			scheduler: new ManualScheduler(),
+		});
+		source.files = ['New/a.md', 'New/Nested/b.md', 'Older/c.md'].map((path) => ({ path, basename: path }));
+		tracker.markRenamed('Old', 'New', 'folder');
+		const observation = await tracker.flush();
+		expect(observation?.diff.renamedNodes).toEqual([
+			{ oldPath: 'Old/Nested/b.md', newPath: 'New/Nested/b.md' },
+			{ oldPath: 'Old/a.md', newPath: 'New/a.md' },
+		]);
+		expect(observation?.diff.requiresLayout).toBe(false);
+		tracker.dispose();
+	});
+
 	it("does not publish an in-flight rebuild after disposal", async () => {
 		const source = new Source();
 		const service = new GraphDataService(source);

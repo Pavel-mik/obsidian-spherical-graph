@@ -29,18 +29,20 @@ vault.
 1. **First open / automatic Initialize**
 
 	- Run **Spherical Graph: Open graph** from the command palette.
-	- With an existing map, confirm it appears without an Initialize progress
-	  state, vault scan, or layout worker.
+	- With an existing map and compatible graph cache, confirm it appears without
+	  an Initialize progress state, vault scan, or layout worker.
 	- With no saved map, confirm the plugin indexes the current vault and starts
 	  **Initialize** automatically without requiring **Renew layout**.
+	- Repeat during a cold metadata-index startup. Confirm Initialize waits for
+	  resolved links and includes them in its first graph.
 	- Confirm the progress state is visible and no intermediate node positions
 	  are shown.
 	- When Initialize completes, confirm the camera automatically frames the
 	  complete globe with visible space around the atmosphere instead of opening
 	  at maximum zoom. Repeat after Renew; Refresh must preserve the current
 	  camera.
-	- Close and reopen the finished map. Confirm the saved map appears without a
-	  new vault scan or layout worker.
+	- Close and reopen the finished map with its cache intact. Confirm the saved
+	  map appears without a new vault scan or layout worker.
    - Inspect diagnostics or an instrumented run and confirm the layout worker
      receives one compact intrinsic territory raster before iteration begins.
      Confirm it returns the same raster with the final position buffer and the
@@ -122,6 +124,8 @@ vault.
 
    - Add, remove, and reweight links among existing notes.
    - Confirm a pending link diff without automatic layout.
+   - In an instrumented run, delay link resolution beyond the metadata-event
+     debounce. Confirm the later `resolved` event still updates the link diff.
    - Run Refresh and verify only the local affected region may move.
 
 10. **Delete behavior**
@@ -136,6 +140,11 @@ vault.
     - Rename a note using Obsidian.
     - Confirm the displayed title/path updates at the identical position.
     - Run Refresh and confirm a pure rename does not introduce positional drift.
+    - Add another note first, then rename an existing note twice, waiting past
+      the debounce between changes. Confirm it retains its identity and old
+      position before Refresh, and its displacement cap after Refresh.
+    - Rename a folder containing notes. Confirm descendants retain identity
+      while a different folder sharing only the name prefix is unaffected.
 
 12. **Cancel Refresh**
 
@@ -143,6 +152,10 @@ vault.
     - Select **Cancel calculation**.
     - Confirm status reports cancellation, the worker terminates, and the
       previously committed snapshot and Renew generation remain unchanged.
+    - Repeat during post-layout geography with an instrumented delay. Confirm
+      Cancel terminates the geography worker and prevents the final write.
+    - Delay the final storage write. Confirm Cancel is disabled once that write
+      begins and Load map remains blocked until the operation completes.
 
 13. **Changes during operation**
 
@@ -150,6 +163,8 @@ vault.
     - Confirm the current calculation does not restart.
     - After its successful captured-input commit, confirm the state remains
       dirty for the newer change.
+    - Repeat with a note rename during Refresh. Confirm the renamed note stays
+      visible and retains its identity for any subsequent Refresh.
 
 14. **Renew confirmation and new map**
 
@@ -174,10 +189,14 @@ vault.
 
     - Record selected node vectors and camera state.
     - Restart Obsidian and reopen the view.
-	- Confirm nodes, tags, continents, islands, pins, and camera return from the
-	  saved map without a vault rebuild or global rotation.
+	- With an intact cache, confirm nodes, tags, continents, islands, pins, and
+	  camera return without a vault rebuild or global rotation.
 	- Copy or sync `data.json` from another device, choose **Load map**, and
 	  confirm the complete synced map replaces the current view.
+	- In the disposable vault, disable the plugin, back up `data.json`, and remove
+	  only its `graphCache` field. Re-enable and repeat Load map. Confirm local
+	  tags, attachments, and unresolved links return after indexing while saved
+	  note topology, positions, and geography stay unchanged; no solver starts.
 
 17. **Theme**
 
@@ -207,6 +226,9 @@ vault.
     - Test **Solid**, **Transparent**, and **Hidden**.
     - Confirm Solid depth-hides the back hemisphere, Transparent provides an
       x-ray cue, Hidden removes only the surface mesh, and no mode moves nodes.
+    - Aim at a rear node with no foreground node under the pointer. Solid must
+      prevent its hover, selection, and opening; Transparent and Hidden must
+      allow picking visible rear nodes, including after switching modes.
     - Toggle **Map controls → Globe → Continents**. Confirm land, coastlines, islands, and
       cartographic labels disappear/reappear without changing the committed
       position buffer.

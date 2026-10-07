@@ -100,6 +100,10 @@ validated final buffer becomes immutable input to the post-layout geographic
 analysis before the complete snapshot is saved atomically. A cancelled, stale,
 invalid, or failed operation leaves the previous snapshot untouched.
 
+Cancel remains available through the final geographic analysis and validation.
+It is disabled only when the final save begins; loading another map is blocked
+until the complete operation finishes.
+
 Vault changes never start a solver automatically. Instead the view reports a
 pending state such as:
 

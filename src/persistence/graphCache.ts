@@ -164,6 +164,35 @@ export function validatePersistedGraphCache(
 	});
 }
 
+/** Rebuild only disposable metadata; saved topology remains authoritative. */
+export async function restoreSavedGraph(
+	descriptor: GraphDescriptor,
+	graphSignature: string,
+	cache: PersistedGraphCache | undefined,
+	scanVault: () => Promise<GraphData>,
+): Promise<GraphData> {
+	const cachedIds = new Set(cache?.nodes.map((node) => node.id));
+	if (cache?.graphSignature === graphSignature && descriptor.nodeIds.every((id) => cachedIds.has(id))) {
+		return restoreGraphData(descriptor, graphSignature, cache);
+	}
+	const live = await scanVault();
+	const savedIds = new Set(descriptor.nodeIds);
+	const liveMetadata = new Map(live.nodes.map((node) => [node.id, node]));
+	const auxiliaryEdges = (live.auxiliaryEdges ?? []).filter((edge) => savedIds.has(edge.sourceId));
+	const auxiliaryIds = new Set(auxiliaryEdges.map((edge) => edge.targetId));
+	return restoreGraphData(descriptor, graphSignature, {
+		version: PERSISTED_GRAPH_CACHE_VERSION,
+		graphSignature,
+		nodes: descriptor.nodeIds.map((id) => ({
+			id,
+			basename: liveMetadata.get(id)?.basename ?? basenameFromPath(id),
+			tags: liveMetadata.get(id)?.tags ?? [],
+		})),
+		auxiliaryNodes: (live.auxiliaryNodes ?? []).filter((node) => auxiliaryIds.has(node.id)),
+		auxiliaryEdges,
+	});
+}
+
 /** Restores the exact saved render graph without touching the live vault. */
 export function restoreGraphData(
 	descriptor: GraphDescriptor,

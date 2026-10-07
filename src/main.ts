@@ -19,6 +19,8 @@ import {
 	GraphDataService,
 } from './graph/GraphDataService';
 import { GraphDataWorkerClient } from './graph/GraphDataWorkerClient';
+import { RenameJournal } from './graph/RenameJournal';
+import { waitForGraphMetadata } from './graph/metadataReadiness';
 import {
 	diffGraphDescriptors,
 	graphChangeRatio,
@@ -46,7 +48,7 @@ import {
 	type PersistedPluginData,
 } from './persistence/layoutState';
 import { PluginDataStore } from './persistence/PluginDataStore';
-import { restoreGraphData } from './persistence/graphCache';
+import { restoreSavedGraph } from './persistence/graphCache';
 import type {
 	CameraState,
 	RenderGraphSnapshot,
@@ -127,6 +129,7 @@ export default class SphericalGraphPlugin extends Plugin {
 	private readonly graphWorker = new GraphDataWorkerClient();
 	private readonly geographyWorker = new GeographyWorkerClient();
 	private graphTracker: GraphChangeTracker | undefined;
+	private readonly renameJournal = new RenameJournal();
 	private graphTrackerGeneration = 0;
 	private lifecycle: LayoutLifecycleController | undefined;
 	private lifecycleView: LayoutLifecycleView = {
@@ -135,6 +138,9 @@ export default class SphericalGraphPlugin extends Plugin {
 	};
 	private unsubscribeLifecycle: (() => void) | undefined;
 	private runtimePromise: Promise<void> | undefined;
+	private readonly runtimeAbort = new AbortController();
+	private graphScanAbort = new AbortController();
+	private loadingMap = false;
 	private currentGraph: GraphData | undefined;
 	private currentDiff: GraphDiff | undefined;
 	private renderSnapshot: RenderGraphSnapshot | undefined;
@@ -187,13 +193,14 @@ export default class SphericalGraphPlugin extends Plugin {
 						this.showSyncBudgetNotice(details ?? {});
 					}
 				},
-				createGeography: (graph, positions, seed, previous, territory) =>
+				createGeography: (graph, positions, seed, previous, territory, signal) =>
 					this.geographyWorker.build(
 						graph,
 						positions,
 						seed,
 						previous,
 						territory,
+						signal,
 					),
 			},
 		);
@@ -243,6 +250,7 @@ export default class SphericalGraphPlugin extends Plugin {
 	override onunload(): void {
 		this.diagnostic('session.unloading');
 		this.unloading = true;
+		this.runtimeAbort.abort();
 		if (this.cancelNoticeTimer !== undefined) {
 			window.clearTimeout(this.cancelNoticeTimer);
 			this.cancelNoticeTimer = undefined;
@@ -318,7 +326,7 @@ export default class SphericalGraphPlugin extends Plugin {
 				onAppHidden: () => {
 					if (
 						runtimeProfile.isMobile &&
-						this.lifecycleView.activeWorkerCount > 0
+						this.lifecycle?.canCancel
 					) {
 						this.lifecycle?.cancel();
 					}
@@ -386,7 +394,7 @@ export default class SphericalGraphPlugin extends Plugin {
 			name: UI_STRINGS.cancelCalculation,
 			checkCallback: (checking) => {
 				const canRun =
-					this.lifecycle?.activeWorkerCount === 1;
+					this.lifecycle?.canCancel === true;
 				if (!checking && canRun && this.lifecycle?.cancel()) {
 					this.showCancelledNotice();
 				}
@@ -501,29 +509,23 @@ export default class SphericalGraphPlugin extends Plugin {
 					this.migrateRenamedPins(oldPath, file.path, 'file');
 				} else if (file instanceof TFolder) {
 					this.migrateRenamedPins(oldPath, file.path, 'folder');
+					this.graphTracker?.markRenamed(oldPath, file.path, 'folder');
 				}
 				if (isMarkdownFile(file)) {
 					this.graphTracker?.markRenamed(oldPath, file.path);
 				}
 			}),
 		);
-		let metadataReady =
-			this.app.vault.getMarkdownFiles().length === 0 ||
-			Object.keys(this.app.metadataCache.resolvedLinks).length >=
-				this.app.vault.getMarkdownFiles().length;
 		this.registerEvent(
 			this.app.metadataCache.on('changed', (file) => {
-				if (metadataReady && isMarkdownFile(file)) {
+				if (isMarkdownFile(file)) {
 					this.graphTracker?.markVaultChanged('metadata');
 				}
 			}),
 		);
 		this.registerEvent(
 			this.app.metadataCache.on('resolved', () => {
-				metadataReady = true;
-				if (this.graphTracker?.hasQueuedGraphChange) {
-					this.graphTracker.markVaultChanged('resolved-links');
-				}
+				this.graphTracker?.markVaultChanged('resolved-links');
 			}),
 		);
 		this.registerEvent(
@@ -614,15 +616,14 @@ export default class SphericalGraphPlugin extends Plugin {
 			saved.algorithmVersion <= CURRENT_ALGORITHM_VERSION;
 		this.currentGraph =
 			canRestoreSavedGraph
-				? restoreGraphData(
+				? await restoreSavedGraph(
 						saved.graphDescriptor,
 						saved.graphSignature,
 						this.dataStore.graphCache,
+						() => this.buildVaultGraph(graphFilters(this.settings)),
 					)
-				: await this.graphWorker.build(
-						this.graphService.snapshotSource(),
-						graphFilters(this.settings),
-					);
+				: await this.buildVaultGraph(graphFilters(this.settings));
+		if (this.unloading) return;
 		const planner = new SphericalLayoutPlanner(() => this.settings);
 		const solverRunner = new LayoutSolverRunnerAdapter();
 		const runner: LayoutOperationRunner = {
@@ -646,7 +647,8 @@ export default class SphericalGraphPlugin extends Plugin {
 			commit: (
 				snapshot: PersistedLayoutSnapshot,
 				graph: GraphData,
-			) => this.applyCommittedSnapshot(snapshot, graph, [], true),
+				diff?: GraphDiff,
+			) => this.applyCommittedSnapshot(snapshot, graph, diff?.renamedNodes, true),
 			updateVisibleGraph: (
 				snapshot: PersistedLayoutSnapshot,
 				graph: GraphData,
@@ -665,6 +667,7 @@ export default class SphericalGraphPlugin extends Plugin {
 			persistence: this.dataStore,
 			sink,
 			getBaseSeed: () => this.settings.layout.baseSeed,
+			getRenameHints: (descriptor) => this.renameJournal.hintsFor(descriptor),
 			onDiagnostic: (event, details) => {
 				this.diagnostic(`lifecycle.${event}`, details);
 			},
@@ -672,6 +675,10 @@ export default class SphericalGraphPlugin extends Plugin {
 		this.lifecycle = lifecycle;
 		this.unsubscribeLifecycle = lifecycle.subscribe((view) => {
 			this.lifecycleView = view;
+			if (view.state.kind === 'fixed-clean' &&
+				this.renameJournal.hintsFor(view.committedSnapshot?.graphDescriptor).length === 0) {
+				this.renameJournal.clear();
+			}
 			this.reconcileCurrentDiff();
 			this.broadcastStatus();
 		});
@@ -709,12 +716,9 @@ export default class SphericalGraphPlugin extends Plugin {
 		this.disposeGraphTracker();
 		const generation = this.graphTrackerGeneration;
 		this.graphTracker = new GraphChangeTracker({
+			renameJournal: this.renameJournal,
 			graphService: this.graphService,
-			buildGraph: (filters) =>
-				this.graphWorker.build(
-					this.graphService.snapshotSource(),
-					filters,
-				),
+			buildGraph: (filters) => this.buildVaultGraph(filters),
 			getFilters: () => graphFilters(this.settings),
 			getCommittedDescriptor: () =>
 				this.lifecycle?.committedSnapshot?.graphDescriptor,
@@ -739,6 +743,25 @@ export default class SphericalGraphPlugin extends Plugin {
 		this.graphTrackerGeneration += 1;
 		this.graphTracker?.dispose();
 		this.graphTracker = undefined;
+		this.graphScanAbort.abort();
+		this.graphScanAbort = new AbortController();
+		this.graphWorker.dispose();
+	}
+
+	private async buildVaultGraph(filters: Partial<GraphFilterOptions>): Promise<GraphData> {
+		this.runtimeAbort.signal.throwIfAborted();
+		const signal = this.graphScanAbort.signal;
+		const metadata = this.app.metadataCache;
+		await waitForGraphMetadata({
+			isReady: () => this.app.vault.getMarkdownFiles().every((file) =>
+				Object.prototype.hasOwnProperty.call(metadata.resolvedLinks, file.path)),
+			onResolved: (callback) => {
+				const event = metadata.on('resolved', callback);
+				return () => metadata.offref(event);
+			},
+		}, signal);
+		signal.throwIfAborted();
+		return this.graphWorker.build(this.graphService.snapshotSource(), filters);
 	}
 
 	private async handleGraphObservation(
@@ -826,7 +849,7 @@ export default class SphericalGraphPlugin extends Plugin {
 				snapshot.graphDescriptor,
 				graph.descriptor,
 				graph.signature,
-				[],
+				this.renameJournal.hintsFor(snapshot.graphDescriptor),
 				snapshot.graphSignature,
 			);
 		}
@@ -856,6 +879,7 @@ export default class SphericalGraphPlugin extends Plugin {
 			compatibilityMode:
 				this.compatibilityMode &&
 				this.lifecycleView.activeWorkerCount === 1,
+			canCancel: this.lifecycle?.canCancel ?? false,
 			transientNotice: this.transientCancelled
 				? 'cancelled'
 				: undefined,
@@ -982,7 +1006,20 @@ export default class SphericalGraphPlugin extends Plugin {
 	}
 
 	private async loadMap(): Promise<void> {
-		if (this.lifecycle?.activeWorkerCount === 1) {
+		if (this.loadingMap) return;
+		this.loadingMap = true;
+		try {
+			await this.restoreMap();
+		} finally {
+			this.loadingMap = false;
+			if (!this.unloading && this.graphTracker === undefined) {
+				this.createGraphTracker();
+			}
+		}
+	}
+
+	private async restoreMap(): Promise<void> {
+		if (this.lifecycle?.isBusy) {
 			new Notice('Cancel the active layout calculation before loading a map.');
 			return;
 		}
@@ -1013,15 +1050,18 @@ export default class SphericalGraphPlugin extends Plugin {
 			);
 			return;
 		}
-		this.settings = cloneSphericalGraphSettings(persisted.settings);
-		const graph = restoreGraphData(
+		const graph = await restoreSavedGraph(
 			snapshot.graphDescriptor,
 			snapshot.graphSignature,
 			this.dataStore.graphCache,
+			() => this.buildVaultGraph(graphFilters(persisted.settings)),
 		);
+		if (this.unloading) return;
+		this.settings = cloneSphericalGraphSettings(persisted.settings);
 		this.currentGraph = graph;
 		this.currentDiff = undefined;
 		this.renderSnapshot = undefined;
+		this.renameJournal.clear();
 		this.createGraphTracker();
 		this.lifecycle?.open(graph, snapshot);
 		for (const view of this.graphViews()) {
@@ -1034,6 +1074,7 @@ export default class SphericalGraphPlugin extends Plugin {
 	}
 
 	private async scanVaultGraph(): Promise<void> {
+		if (this.loadingMap) throw new Error('The saved map is still loading.');
 		this.graphTracker?.markVaultChanged('filter');
 		await this.graphTracker?.flush();
 	}

@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import { SphericalLayoutPlanner } from '../../src/layout/SphericalLayoutPlanner';
+import { solveSphericalLayout } from '../../src/layout/SphericalSolver';
+import { RenameJournal } from '../../src/graph/RenameJournal';
+import { DEFAULT_SETTINGS } from '../../src/settings/settings';
 
 import { GraphDataService } from "../../src/graph/GraphDataService";
 import {
@@ -238,6 +242,9 @@ class FakePersistence implements LayoutSnapshotPersistence {
 	private applyCommit(
 		input: CommitCompletedResultInput,
 	): PersistedLayoutSnapshot | undefined {
+		if (input.signal?.aborted) {
+			return undefined;
+		}
 		if (
 			(this.committedSnapshot?.snapshotId ?? null) !==
 			input.expectedSnapshotId
@@ -270,13 +277,15 @@ class FakeSink implements CommittedLayoutSink {
 	readonly restored: PersistedLayoutSnapshot[] = [];
 	readonly committed: PersistedLayoutSnapshot[] = [];
 	visibleUpdates = 0;
+	lastDiff: GraphDiff | undefined;
 
 	restore(snapshot: PersistedLayoutSnapshot): void {
 		this.restored.push(snapshot);
 	}
 
-	commit(snapshot: PersistedLayoutSnapshot): void {
+	commit(snapshot: PersistedLayoutSnapshot, _graph: GraphData, diff?: GraphDiff): void {
 		this.committed.push(snapshot);
+		this.lastDiff = diff;
 	}
 
 	updateVisibleGraph(): void {
@@ -287,6 +296,7 @@ class FakeSink implements CommittedLayoutSink {
 class FakePlanner implements LayoutOperationPlanner {
 	createPayload(context: {
 		readonly graph: GraphData;
+		readonly mode: LayoutOperationMode;
 	}): Omit<
 		LayoutSolverInput,
 		"operationId" | "mode" | "graphSignature" | "effectiveSeed"
@@ -302,6 +312,14 @@ class FakePlanner implements LayoutOperationPlanner {
 			positions: fibonacciLikePositions(context.graph.nodes.length),
 			edgeEndpoints,
 			edgeWeights,
+			...(context.mode === 'refresh' ? { refresh: {
+				existingNodeMask: new Uint8Array(context.graph.nodes.length).fill(1),
+				newNodeMask: new Uint8Array(context.graph.nodes.length),
+				relaxationMovableMask: new Uint8Array(context.graph.nodes.length).fill(1),
+				anchorPositions: fibonacciLikePositions(context.graph.nodes.length),
+				anchorStrengths: new Float32Array(context.graph.nodes.length),
+				maxAnchorDistances: new Float32Array(context.graph.nodes.length).fill(Math.PI),
+			} } : {}),
 		};
 	}
 }
@@ -313,17 +331,18 @@ interface Harness {
 	readonly sink: FakeSink;
 }
 
-function harness(snapshot?: PersistedLayoutSnapshot): Harness {
+function harness(snapshot?: PersistedLayoutSnapshot, planner: LayoutOperationPlanner = new FakePlanner(), journal?: RenameJournal): Harness {
 	const runner = new FakeRunner();
 	const persistence = new FakePersistence(snapshot);
 	const sink = new FakeSink();
 	let operationSequence = 0;
 	const controller = new LayoutLifecycleController({
-		planner: new FakePlanner(),
+		planner,
 		runner,
 		persistence,
 		sink,
 		getBaseSeed: () => 42,
+		getRenameHints: journal === undefined ? undefined : (descriptor) => journal.hintsFor(descriptor),
 		createOperationId: () => {
 			operationSequence += 1;
 			return `op-${operationSequence}`;
@@ -354,6 +373,59 @@ function completed(
 		diagnostics: diagnostics(input.operationId, input.mode),
 	};
 }
+
+describe('Refresh result preservation', () => {
+	it('accepts an actual solver result under the captured preservation constraints', async () => {
+		const saved = snapshotFor(graph(['a.md', 'b.md']));
+		const h = harness(saved, new SphericalLayoutPlanner(() => DEFAULT_SETTINGS));
+		h.controller.open(graph(['a.md', 'b.md', 'c.md'], { 'a.md': { 'c.md': 1 } }), saved);
+		expect(h.controller.startRefresh()).toBe(true);
+		const input = currentOperation(h);
+		const result = solveSphericalLayout(input);
+		if (result.status !== 'completed') throw new Error('Expected the solver to complete.');
+		h.runner.emit(completed(input, result.positions));
+		await vi.waitFor(() => expect(h.controller.state.kind).toBe('fixed-clean'));
+		expect(h.persistence.commitCalls).toBe(1);
+	});
+	it('rejects an antipodal move of a hard-fixed note before persistence', () => {
+		const saved = snapshotFor(graph(['a.md']));
+		const h = harness(saved, new SphericalLayoutPlanner(() => DEFAULT_SETTINGS));
+		h.controller.open(graph(['a.md', 'b.md']), saved);
+		expect(h.controller.startRefresh()).toBe(true);
+		const input = currentOperation(h);
+		expect(input.refresh?.relaxationMovableMask[0]).toBe(0);
+		h.runner.emit(completed(input, new Float32Array([-1, 0, 0, 0, 1, 0])));
+		expect(h.controller.state.kind).toBe('error');
+		expect(h.persistence.commitCalls).toBe(0);
+		expect(h.controller.committedSnapshot).toBe(saved);
+	});
+
+	it('enforces affected-node caps even after worker transfer detaches the input buffers', () => {
+		const saved = snapshotFor(graph(['a.md']));
+		const h = harness(saved, new SphericalLayoutPlanner(() => DEFAULT_SETTINGS));
+		h.controller.open(graph(['a.md', 'b.md'], { 'a.md': { 'b.md': 1 } }), saved);
+		expect(h.controller.startRefresh()).toBe(true);
+		const input = currentOperation(h);
+		const anchors = input.refresh?.anchorPositions;
+		expect(input.refresh?.relaxationMovableMask[0]).toBe(1);
+		if (anchors === undefined) throw new Error('Missing anchors');
+		structuredClone(anchors, { transfer: [anchors.buffer] });
+		expect(anchors.length).toBe(0);
+		h.runner.emit(completed(input, new Float32Array([-1, 0, 0, 0, 1, 0])));
+		expect(h.controller.state.kind).toBe('error');
+		expect(h.persistence.commitCalls).toBe(0);
+	});
+
+	it('accepts a result that preserves the old node', async () => {
+		const saved = snapshotFor(graph(['a.md']));
+		const h = harness(saved, new SphericalLayoutPlanner(() => DEFAULT_SETTINGS));
+		h.controller.open(graph(['a.md', 'b.md']), saved);
+		h.controller.startRefresh();
+		h.runner.emit(completed(currentOperation(h), new Float32Array([1, 0, 0, 0, 1, 0])));
+		await vi.waitFor(() => expect(h.controller.state.kind).toBe('fixed-clean'));
+		expect(h.persistence.commitCalls).toBe(1);
+	});
+});
 
 describe("LayoutLifecycleController initialization and fixed states", () => {
 	it("starts initialization immediately when there is no usable snapshot", async () => {
@@ -728,6 +800,29 @@ describe("LayoutLifecycleController rollback and stale-result protection", () =>
 		});
 	});
 
+	it.each(['cancel', 'dispose'] as const)("%s prevents a late result from committing after the solver has stopped", async (action) => {
+		const currentGraph = graph(['a.md']);
+		const saved = snapshotFor(currentGraph);
+		const h = harness(saved);
+		h.persistence.delayCommit = true;
+		h.controller.open(currentGraph, saved);
+		h.controller.startRenew();
+		h.runner.emit(completed(currentOperation(h)));
+		expect(h.controller.activeWorkerCount).toBe(0);
+		expect(h.controller.isBusy).toBe(true);
+		expect(h.controller.canCancel).toBe(true);
+		if (action === 'cancel') {
+			expect(h.controller.cancel()).toBe(true);
+		} else {
+			h.controller.dispose();
+		}
+		h.persistence.resolvePendingCommit();
+		await Promise.resolve();
+		expect(h.persistence.committedSnapshot).toBe(saved);
+		expect(h.sink.committed).toHaveLength(0);
+		expect(h.controller.isBusy).toBe(false);
+	});
+
 	it("cancels and releases ownership when disposed during calculation", () => {
 		const currentGraph = graph(["a.md"]);
 		const saved = snapshotFor(currentGraph);
@@ -743,6 +838,25 @@ describe("LayoutLifecycleController rollback and stale-result protection", () =>
 });
 
 describe("LayoutLifecycleController renew and concurrent graph changes", () => {
+	it('rebases a rename made during Refresh and passes it to the renderer while other changes remain pending', async () => {
+		const initial = graph(['a.md']);
+		const saved = snapshotFor(initial);
+		const journal = new RenameJournal();
+		const h = harness(saved, new FakePlanner(), journal);
+		h.controller.open(initial, saved);
+		journal.record('a.md', 'b.md', 'file');
+		const operationGraph = graph(['b.md', 'new.md']);
+		await h.controller.markGraphChanged(operationGraph, diffGraphDescriptors(initial.descriptor, operationGraph.descriptor, operationGraph.signature, journal.hintsFor(initial.descriptor)));
+		h.controller.startRefresh();
+		journal.record('b.md', 'c.md', 'file');
+		const latestGraph = graph(['c.md', 'new.md', 'newer.md']);
+		await h.controller.markGraphChanged(latestGraph, diffGraphDescriptors(initial.descriptor, latestGraph.descriptor, latestGraph.signature, journal.hintsFor(initial.descriptor)));
+		h.runner.emit(completed(currentOperation(h)));
+		await vi.waitFor(() => expect(h.controller.state.kind).toBe('fixed-dirty'));
+		expect(h.sink.lastDiff?.renamedNodes).toEqual([{ oldPath: 'b.md', newPath: 'c.md' }]);
+		expect(h.sink.lastDiff?.addedNodeIds).toEqual(['newer.md']);
+	});
+
 	it("uses a different effective seed only after each successful Renew generation", async () => {
 		const currentGraph = graph(["a.md", "b.md"]);
 		const saved = snapshotFor(currentGraph);

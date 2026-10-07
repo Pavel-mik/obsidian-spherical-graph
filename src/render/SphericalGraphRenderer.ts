@@ -261,6 +261,7 @@ export class SphericalGraphRenderer {
 				touchDragThresholdPx: 12,
 				touchPickRadiusPx: 10,
 				enableDoubleClick: !this.profile.isMobile,
+				getSurfaceMode: () => this.appearance.surfaceMode,
 			},
 		);
 

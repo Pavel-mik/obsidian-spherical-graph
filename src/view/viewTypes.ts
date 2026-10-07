@@ -66,6 +66,7 @@ export interface ViewStatusModel {
 	continentCount?: number;
 	progress?: ViewLayoutProgress;
 	compatibilityMode?: boolean;
+	canCancel?: boolean;
 	transientNotice?: 'cancelled';
 }
 
