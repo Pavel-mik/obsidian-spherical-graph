@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.9.5] - 2026-10-07
+
+### Fixed
+
+- Keep automatic rotation and cloud drift on the globe's fixed north-south
+  axis, preserving the user's viewing latitude and screen tilt after a drag.
+
 ## [1.9.4] - 2026-10-07
 
 ### Fixed
@@ -626,7 +633,8 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.4...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.5...HEAD
+[1.9.5]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.4...1.9.5
 [1.9.4]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.3...1.9.4
 [1.9.3]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.2...1.9.3
 [1.9.2]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.1...1.9.2

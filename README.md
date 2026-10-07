@@ -162,7 +162,8 @@ and a reliable rename keeps the old position under the new path. Select
   translucent selection panel with clickable direct neighbors.
 - A persistent **Auto rotate** switch in the bottom rail starts or stops a
   slow camera orbit. Manual camera interaction pauses it and resumes it three
-  seconds after the last adjustment around the user's current orientation.
+  seconds after the last adjustment. The globe always turns about its fixed
+  north-south axis, retaining the user's viewing angle and screen tilt.
   Phones enable rotation only in Fullscreen and omit the normal-view switch.
 - A procedural cloud atmosphere appears only at wider zoom levels while Auto
   rotate is enabled. The cloud-only shell has an irregular limb, rotates once

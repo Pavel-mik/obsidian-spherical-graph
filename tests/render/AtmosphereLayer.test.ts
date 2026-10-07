@@ -49,25 +49,25 @@ describe('AtmosphereLayer', () => {
 		).toBeUndefined();
 	});
 
-	it('drifts with the apparent globe rotation and preserves orientation across axis changes', () => {
+	it('drifts in the apparent globe direction around the fixed north-south axis', () => {
 		const group = new Group();
 		const layer = new AtmosphereLayer(group);
 		const y = new Vector3(0, 1, 0);
-		const tilted = new Vector3(1, 1, 0).normalize();
 		expect(ATMOSPHERE_ROTATION_PERIOD_MS).toBe(450_000);
-		layer.render(1000, y);
-		layer.render(1032, y);
+		layer.render(1000);
+		layer.render(1032);
 		const expected = new Quaternion().setFromAxisAngle(y, -atmosphereRotationAngle(32));
 		expect(layer.object.quaternion.angleTo(expected)).toBeLessThan(1e-7);
-		layer.render(1064, tilted);
-		expected.premultiply(new Quaternion().setFromAxisAngle(tilted, -atmosphereRotationAngle(32)));
+		layer.render(1064);
+		expected.premultiply(new Quaternion().setFromAxisAngle(y, -atmosphereRotationAngle(32)));
 		expect(layer.object.quaternion.angleTo(expected)).toBeLessThan(1e-7);
+		expect(y.clone().applyQuaternion(layer.object.quaternion).distanceTo(y)).toBeLessThan(1e-10);
 		layer.setVisible(false);
 		expect(layer.isVisible).toBe(false);
 		expect(layer.object.visible).toBe(false);
-		expect(layer.render(10_000, tilted)).toBe(false);
+		expect(layer.render(10_000)).toBe(false);
 		layer.setVisible(true);
-		layer.render(20_000, tilted);
+		layer.render(20_000);
 		expect(layer.object.quaternion.angleTo(expected)).toBeLessThan(1e-7);
 		layer.dispose();
 	});

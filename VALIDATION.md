@@ -1,5 +1,34 @@
 # Validation
 
+## Fixed polar-axis autorotation (1.9.5)
+
+- Date: 2026-10-07
+- Target flow: enable autorotation -> drag to a tilted view -> release -> wait
+  three seconds -> surface resumes turning while both poles remain fixed on
+  screen; repeat the drag after rotation has resumed
+- `npm run check`: PASS; ESLint, strict TypeScript, 62 files / 374 tests,
+  production build, and release metadata validation
+- `git diff --check`: PASS
+- Browser routing: Browser plugin not available; used existing bundled
+  Playwright with installed headless Microsoft Edge, without dependency changes
+- Local harness: `http://127.0.0.1:4176/`, stopped after verification
+- Viewports: desktop 1440x960, phone 390x844, tablet 1024x768; mobile cases
+  exercise the fullscreen presentation mode with the production renderer
+- Page identity, meaningful content/canvas, error-overlay absence, console
+  health, screenshots, and repeated drag/pause/resume interactions: PASS
+- North/south screen-position drift after resume stayed below 1e-8 in
+  normalized device coordinates on all three profiles, while an equatorial
+  marker moved; camera latitude and distance stayed fixed, the atmosphere's
+  polar axis stayed at world Y, and saved node positions were unchanged
+- Unit regressions cover equatorial, tilted/rolled, upside-down, and pole-on
+  views, including the first resumed frame without a camera jump
+- Release preparation: `RELEASE_TAG=1.9.5 npm run check` passed with the same
+  374 tests; `npm audit --omit=dev` reported 0 known production vulnerabilities
+
+The harness uses a minimal Obsidian host shim. Device-sized browser viewports
+are not physical Android or iOS verification. Screenshots and temporary QA
+scripts are kept outside the repository.
+
 ## Release preparation (1.9.4)
 
 - Date: 2026-10-07

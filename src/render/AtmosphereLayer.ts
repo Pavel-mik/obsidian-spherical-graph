@@ -19,7 +19,7 @@ import {
 export { DEFAULT_ATMOSPHERE_HEIGHT_PERCENT } from '../constants';
 export const ATMOSPHERE_ROTATION_PERIOD_MS = 7.5 * 60 * 1_000;
 
-const DEFAULT_ROTATION_AXIS = new Vector3(0, 1, 0);
+const NORTH_SOUTH_AXIS = new Vector3(0, 1, 0);
 
 const DEFAULT_ATMOSPHERE_COLOR = '#dcebf2';
 const DEFAULT_ATMOSPHERE_OPACITY = 0.82;
@@ -169,12 +169,12 @@ export class AtmosphereLayer {
 	}
 
 	/**
-	 * Drifts clouds in the globe's apparent direction about the camera's up axis.
-	 * Incremental rotation preserves orientation when the user changes that axis.
+	 * Drifts clouds about the globe's fixed north-south axis, in its apparent
+	 * direction of rotation, independently of the user's viewing angle.
 	 * Returning `true` while visible
 	 * lets the owning renderer keep its animation frame loop alive.
 	 */
-	render(timestampMs: number, axis: Vector3 = DEFAULT_ROTATION_AXIS): boolean {
+	render(timestampMs: number): boolean {
 		if (!this.visible) {
 			return false;
 		}
@@ -182,7 +182,7 @@ export class AtmosphereLayer {
 		this.lastTimestamp = Number.isFinite(timestampMs) ? timestampMs : undefined;
 		// Camera orbit makes the stationary globe appear to turn in the opposite
 		// direction. Negative cloud drift therefore leads, rather than opposes it.
-		this.stepRotation.setFromAxisAngle(axis, -atmosphereRotationAngle(delta));
+		this.stepRotation.setFromAxisAngle(NORTH_SOUTH_AXIS, -atmosphereRotationAngle(delta));
 		this.mesh.quaternion.premultiply(this.stepRotation).normalize();
 		return true;
 	}

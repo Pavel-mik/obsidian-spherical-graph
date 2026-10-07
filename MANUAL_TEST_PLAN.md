@@ -60,9 +60,12 @@ vault.
      committed position buffer remains bitwise unchanged.
    - Begin a manual drag or wheel gesture. Confirm rotation pauses while the
      switch remains checked, then resumes three seconds after the last camera
-     adjustment about the camera's current up axis, without snapping to the
-     world's vertical axis. Test a strongly tilted camera. Disable the switch
-     and confirm it remains stopped.
+     adjustment about the globe's fixed north-south axis. Both poles must
+     remain stationary on screen while the surface turns, retaining the
+     chosen viewing latitude and screen tilt. Test an oblique, strongly rolled,
+     upside-down, and pole-on view, then drag again after rotation resumes.
+     Repeat in phone and tablet fullscreen. Disable the switch and confirm it
+     remains stopped.
 
 3. **Zoom and resize**
 
@@ -336,7 +339,8 @@ vault.
       procedural clouds and an irregular atmospheric limb appear without a
       solid glass shell. Confirm clouds disappear when Atmosphere is disabled,
       and drift in the globe's apparent direction at a 7.5-minute relative
-      rotation period. Tilt the camera and confirm the drift uses the same axis.
+      rotation period. Tilt the camera and confirm drift stays on the globe's
+      north-south axis rather than following the camera's screen-up direction.
     - Select a note, choose **Pin note**, restart Obsidian, and confirm the
       physical map pin and **Unpin note** state return at the same fixed city.
       Rename and then delete the note; confirm the pin follows the rename and
