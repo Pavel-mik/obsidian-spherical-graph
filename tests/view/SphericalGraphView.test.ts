@@ -1,5 +1,5 @@
 import type { WorkspaceLeaf } from 'obsidian';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	DEFAULT_SPHERICAL_GRAPH_SETTINGS,
 } from '../../src/settings/settings';
@@ -20,11 +20,15 @@ vi.mock('obsidian', () => {
 	}
 
 	class Modal {
+		containerEl = { classList: { add: vi.fn() } };
+		contentEl = { append: vi.fn() };
 		constructor(_app: unknown) {}
 
 		open(): void {
 			mocks.openModal();
 		}
+		close(): void { this.onClose(); }
+		onClose(): void {}
 	}
 
 	class Scope {
@@ -40,15 +44,15 @@ import { SphericalGraphView } from '../../src/view/SphericalGraphView';
 import { ViewToolbar } from '../../src/view/ViewToolbar';
 import { resolveRuntimeRenderProfile } from '../../src/platform/runtimeProfile';
 
-function createView(): SphericalGraphView {
+function createView(deviceClass: 'desktop' | 'phone' | 'tablet' = 'desktop'): SphericalGraphView {
 	return new SphericalGraphView({} as WorkspaceLeaf, {
 		getSettings: () => DEFAULT_SPHERICAL_GRAPH_SETTINGS,
 		runtimeProfile: resolveRuntimeRenderProfile(
 			{
-				isMobileApp: false,
-				isAndroidApp: false,
-				isPhone: false,
-				isTablet: false,
+				isMobileApp: deviceClass !== 'desktop',
+				isAndroidApp: deviceClass !== 'desktop',
+				isPhone: deviceClass === 'phone',
+				isTablet: deviceClass === 'tablet',
 			},
 			{ phoneQuality: 'automatic', tabletQuality: 'automatic' },
 		),
@@ -134,6 +138,48 @@ describe('SphericalGraphView Renew prompt', () => {
 });
 
 describe('SphericalGraphView touch dismissals', () => {
+	afterEach(() => vi.useRealTimers());
+
+	function presentationHarness(deviceClass: 'desktop' | 'phone' | 'tablet') {
+		const view = createView(deviceClass);
+		const hint = { remove: vi.fn(), setAttribute: vi.fn(), textContent: '', className: '' };
+		const parent = { insertBefore: vi.fn() };
+		const root = {
+			dataset: {} as Record<string, string>, parentNode: parent, nextSibling: null,
+			ownerDocument: { fullscreenElement: null, defaultView: { setTimeout, clearTimeout } },
+			createDiv: () => hint,
+		};
+		const renderer = { setPresentationMode: vi.fn(), setAutoRotation: vi.fn() };
+		Reflect.set(view, 'root', root);
+		Reflect.set(view, 'renderer', renderer);
+		return { view, root, hint, parent, renderer };
+	}
+
+	it('shows the desktop Escape hint for only three seconds', () => {
+		vi.useFakeTimers();
+		const { view, hint, root } = presentationHarness('desktop');
+		view.toggleFullscreen();
+		expect(root.dataset.presentation).toBe('true');
+		expect(hint.textContent).toBe('Press Esc to exit fullscreen');
+		vi.advanceTimersByTime(2999);
+		expect(hint.remove).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(1);
+		expect(hint.remove).toHaveBeenCalledOnce();
+		view.toggleFullscreen();
+		expect(root.dataset.presentation).toBeUndefined();
+	});
+
+	it.each(['phone', 'tablet'] as const)('restores %s presentation when the host dismisses its modal with Back', (deviceClass) => {
+		const { view, root, renderer, parent } = presentationHarness(deviceClass);
+		view.toggleFullscreen();
+		expect(renderer.setAutoRotation).toHaveBeenLastCalledWith(true);
+		const modal = Reflect.get(view, 'presentationModal') as { close(): void };
+		modal.close();
+		expect(root.dataset.presentation).toBeUndefined();
+		expect(renderer.setAutoRotation).toHaveBeenLastCalledWith(false);
+		expect(parent.insertBefore).toHaveBeenCalledWith(root, null);
+	});
+
 	it('closes Map controls without requiring a command selection', () => {
 		const toolbar = Object.create(ViewToolbar.prototype) as ViewToolbar;
 		const menu = { open: true };

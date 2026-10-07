@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Restrict the fullscreen exit button to tablet presentation, remove its
+  malformed text prefix, and show a three-second Escape hint on desktop.
+- Use Obsidian's public Modal history to exit phone presentation with Android
+  Back, enable phone fullscreen rotation, and clear phone controls away from
+  host navigation bars.
+- Dismiss search results on blur or outside pointer/wheel interaction while
+  retaining the search query.
+- Resume automatic rotation around the user's current camera up axis and
+  drift atmosphere in the same apparent direction at a 7.5-minute period.
+- Add regression coverage for pins surviving Renew, synchronized pin changes,
+  and note reordering in the new map.
 - Preserve note identity across repeated scans, chained renames, folder moves,
   and renames made while Refresh is running.
 - Allow cancellation during post-layout geography and validation, terminate the

@@ -60,7 +60,9 @@ vault.
      committed position buffer remains bitwise unchanged.
    - Begin a manual drag or wheel gesture. Confirm rotation pauses while the
      switch remains checked, then resumes three seconds after the last camera
-     adjustment. Disable the switch and confirm it remains stopped.
+     adjustment about the camera's current up axis, without snapping to the
+     world's vertical axis. Test a strongly tilted camera. Disable the switch
+     and confirm it remains stopped.
 
 3. **Zoom and resize**
 
@@ -91,6 +93,9 @@ vault.
      through results, and press `Enter`.
    - Confirm the chosen node is selected and the camera focuses it.
    - Confirm focus changes camera state only, not the committed position buffer.
+   - With a nonempty query, click outside the search or drag/zoom the globe.
+     Confirm the dropdown disappears while the query remains. Focus the input
+     again and confirm results return; selecting a result must still work.
 
 6. **Fixed-map interaction invariant**
 
@@ -210,7 +215,8 @@ vault.
     - Open/activate the view in a narrow split.
     - Verify toolbar wrapping, full remaining canvas height, horizontal globe
       framing, and a reduced label density without horizontal page overflow.
-    - Confirm **Auto rotate** remains visible and operable in the bottom rail.
+    - On desktop and tablet, confirm **Auto rotate** remains visible and operable
+      in the bottom rail. On phones it must be absent outside Fullscreen.
     - Move the view to a pop-out window.
     - Verify interaction, resize, owner-window animation, and cleanup.
 	- On a phone and tablet, open **Map controls**, scroll through every section,
@@ -219,7 +225,13 @@ vault.
 	  where a keyboard is present, confirm `Escape` does the same.
 	- On a tablet, enter Fullscreen and confirm the floating **Exit fullscreen**
 	  control returns to the standard graph. Repeat with `Escape` and the native
-	  Android back/fullscreen exit path.
+	  Android back/fullscreen exit path. Confirm its text has no `u00d7` prefix
+	  and it is hidden in the standard view.
+	- On desktop, confirm Fullscreen has no exit button and shows an Escape hint
+	  for three seconds. Exit with `Escape` and re-enter to verify timer cleanup.
+	- On a phone, confirm Fullscreen starts Auto rotate and has no exit button.
+	  Use the standard Android Back action and confirm the graph returns to its
+	  normal view without navigating away. Repeat with native fullscreen denied.
 
 19. **Surface modes**
 
@@ -323,7 +335,8 @@ vault.
     - At a wide zoom, enable Auto rotate and **Atmosphere**. Confirm sparse
       procedural clouds and an irregular atmospheric limb appear without a
       solid glass shell. Confirm clouds disappear when Atmosphere is disabled,
-      and rotate slowly relative to the globe.
+      and drift in the globe's apparent direction at a 7.5-minute relative
+      rotation period. Tilt the camera and confirm the drift uses the same axis.
     - Select a note, choose **Pin note**, restart Obsidian, and confirm the
       physical map pin and **Unpin note** state return at the same fixed city.
       Rename and then delete the note; confirm the pin follows the rename and
@@ -331,6 +344,8 @@ vault.
     - Change the camera, add multiple pins, choose **Save map**, restart, and
       confirm layout, camera, settings, and pins restore. Repeat with Obsidian
       Sync community-plugin data enabled on a second device.
+    - Renew on desktop, phone, and tablet. Confirm saved pins remain attached
+      to the same notes at their new positions, including after reloading.
     - Choose **Fullscreen**. Confirm the graph covers the complete screen,
       controls/details/status are absent, atmosphere and Auto rotate are on,
       and `Escape` restores the previous Auto rotate state.

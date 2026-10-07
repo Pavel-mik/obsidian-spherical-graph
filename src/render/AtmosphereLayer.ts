@@ -4,8 +4,10 @@ import {
 	FrontSide,
 	Group,
 	Mesh,
+	Quaternion,
 	ShaderMaterial,
 	SphereGeometry,
+	Vector3,
 } from 'three';
 import {
 	DEFAULT_ATMOSPHERE_HEIGHT_PERCENT,
@@ -15,7 +17,9 @@ import {
 } from '../constants';
 
 export { DEFAULT_ATMOSPHERE_HEIGHT_PERCENT } from '../constants';
-export const ATMOSPHERE_ROTATION_PERIOD_MS = 10 * 60 * 1_000;
+export const ATMOSPHERE_ROTATION_PERIOD_MS = 7.5 * 60 * 1_000;
+
+const DEFAULT_ROTATION_AXIS = new Vector3(0, 1, 0);
 
 const DEFAULT_ATMOSPHERE_COLOR = '#dcebf2';
 const DEFAULT_ATMOSPHERE_OPACITY = 0.82;
@@ -95,6 +99,8 @@ export class AtmosphereLayer {
 	private readonly mesh: Mesh;
 	private heightPercent: number;
 	private visible: boolean;
+	private lastTimestamp: number | undefined;
+	private readonly stepRotation = new Quaternion();
 
 	constructor(
 		private readonly group: Group,
@@ -138,6 +144,7 @@ export class AtmosphereLayer {
 	}
 
 	setVisible(visible: boolean): void {
+		if (!visible) this.lastTimestamp = undefined;
 		this.visible = visible;
 		this.mesh.visible = visible;
 	}
@@ -162,14 +169,21 @@ export class AtmosphereLayer {
 	}
 
 	/**
-	 * Advances the independent cloud longitude. Returning `true` while visible
+	 * Drifts clouds in the globe's apparent direction about the camera's up axis.
+	 * Incremental rotation preserves orientation when the user changes that axis.
+	 * Returning `true` while visible
 	 * lets the owning renderer keep its animation frame loop alive.
 	 */
-	render(timestampMs: number): boolean {
+	render(timestampMs: number, axis: Vector3 = DEFAULT_ROTATION_AXIS): boolean {
 		if (!this.visible) {
 			return false;
 		}
-		this.mesh.rotation.y = atmosphereRotationAngle(timestampMs);
+		const delta = Math.min(64, Math.max(0, timestampMs - (this.lastTimestamp ?? timestampMs)));
+		this.lastTimestamp = Number.isFinite(timestampMs) ? timestampMs : undefined;
+		// Camera orbit makes the stationary globe appear to turn in the opposite
+		// direction. Negative cloud drift therefore leads, rather than opposes it.
+		this.stepRotation.setFromAxisAngle(axis, -atmosphereRotationAngle(delta));
+		this.mesh.quaternion.premultiply(this.stepRotation).normalize();
 		return true;
 	}
 

@@ -107,6 +107,7 @@ export class SearchController {
 	private results: readonly SearchResult[] = [];
 	private activeIndex = -1;
 	private selectedResultKey: string | undefined;
+	private interacting = false;
 	private disposed = false;
 
 	constructor(
@@ -137,6 +138,11 @@ export class SearchController {
 		this.input.addEventListener('input', this.onInput);
 		this.input.addEventListener('keydown', this.onKeyDown);
 		this.input.addEventListener('keyup', this.onKeyUp);
+		this.input.addEventListener('focus', this.onFocus);
+		this.input.addEventListener('pointerdown', this.onFocus);
+		this.element.addEventListener('focusout', this.onFocusOut);
+		this.element.ownerDocument.addEventListener('pointerdown', this.onOutsideInteraction, true);
+		this.element.ownerDocument.addEventListener('wheel', this.onOutsideInteraction, { capture: true, passive: true });
 	}
 
 	setNodes(nodes: readonly RenderNode[]): void {
@@ -162,6 +168,14 @@ export class SearchController {
 		this.renderResults();
 	}
 
+	/** Keep the query while removing the dropdown from the map. */
+	dismiss(): void {
+		this.interacting = false;
+		this.resultsElement.hidden = true;
+		this.input.setAttribute('aria-expanded', 'false');
+		this.input.removeAttribute('aria-activedescendant');
+	}
+
 	dispose(): void {
 		if (this.disposed) {
 			return;
@@ -170,12 +184,31 @@ export class SearchController {
 		this.input.removeEventListener('input', this.onInput);
 		this.input.removeEventListener('keydown', this.onKeyDown);
 		this.input.removeEventListener('keyup', this.onKeyUp);
+		this.input.removeEventListener('focus', this.onFocus);
+		this.input.removeEventListener('pointerdown', this.onFocus);
+		this.element.removeEventListener('focusout', this.onFocusOut);
+		this.element.ownerDocument.removeEventListener('pointerdown', this.onOutsideInteraction, true);
+		this.element.ownerDocument.removeEventListener('wheel', this.onOutsideInteraction, true);
 		this.element.remove();
 	}
 
 	private readonly onInput = (): void => {
+		this.interacting = true;
 		this.selectedResultKey = undefined;
 		this.refreshResults();
+	};
+
+	private readonly onFocus = (): void => {
+		this.interacting = true;
+		this.refreshResults();
+	};
+
+	private readonly onFocusOut = (event: FocusEvent): void => {
+		if (!this.element.contains(event.relatedTarget as Node | null)) this.dismiss();
+	};
+
+	private readonly onOutsideInteraction = (event: Event): void => {
+		if (!event.composedPath().includes(this.element)) this.dismiss();
 	};
 
 	private readonly onKeyDown = (event: KeyboardEvent): void => {
@@ -238,6 +271,7 @@ export class SearchController {
 	}
 
 	private moveActive(delta: number): void {
+		this.interacting = true;
 		if (this.results.length === 0) {
 			this.activeIndex = -1;
 			return;
@@ -260,7 +294,7 @@ export class SearchController {
 
 	private renderResults(): void {
 		this.resultsElement.replaceChildren();
-		const hasResults = this.results.length > 0;
+		const hasResults = this.interacting && this.results.length > 0;
 		this.resultsElement.hidden = !hasResults;
 		this.input.setAttribute('aria-expanded', String(hasResults));
 		this.input.removeAttribute('aria-activedescendant');
@@ -337,7 +371,7 @@ export class SearchController {
 			}
 		}
 		const active = this.resultsElement.children.item(this.activeIndex);
-		if (active !== null) {
+		if (active !== null && !this.resultsElement.hidden) {
 			const activeElement = active as HTMLElement;
 			this.input.setAttribute('aria-activedescendant', activeElement.id);
 			activeElement.scrollIntoView({ block: 'nearest' });

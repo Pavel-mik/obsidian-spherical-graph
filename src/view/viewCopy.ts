@@ -33,6 +33,7 @@ export const VIEW_CONTROL_COPY = {
 	fullscreen: 'Fullscreen',
 	fullscreenDescription: 'Open a distraction-free rotating globe.',
 	exitFullscreen: 'Exit fullscreen',
+	fullscreenExitHint: 'Press Esc to exit fullscreen',
 	exitFullscreenDescription: 'Return to the standard graph view.',
 	autoRotate: 'Auto rotate',
 	findRoute: UI_STRINGS.routeIdle,

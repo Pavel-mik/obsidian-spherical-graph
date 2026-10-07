@@ -2238,6 +2238,7 @@
 }
 
 .spherical-graph-presentation-exit {
+	display: none;
 	position: fixed;
 	top: max(12px, env(safe-area-inset-top));
 	right: max(12px, env(safe-area-inset-right));
@@ -2255,12 +2256,58 @@
 	cursor: var(--cursor);
 }
 
-.spherical-graph-presentation-exit::before {
-	margin-inline-end: 7px;
-	content: "\u00d7";
-	font-size: 18px;
-	font-weight: 400;
-	vertical-align: -1px;
+.spherical-graph-view[data-device="tablet"][data-presentation="true"]
+	.spherical-graph-presentation-exit:not([hidden]) {
+	display: inline-flex;
+	align-items: center;
+}
+
+.spherical-graph-view [hidden] {
+	display: none;
+}
+
+.spherical-graph-presentation-hint {
+	position: absolute;
+	z-index: 10002;
+	top: 20px;
+	left: 50%;
+	transform: translateX(-50%);
+	padding: 10px 18px;
+	border: 1px solid rgba(212, 181, 114, 0.5);
+	border-radius: 999px;
+	background: rgba(7, 19, 31, 0.85);
+	color: var(--sg-text);
+	font-size: 14px;
+	pointer-events: none;
+}
+
+/* The public Modal API owns Android Back, including CSS fullscreen fallback. */
+.spherical-graph-presentation-modal.modal-container {
+	padding: 0;
+}
+
+.spherical-graph-presentation-modal .modal {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	max-width: none;
+	height: 100%;
+	max-height: none;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	transform: none;
+}
+
+.spherical-graph-presentation-modal .modal-content {
+	height: 100%;
+	margin: 0;
+	padding: 0;
+}
+
+.spherical-graph-presentation-modal :is(.modal-close-button, .modal-header) {
+	display: none;
 }
 
 .spherical-graph-presentation-exit:hover,
@@ -2296,6 +2343,7 @@
 }
 
 .spherical-graph-view[data-device="phone"] .spherical-graph-toolbar {
+	position: static;
 	gap: 8px;
 	padding:
 		max(8px, env(safe-area-inset-top))
@@ -2305,7 +2353,7 @@
 }
 
 .spherical-graph-view[data-device="phone"] .spherical-graph-toolbar-search {
-	flex: 1 1 calc(100% - 58px);
+	flex: 1 1 0;
 	min-width: 0;
 }
 
@@ -2325,8 +2373,30 @@
 }
 
 .spherical-graph-view[data-device="phone"] .spherical-graph-controls-panel {
+	position: absolute;
+	top: calc(68px + env(safe-area-inset-top));
+	bottom: calc(var(--sg-phone-bottom-clearance) + 52px);
 	left: max(8px, env(safe-area-inset-left));
 	width: auto;
+}
+
+.spherical-graph-view[data-device="phone"] {
+	--sg-phone-bottom-clearance: calc(
+		var(--sg-mobile-navbar-clearance) + max(12px, env(safe-area-inset-bottom))
+	);
+	box-sizing: border-box;
+}
+
+.spherical-graph-view[data-device="phone"]:not([data-presentation="true"]) {
+	padding-bottom: var(--sg-phone-bottom-clearance);
+}
+
+.spherical-graph-view[data-device="phone"] .spherical-graph-controls-menu {
+	position: static;
+}
+
+.spherical-graph-view[data-device="phone"] .spherical-graph-auto-rotate {
+	display: none;
 }
 
 .spherical-graph-view[data-device="tablet"] .spherical-graph-controls-panel {

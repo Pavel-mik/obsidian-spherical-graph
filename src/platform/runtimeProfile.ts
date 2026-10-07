@@ -120,7 +120,7 @@ export function resolveRuntimeRenderProfile(
 		hideLabelsDuringInteraction: true,
 		hideBaseEdgesDuringInteraction: true,
 		enableHoverPicking: false,
-		supportsAutoRotation: false,
+		supportsAutoRotation: true,
 		presentationUsesAtmosphere: highQuality,
 	});
 }

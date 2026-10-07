@@ -46,7 +46,7 @@ describe('runtime render profiles', () => {
 		expect(profile.deviceClass).toBe('phone');
 		expect(profile.pixelRatioCap).toBeLessThanOrEqual(1.25);
 		expect(profile.enableHoverPicking).toBe(false);
-		expect(profile.supportsAutoRotation).toBe(false);
+		expect(profile.supportsAutoRotation).toBe(true);
 		expect(profile.deferDecorativeLayers).toBe(true);
 	});
 

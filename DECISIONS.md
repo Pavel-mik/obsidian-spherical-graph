@@ -37,6 +37,24 @@
   signal when `resolvedLinks` has not yet covered all Markdown sources. This
   avoids a partial startup graph and false pending-link changes.
 
+## Presentation and interaction corrections (2026-10-07)
+
+- Mobile presentation temporarily hosts the existing graph root in a public
+  Obsidian `Modal`, whose history lifecycle handles Android Back. Closing it
+  restores the root to its original parent and exits native or CSS fullscreen.
+  No private mobile API or global history interception is used.
+- Only tablets render an exit button. Desktop provides a three-second Escape
+  hint; phones rely on host Back and auto-rotate only during presentation.
+- Phone controls remain inside the graph pane, with clearance for Obsidian's
+  navigation bar and the device safe area. Tablet spacing is unchanged.
+- Automatic camera orbit uses the current camera up vector. Atmospheric drift
+  accumulates rotations about that same axis with the opposite world-space
+  sign, because positive camera orbit makes the planet appear to turn in the
+  negative direction. Clouds complete a relative turn every 7.5 minutes.
+- Renew already retains pins through the shared persistence envelope and
+  repositions their meshes by note identity. Regression tests cover both
+  synced pin changes and reordered nodes; no persistence-format change is needed.
+
 ## Visual scale and route navigation
 
 - **Globe size** is a relative visual scale rather than a geometry or camera

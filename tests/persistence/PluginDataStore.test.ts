@@ -222,6 +222,25 @@ describe("PluginDataStore loading", () => {
 });
 
 describe("PluginDataStore transactional writes", () => {
+	it('preserves saved and concurrently synced pins through Renew and reload', async () => {
+		const adapter = new MemoryAdapter();
+		const store = createStore(adapter);
+		await store.load();
+		const graph = createGraph(['a.md', 'b.md']);
+		const initial = await store.commitCompletedResult({ graph, mode: 'initialize', operationId: 'initial', effectiveSeed: 1, completedAt: 1, positions: new Float32Array([1, 0, 0, 0, 1, 0]), expectedSnapshotId: null });
+		await store.setPinnedNotePath('a.md', true);
+		const synced = createStore(adapter);
+		await synced.load();
+		await synced.setPinnedNotePath('b.md', true);
+		const renewed = await store.commitCompletedResult({ graph, mode: 'renew', operationId: 'renewed', effectiveSeed: 2, completedAt: 2, positions: new Float32Array([0, 0, -1, 0, -1, 0]), expectedSnapshotId: initial?.snapshotId ?? null });
+		expect(renewed?.renewGeneration).toBe(1);
+		expect(store.pinnedNotePaths).toEqual(['a.md', 'b.md']);
+		const reloaded = createStore(adapter);
+		await reloaded.load();
+		expect(reloaded.pinnedNotePaths).toEqual(['a.md', 'b.md']);
+		expect(reloaded.committedSnapshot?.snapshotId).toBe('layout-renewed');
+	});
+
 	it("does not save an invalid completed result", async () => {
 		const adapter = new MemoryAdapter();
 		const store = createStore(adapter);
