@@ -63,6 +63,25 @@ const snapshot = prepareRenderSnapshot({
 });
 
 describe('PinLayer', () => {
+	it('keeps pins attached to their notes when Renew replaces and reorders the map', () => {
+		const group = new Group();
+		const layer = new PinLayer(group, DEFAULT_SETTINGS.appearance, theme);
+		layer.setSnapshot(snapshot);
+		layer.setPinnedNodeIds(['Atlas.md']);
+		layer.setSnapshot(prepareRenderSnapshot({
+			snapshotId: 'renewed',
+			nodes: [...snapshot.nodes].reverse().map((node, index) => ({ ...node, index })),
+			edges: [],
+			positions: new Float32Array([0, -1, 0, 0, 0, -1]),
+		}));
+		const heads = group.getObjectByName('spherical-graph-pin-heads') as InstancedMesh;
+		expect(heads.count).toBe(1);
+		const matrix = new Matrix4();
+		heads.getMatrixAt(0, matrix);
+		expect(new Vector3().setFromMatrixPosition(matrix).normalize().distanceTo(new Vector3(0, 0, -1))).toBeLessThan(1e-8);
+		layer.dispose();
+	});
+
 	it('anchors a physical shaft and head outside each pinned city', () => {
 		const group = new Group();
 		const layer = new PinLayer(

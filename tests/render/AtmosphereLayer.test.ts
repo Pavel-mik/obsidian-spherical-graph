@@ -3,8 +3,10 @@ import {
 	FrontSide,
 	Group,
 	Mesh,
+	Quaternion,
 	ShaderMaterial,
 	SphereGeometry,
+	Vector3,
 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { SPHERE_RADIUS } from '../../src/constants';
@@ -47,27 +49,26 @@ describe('AtmosphereLayer', () => {
 		).toBeUndefined();
 	});
 
-	it('rotates relative to the globe once every ten minutes', () => {
+	it('drifts with the apparent globe rotation and preserves orientation across axis changes', () => {
 		const group = new Group();
 		const layer = new AtmosphereLayer(group);
-
-		expect(layer.render(ATMOSPHERE_ROTATION_PERIOD_MS / 2)).toBe(
-			true,
-		);
-		expect(layer.object.rotation.y).toBeCloseTo(Math.PI, 10);
-		expect(
-			atmosphereRotationAngle(
-				ATMOSPHERE_ROTATION_PERIOD_MS,
-			),
-		).toBeCloseTo(0, 10);
-
+		const y = new Vector3(0, 1, 0);
+		const tilted = new Vector3(1, 1, 0).normalize();
+		expect(ATMOSPHERE_ROTATION_PERIOD_MS).toBe(450_000);
+		layer.render(1000, y);
+		layer.render(1032, y);
+		const expected = new Quaternion().setFromAxisAngle(y, -atmosphereRotationAngle(32));
+		expect(layer.object.quaternion.angleTo(expected)).toBeLessThan(1e-7);
+		layer.render(1064, tilted);
+		expected.premultiply(new Quaternion().setFromAxisAngle(tilted, -atmosphereRotationAngle(32)));
+		expect(layer.object.quaternion.angleTo(expected)).toBeLessThan(1e-7);
 		layer.setVisible(false);
 		expect(layer.isVisible).toBe(false);
 		expect(layer.object.visible).toBe(false);
-		expect(layer.render(ATMOSPHERE_ROTATION_PERIOD_MS / 4)).toBe(
-			false,
-		);
-		expect(layer.object.rotation.y).toBeCloseTo(Math.PI, 10);
+		expect(layer.render(10_000, tilted)).toBe(false);
+		layer.setVisible(true);
+		layer.render(20_000, tilted);
+		expect(layer.object.quaternion.angleTo(expected)).toBeLessThan(1e-7);
 		layer.dispose();
 	});
 

@@ -1,5 +1,36 @@
 # Validation
 
+## Fullscreen, mobile controls, and rotation fixes (unreleased)
+
+- Date: 2026-10-07
+- `npm run check`: PASS (ESLint, strict TypeScript, production build, release validation)
+- Vitest: PASS; 62 files, 371 tests
+- `git diff --check`: PASS
+- Rendered UI: PASS using bundled Playwright and installed Microsoft Edge
+- Browser routing: Browser plugin not available
+- Local harness: `http://127.0.0.1:4175/`, stopped after verification
+- Viewports: desktop 1440x960, phone 390x844 and 844x390, tablet 1024x768
+
+The temporary harness imports the production view, toolbar, search, renderer,
+stylesheet, and inline land worker with a minimal Obsidian host shim. Page
+identity, nonblank rendering, absence of error overlays, and clean browser
+console passed. Screenshots were inspected for phone control clearance,
+desktop Escape guidance, and the tablet exit button.
+
+Interaction checks passed for query-preserving dropdown dismissal on outside
+click and wheel, reopening on focus, keeping results closed after a metadata
+update, fullscreen entry/exit, the three-second desktop hint, phone fullscreen
+auto-rotation, and rotation resumption after a real arcball drag without an axis
+change. Phone controls remain reachable in portrait and landscape. Pins remain
+present after a replacement snapshot on all three device profiles; persistence
+tests separately verify Renew, concurrent synced pins, and reload.
+
+Native desktop fullscreen was exercised. Mobile tests deliberately disable the
+browser Fullscreen API and dismiss the host modal to verify the CSS fallback
+and restoration path. Actual Obsidian mobile shell behavior, physical Android
+Back, display cutouts, and device navigation bars require the device scenarios
+in `docs/MOBILE_QA.md`; they were not tested on physical hardware in this run.
+
 ## Graph consistency fixes (unreleased)
 
 - Date: 2026-10-07

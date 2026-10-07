@@ -162,15 +162,21 @@ and a reliable rename keeps the old position under the new path. Select
   translucent selection panel with clickable direct neighbors.
 - A persistent **Auto rotate** switch in the bottom rail starts or stops a
   slow camera orbit. Manual camera interaction pauses it and resumes it three
-  seconds after the last adjustment without clearing the switch.
+  seconds after the last adjustment around the user's current orientation.
+  Phones enable rotation only in Fullscreen and omit the normal-view switch.
 - A procedural cloud atmosphere appears only at wider zoom levels while Auto
   rotate is enabled. The cloud-only shell has an irregular limb, rotates once
-  every ten minutes relative to the globe, and can be hidden independently.
+  every 7.5 minutes relative to the globe in the same apparent direction,
+  and can be hidden independently.
 - Persistent map pins mark favourite note cities. Pins, the committed layout,
   camera, and settings share one versioned plugin-data envelope with automatic
-  and explicit **Save map** persistence.
+  and explicit **Save map** persistence. Renew keeps pins attached to their
+  notes at the new positions on every device.
 - A control-free **Fullscreen** presentation mode forces atmosphere and Auto
   rotate on temporarily, then restores the previous rotation state on exit.
+  Phone atmosphere visibility still follows its quality profile. Desktop shows
+  an Escape hint for three seconds; Android phones use the system Back action,
+  and tablets keep an **Exit fullscreen** button.
 - Searchable excluded-folder picker in settings. Selecting a folder excludes
   its entire subtree after an explicit Refresh without moving the current map
   immediately.
@@ -211,7 +217,7 @@ and a reliable rename keeps the old position under the new path. Select
 | Open in new tab | `Ctrl`/`Cmd` + click |
 | Open from selection details | Click a selected, linked, endpoint, or route note; hold `Ctrl`/`Cmd` for a new tab |
 | Hide or show selection details | Select the **Selection details** header |
-| Find and focus | Type in **Find a note or tag…** and choose a result |
+| Find and focus | Type in **Find a note or tag…** and choose a result; click elsewhere to dismiss results while keeping the query |
 | Find all shortest routes | Select an origin, then choose **Map controls → Explore → Find route** and select a destination |
 | Clear a route | Choose the active route control in **Map controls → Explore** |
 | Hide categories without moving the map | Use **Map controls → Visible content** |
@@ -219,7 +225,7 @@ and a reliable rename keeps the old position under the new path. Select
 | Hide or show the cloud layer | Toggle **Atmosphere** in **Map controls → Globe** |
 | Save the complete map state now | Choose **Map controls → Saved map → Save map** |
 | Reload the last saved or synced map | Choose **Map controls → Saved map → Load map** |
-| Enter the control-free presentation globe | Choose **Map controls → Explore → Fullscreen**; use **Exit fullscreen** or press `Escape` to return |
+| Enter the control-free presentation globe | Choose **Map controls → Explore → Fullscreen**; exit with `Escape` on desktop, system Back on Android phones, or **Exit fullscreen** on tablets |
 | Change globe surface | Use **Map controls → Globe** |
 | Include pending changes | Choose **Map controls → Layout → Refresh layout** |
 | Build a new world | Choose **Map controls → Layout → Renew layout**, then confirm |

@@ -10,6 +10,7 @@ import {
 	findAllShortestPathUnion,
 } from '../graph/shortestPaths';
 import { UI_STRINGS } from '../i18n';
+import { MobilePresentationModal } from './MobilePresentationModal';
 import { SphericalGraphRenderer } from '../render/SphericalGraphRenderer';
 import {
 	DEFAULT_RENDER_FILTERS,
@@ -90,6 +91,9 @@ export class SphericalGraphView extends ItemView {
 	private presentationMode = false;
 	private presentationRequestToken = 0;
 	private presentationExitButton: HTMLButtonElement | undefined;
+	private presentationModal: MobilePresentationModal | undefined;
+	private presentationHint: HTMLElement | undefined;
+	private clearPresentationHintTimer: (() => void) | undefined;
 	private frameGlobeOnNextSnapshot = false;
 	private root: HTMLElement | undefined;
 	private stage: HTMLElement | undefined;
@@ -242,23 +246,19 @@ export class SphericalGraphView extends ItemView {
 			this.currentSettings.appearance.showAtmosphere,
 			this.options.runtimeProfile,
 		);
-		this.presentationExitButton = this.root.createEl('button');
-		this.presentationExitButton.type = 'button';
-		this.presentationExitButton.className =
-			'spherical-graph-presentation-exit';
-		this.presentationExitButton.textContent =
-			VIEW_CONTROL_COPY.exitFullscreen;
-		this.presentationExitButton.title =
-			VIEW_CONTROL_COPY.exitFullscreenDescription;
-		this.presentationExitButton.setAttribute(
-			'aria-label',
-			`${VIEW_CONTROL_COPY.exitFullscreen}. ${VIEW_CONTROL_COPY.exitFullscreenDescription}`,
-		);
-		this.presentationExitButton.hidden = true;
-		this.presentationExitButton.addEventListener(
-			'click',
-			this.onPresentationExit,
-		);
+		if (this.options.runtimeProfile.deviceClass === 'tablet') {
+			this.presentationExitButton = this.root.createEl('button');
+			this.presentationExitButton.type = 'button';
+			this.presentationExitButton.className = 'spherical-graph-presentation-exit';
+			this.presentationExitButton.textContent = VIEW_CONTROL_COPY.exitFullscreen;
+			this.presentationExitButton.title = VIEW_CONTROL_COPY.exitFullscreenDescription;
+			this.presentationExitButton.setAttribute(
+				'aria-label',
+				`${VIEW_CONTROL_COPY.exitFullscreen}. ${VIEW_CONTROL_COPY.exitFullscreenDescription}`,
+			);
+			this.presentationExitButton.hidden = true;
+			this.presentationExitButton.addEventListener('click', this.onPresentationExit);
+		}
 		this.root.append(this.stage);
 		this.root.ownerDocument.addEventListener(
 			'fullscreenchange',
@@ -298,6 +298,7 @@ export class SphericalGraphView extends ItemView {
 			autoRotateText,
 		);
 		this.autoRotateLabel.hidden =
+			this.options.runtimeProfile.deviceClass === 'phone' ||
 			!this.options.runtimeProfile.supportsAutoRotation;
 		this.autoRotateToggle.addEventListener(
 			'change',
@@ -1077,6 +1078,16 @@ export class SphericalGraphView extends ItemView {
 		if (this.presentationExitButton !== undefined) {
 			this.presentationExitButton.hidden = false;
 		}
+		this.toolbar?.search.dismiss();
+		if (this.options.runtimeProfile.isMobile) {
+			this.presentationModal = new MobilePresentationModal(this.app, root, () => {
+				this.presentationModal = undefined;
+				this.exitPresentationMode();
+			});
+			this.presentationModal.open();
+		} else {
+			this.showPresentationHint(root);
+		}
 		this.toolbar?.setFullscreenActive(true);
 		this.renderer?.setPresentationMode(true);
 		if (this.options.runtimeProfile.supportsAutoRotation) {
@@ -1116,6 +1127,10 @@ export class SphericalGraphView extends ItemView {
 		}
 		this.presentationRequestToken += 1;
 		this.presentationMode = false;
+		this.clearPresentationHint();
+		const modal = this.presentationModal;
+		this.presentationModal = undefined;
+		modal?.close();
 		if (root !== undefined) {
 			delete root.dataset.presentation;
 		}
@@ -1141,6 +1156,27 @@ export class SphericalGraphView extends ItemView {
 	private readonly onPresentationExit = (): void => {
 		this.exitPresentationMode();
 	};
+
+	private showPresentationHint(root: HTMLElement): void {
+		this.clearPresentationHint();
+		const hint = root.createDiv();
+		hint.className = 'spherical-graph-presentation-hint';
+		hint.textContent = VIEW_CONTROL_COPY.fullscreenExitHint;
+		hint.setAttribute('role', 'status');
+		this.presentationHint = hint;
+		const ownerWindow = root.ownerDocument.defaultView;
+		if (ownerWindow !== null) {
+			const timer = ownerWindow.setTimeout(() => this.clearPresentationHint(), 3_000);
+			this.clearPresentationHintTimer = () => ownerWindow.clearTimeout(timer);
+		}
+	}
+
+	private clearPresentationHint(): void {
+		this.clearPresentationHintTimer?.();
+		this.clearPresentationHintTimer = undefined;
+		this.presentationHint?.remove();
+		this.presentationHint = undefined;
+	}
 
 	private readonly onFullscreenChange = (): void => {
 		const root = this.root;

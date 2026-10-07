@@ -60,7 +60,6 @@ interface WindowWithObservers extends Window {
 
 const CAMERA_TARGET = new Vector3(0, 0, 0);
 const IDENTITY_QUATERNION = new Quaternion();
-const AUTO_ROTATION_AXIS = new Vector3(0, 1, 0);
 export const RENDERER_CAMERA_NEAR_PLANE = 0.25;
 const ATMOSPHERE_MAX_OPACITY = 0.82;
 const ATMOSPHERE_FADE_START_ZOOM_PERCENT = 64;
@@ -383,7 +382,8 @@ export class SphericalGraphRenderer {
 	}
 
 	setAutoRotation(enabled: boolean): void {
-		enabled = enabled && this.profile.supportsAutoRotation;
+		enabled = enabled && this.profile.supportsAutoRotation &&
+			(this.profile.deviceClass !== 'phone' || this.presentationMode);
 		if (this.autoRotationRequested === enabled) {
 			return;
 		}
@@ -759,7 +759,7 @@ export class SphericalGraphRenderer {
 		const angle = automaticRotationAngle(timestamp - previous);
 		if (angle > 0) {
 			const rotation = new Quaternion().setFromAxisAngle(
-				AUTO_ROTATION_AXIS,
+				this.camera.up.clone().normalize(),
 				angle,
 			);
 			this.camera.position.applyQuaternion(rotation);
@@ -786,7 +786,7 @@ export class SphericalGraphRenderer {
 				);
 		this.atmosphereLayer.setOpacity(opacity);
 		this.atmosphereLayer.setVisible(opacity > 0.004);
-		return this.atmosphereLayer.render(timestamp);
+		return this.atmosphereLayer.render(timestamp, this.camera.up);
 	}
 
 	private advanceFocusAnimation(timestamp: number): boolean {
