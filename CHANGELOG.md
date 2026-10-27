@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-10-28
+
+### Fixed
+
+- Use "native Search" in the short description to satisfy the Community
+  directory's manifest requirements. Add that rule to local release validation.
+  Features and screenshots are unchanged from 1.10.0.
+
 ## [1.10.0] - 2026-10-28
 
 ### Added
@@ -672,7 +680,8 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.10.0...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.10.1...HEAD
+[1.10.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.10.0...1.10.1
 [1.10.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.5...1.10.0
 [1.9.5]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.4...1.9.5
 [1.9.4]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.3...1.9.4

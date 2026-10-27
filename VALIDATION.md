@@ -1,5 +1,16 @@
 # Validation
 
+## Community manifest compatibility (1.10.1)
+
+- Date: 2026-10-28. Community validation rejected the 1.10.0 short description
+  because it contained the redundant product name. Changed it to "native Search"
+  and added the same prohibition to local release validation.
+- `RELEASE_TAG=1.10.1 npm run check`: PASS, 64 files / 397 tests plus lint,
+  TypeScript, production build and release metadata validation.
+- Isolated manifest fixtures: valid description accepted; prohibited description
+  rejected. `npm audit --omit=dev`: zero vulnerabilities. `git diff --check`: PASS.
+- Runtime code and all five screenshots are unchanged from the verified 1.10.0.
+
 ## Countries, native Search, and release 1.10.0
 
 - Date: 2026-10-28. `RELEASE_TAG=1.10.0 npm run check` with
