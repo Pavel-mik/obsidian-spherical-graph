@@ -190,9 +190,135 @@
 }
 
 .spherical-graph-toolbar-search {
-	flex: 1 1 260px;
-	min-width: 160px;
-	max-width: 420px;
+	flex: 1 1 440px;
+	min-width: 0;
+	max-width: 760px;
+}
+
+.spherical-graph-search-control {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.spherical-graph-search-control [hidden] {
+	display: none;
+}
+
+.spherical-graph-search-control > .spherical-graph-search {
+	flex: 1 1 0;
+	min-width: 0;
+	width: auto;
+}
+
+.spherical-graph-search-source {
+	position: relative;
+	flex: 0 0 146px;
+	width: 146px;
+}
+
+.spherical-graph-search-source::after {
+	content: "";
+	position: absolute;
+	top: 50%;
+	right: 12px;
+	width: 5px;
+	height: 5px;
+	border-right: 1.5px solid var(--sg-text);
+	border-bottom: 1.5px solid var(--sg-text);
+	transform: translateY(-70%) rotate(45deg);
+	pointer-events: none;
+}
+
+.spherical-graph-view .spherical-graph-search-mode {
+	appearance: none;
+	box-sizing: border-box;
+	width: 100%;
+	height: var(--sg-control-height);
+	padding-right: 26px;
+	border: 1px solid var(--sg-cyan-dim);
+	border-radius: 4px;
+	background-color: var(--sg-panel-raised);
+	box-shadow: none;
+	color: var(--sg-text);
+	font: 12px var(--font-interface), "Segoe UI", sans-serif;
+}
+
+.spherical-graph-search-control[data-mode="obsidian"] .spherical-graph-search-mode {
+	border-color: #963652;
+}
+
+.spherical-graph-follow-search {
+	display: flex;
+	align-items: center;
+	flex: 1 1 0;
+	min-width: 0;
+	box-sizing: border-box;
+	height: var(--sg-control-height);
+	border: 1px solid var(--sg-cyan-dim);
+	border-radius: 4px;
+	background: var(--sg-panel-raised);
+}
+
+.spherical-graph-view button.spherical-graph-search-query,
+.spherical-graph-view button.spherical-graph-search-clear {
+	align-self: stretch;
+	min-width: 0;
+	height: auto;
+	border: none;
+	background: transparent;
+	box-shadow: none;
+	color: var(--sg-text);
+	cursor: var(--cursor);
+}
+
+.spherical-graph-view button.spherical-graph-search-query {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex: 1 1 0;
+	gap: 6px;
+	padding: 0 9px;
+	font: 12px var(--font-interface), "Segoe UI", sans-serif;
+}
+
+.spherical-graph-search-query-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.spherical-graph-view button.spherical-graph-search-clear {
+	flex: 0 0 var(--sg-control-height);
+	padding: 0;
+	font-size: 20px;
+}
+
+.spherical-graph-view button.spherical-graph-search-clear:disabled {
+	color: var(--sg-muted);
+	opacity: 0.45;
+}
+
+.spherical-graph-view button.spherical-graph-search-query:hover,
+.spherical-graph-view button.spherical-graph-search-clear:hover:not(:disabled) {
+	background: var(--sg-panel-hover);
+}
+
+.spherical-graph-search-mode:focus-visible,
+.spherical-graph-search-query:focus-visible,
+.spherical-graph-search-clear:focus-visible {
+	outline: 2px solid var(--sg-coast);
+	outline-offset: 1px;
+}
+
+.spherical-graph-search-status {
+	flex: 0 0 auto;
+	padding-inline: 4px;
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	color: #d99aaf;
 }
 
 .spherical-graph-toolbar-actions {
@@ -1597,7 +1723,7 @@
 
 @container (max-width: 840px) {
 	.spherical-graph-toolbar {
-		flex-wrap: wrap;
+		flex-wrap: nowrap;
 		gap: 8px;
 	}
 
@@ -1628,6 +1754,25 @@
 }
 
 @container (max-width: 560px) {
+	.spherical-graph-controls-label {
+		display: none;
+	}
+
+	.spherical-graph-view .spherical-graph-controls-summary {
+		width: var(--sg-control-height);
+		padding: 0;
+		justify-content: center;
+	}
+
+	.spherical-graph-search-source {
+		flex-basis: 130px;
+		width: 130px;
+	}
+
+	.spherical-graph-search-control {
+		gap: 6px;
+	}
+
 	.spherical-graph-toolbar {
 		padding-inline: 8px;
 	}
@@ -2451,4 +2596,18 @@
 		min-height: 44px;
 		padding-block: 10px;
 	}
+}
+
+.spherical-graph-country-label {
+	position: absolute;
+	left: 0;
+	top: 0;
+	color: #e4d4af;
+	font-family: Georgia, 'Times New Roman', serif;
+	font-size: 12px;
+	font-style: italic;
+	letter-spacing: 0.06em;
+	pointer-events: none;
+	white-space: nowrap;
+	text-shadow: 0 1px 2px #33291f, 0 0 4px #33291f;
 }

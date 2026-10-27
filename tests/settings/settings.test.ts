@@ -6,6 +6,12 @@ import {
 } from '../../src/settings/settings';
 
 describe('parseSphericalGraphSettings', () => {
+	it('keeps legacy base edges visible and preserves an explicit hidden preference', () => {
+		expect(parseSphericalGraphSettings({ appearance: {} }).appearance.showEdges).toBe(true);
+		const settings = parseSphericalGraphSettings({ appearance: { showEdges: false } });
+		expect(cloneSphericalGraphSettings(settings).appearance.showEdges).toBe(false);
+		expect(parseSphericalGraphSettings({ appearance: { showEdges: 'no' } }).appearance.showEdges).toBe(true);
+	});
 	it('returns complete independent defaults for missing data', () => {
 		const parsed = parseSphericalGraphSettings(undefined);
 
@@ -94,6 +100,8 @@ describe('parseSphericalGraphSettings', () => {
 		expect(appearance.edgeZoomThresholdPercent).toBe(50);
 		expect(appearance.tagOrbitHeightPercent).toBe(100 / 3);
 		expect(appearance.showAtmosphere).toBe(true);
+		expect(appearance.showCountryBorders).toBe(true);
+		expect(parseSphericalGraphSettings({ appearance: { showCountryBorders: false } }).appearance.showCountryBorders).toBe(false);
 		expect(appearance.atmosphereHeightPercent).toBe(10);
 	});
 

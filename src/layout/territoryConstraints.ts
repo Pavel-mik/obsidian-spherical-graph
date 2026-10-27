@@ -126,6 +126,39 @@ export class DirectoryTerritoryConstraint {
 		return Math.max(0, bestCell);
 	}
 
+	/** A conservative marker disk test against the same spherical Voronoi cells used by borders. */
+	contains(point: Vec3, owner: number, clearance = 0): boolean {
+		const cell = this.nearestCell(point);
+		if (this.ownerByCell[cell] !== owner) return false;
+		if (clearance <= 0) return true;
+		const site = this.grid.vertices[cell];
+		if (site === undefined) return false;
+		const required = Math.sin(clearance);
+		const nearby = Math.cos(Math.acos(Math.max(-1, Math.min(1, dotVec3(point, site)))) + 2 * clearance + 1e-6);
+		for (let other = 0; other < this.grid.vertices.length; other += 1) {
+			if (this.ownerByCell[other] === owner) continue;
+			const foreign = this.grid.vertices[other];
+			if (foreign === undefined || dotVec3(point, foreign) < nearby) continue;
+			const x = site[0] - foreign[0], y = site[1] - foreign[1], z = site[2] - foreign[2];
+			if ((point[0] * x + point[1] * y + point[2] * z) / Math.hypot(x, y, z) < required - 1e-7) return false;
+		}
+		return true;
+	}
+
+	projectWithClearance(positions: Float32Array, owners: Int32Array, radii?: Float32Array): void {
+		for (let index = 0; index < owners.length; index += 1) {
+			const owner = owners[index] ?? -1;
+			const point = normalizeVec3(readVec3(positions, index));
+			const clearance = (radii?.[index] ?? 0) + 0.001;
+			if (this.contains(point, owner, clearance)) continue;
+			const candidates = [...(this.cellsByOwner[owner] ?? [])].sort((a, b) =>
+				dotVec3(point, this.grid.vertices[b]!) - dotVec3(point, this.grid.vertices[a]!));
+			const cell = candidates.find((candidate) => this.contains(this.grid.vertices[candidate]!, owner, clearance));
+			if (cell === undefined) throw new Error('A country is too small for its note markers. Use Renew layout to allocate more space.');
+			writeVec3(positions, index, this.grid.vertices[cell]!);
+		}
+	}
+
 	private nearestOwnedCell(
 		point: Vec3,
 		owner: number,

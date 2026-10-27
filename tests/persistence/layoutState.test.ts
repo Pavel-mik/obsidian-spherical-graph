@@ -528,7 +528,7 @@ describe("snapshot reconciliation and migrations", () => {
 			algorithmVersion: MINIMUM_LOADABLE_ALGORITHM_VERSION,
 		});
 
-		expect(CURRENT_ALGORITHM_VERSION).toBe(10);
+		expect(CURRENT_ALGORITHM_VERSION).toBe(11);
 		expect(isSnapshotUsable(legacySnapshot, currentGraph)).toBe(false);
 		expect(isSnapshotUsable(previousCompatibleSnapshot, currentGraph)).toBe(true);
 		expect(isSnapshotUsable(currentSnapshot, currentGraph)).toBe(true);

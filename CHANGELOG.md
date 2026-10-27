@@ -6,6 +6,45 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-10-28
+
+### Added
+
+- Countries inside continents: immediate subfolders receive connected,
+  non-overlapping territories, fine dashed borders, and zoom-aware labels.
+  Deeper folders stay in their parent country; direct notes share Common.
+- Optional Obsidian Search integration highlights matching notes and links
+  between matches on the saved globe. A single-row mode selector switches
+  between the note finder and native Search results.
+- Independent, persistent Edges and Country borders switches in Map controls.
+
+### Changed
+
+- Wine-colored Search centers and rings, finer selection and route strokes,
+  and soft edge halos keep highlights readable without heavy lines.
+- Selecting a note completely hides unrelated ordinary links.
+- Folder notes without links now belong on land in newly generated maps.
+- Refreshed the plugin description and five real screenshots from a fictional
+  demo vault, covering countries, Search, routes, and map controls.
+
+### Fixed
+
+- Retry native Search after a restored, deferred pane finishes opening instead
+  of leaving the integration paused after an early unavailable read.
+- Keep country membership and marker clearance through layout, validation,
+  persistence, filtering, and compatible Refresh operations.
+- Preserve saved country boundaries on Refresh. New countries and moves
+  between countries request Renew instead of putting notes in a foreign state.
+- Use monotone spherical growth around the allocated continent seed to avoid
+  thin antipodal extensions on the finer country grid.
+
+### Upgrade notes
+
+- Existing maps keep their layout. Choose Renew layout once to add countries.
+- Native Search integration is optional and uses guarded, read-only internal
+  Search state. Compatibility was checked on desktop Obsidian 1.14.4/1.14.5;
+  a future Obsidian update can pause this integration without affecting the map.
+
 ## [1.9.5] - 2026-10-07
 
 ### Fixed
@@ -633,7 +672,8 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.5...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.10.0...HEAD
+[1.10.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.5...1.10.0
 [1.9.5]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.4...1.9.5
 [1.9.4]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.3...1.9.4
 [1.9.3]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.2...1.9.3

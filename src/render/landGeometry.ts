@@ -1,3 +1,4 @@
+import { buildCountryBorders } from './countryGeometry';
 import { IcosahedronGeometry, Vector3 } from 'three';
 import {
 	hashNumbers,
@@ -45,6 +46,7 @@ export interface LandSurfaceData {
 	readonly shades: Float32Array;
 	readonly beachPositions: Float32Array;
 	readonly coastPositions: Float32Array;
+	readonly countryBorderPositions?: Float32Array;
 	readonly triangleCount: number;
 	readonly beachTriangleCount: number;
 	readonly renderedIslandCount: number;
@@ -964,6 +966,7 @@ export function buildLandSurfaceData(
 		shades: new Float32Array(shades),
 		beachPositions: new Float32Array(beachPositions),
 		coastPositions: new Float32Array(coastPositions),
+		countryBorderPositions: buildCountryBorders(geography.territory, radius + 0.012, (point, parent) => classifyContinentOwner(point, continentModel) === parent),
 		triangleCount,
 		beachTriangleCount,
 		renderedIslandCount: renderedIslandNodeIndices.length,

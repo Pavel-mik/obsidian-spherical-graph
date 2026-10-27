@@ -108,6 +108,7 @@ export class GeographyWorkerClient {
 								subdivision: territory.subdivision,
 								folderKeys: [...territory.folderKeys],
 								ownerByCell: Int32Array.from(territory.ownerByCell),
+								...(territory.countries === undefined ? {} : { countries: territory.countries }),
 							},
 						}),
 			};

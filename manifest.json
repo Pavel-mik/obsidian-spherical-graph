@@ -1,9 +1,9 @@
 {
 	"id": "spherical-graph",
 	"name": "Spherical Graph",
-	"version": "1.9.5",
+	"version": "1.10.0",
 	"minAppVersion": "1.7.2",
-	"description": "Explore your vault as a living globe: folders become continents, notes become cities, links become roads, tags orbit as satellites, and Route Finder reveals paths between ideas.",
+	"description": "Explore your vault as a globe: folders become continents, subfolders become countries, and notes become cities. Follow Obsidian Search on the map and trace connections with Route Finder.",
 	"author": "Pavel-mik",
 	"authorUrl": "https://github.com/Pavel-mik",
 	"isDesktopOnly": false

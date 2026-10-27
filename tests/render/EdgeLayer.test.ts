@@ -37,6 +37,45 @@ const theme: RenderTheme = {
 };
 
 describe('adaptiveSegmentCount', () => {
+	it('highlights only links with both matching endpoints and retains them across selection, route and zoom', () => {
+		const group = new Group();
+		const layer = new EdgeLayer(group, DEFAULT_SETTINGS.appearance, theme);
+		const snapshot = prepareRenderSnapshot({ snapshotId: 'search', nodes: ['A', 'B', 'C'].map((name, index) => ({
+			index, id: name, path: `${name}.md`, basename: name, degree: 2, weightedDegree: 2,
+		})), edges: [{ source: 0, target: 1, weight: 1 }, { source: 1, target: 2, weight: 1 }],
+		positions: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]) });
+		layer.setSnapshot(snapshot);
+		const base = group.getObjectByName('spherical-graph-edges') as LineSegments;
+		layer.updateSearch(new Set(['A.md']));
+		expect(group.getObjectByName('spherical-graph-search-edge-ribbon')).toBeUndefined();
+		layer.updateSearch(new Set(['A.md', 'B.md']));
+		const ribbon = group.getObjectByName('spherical-graph-search-edge-ribbon') as Mesh;
+		const halo = group.getObjectByName('spherical-graph-search-edge-halo') as Mesh;
+		expect(ribbon).toBeInstanceOf(Mesh);
+		expect(halo).toBeInstanceOf(Mesh);
+		const count = ribbon.geometry.getAttribute('position').count;
+		layer.updateSelection('C');
+		layer.updateRoute({ startNodeId: 'A', nodeIds: ['A', 'B'], edges: [{ source: 0, target: 1 }] });
+		expect(group.getObjectByName(ribbon.name)).toBe(ribbon);
+		expect(group.getObjectByName(halo.name)).toBe(halo);
+		const camera = new PerspectiveCamera();
+		camera.position.set(0, 0, 1000);
+		layer.setInteractionActive(true);
+		layer.render(camera);
+		expect(ribbon.visible).toBe(true);
+		expect(halo.visible).toBe(true);
+		expect(base.visible).toBe(false);
+		layer.updateSearch(new Set(['A.md', 'B.md', 'C.md']));
+		expect((group.getObjectByName(ribbon.name) as Mesh).geometry.getAttribute('position').count).toBe(count * 2);
+		expect(group.getObjectByName(base.name)).toBe(base);
+		layer.updateSearch(new Set());
+		expect(group.getObjectByName(ribbon.name)).toBeUndefined();
+		expect(group.getObjectByName(halo.name)).toBeUndefined();
+		expect(group.getObjectByName('spherical-graph-route-edge-ribbon')).toBeDefined();
+		layer.dispose();
+		expect(group.children).toHaveLength(0);
+	});
+
 	it('uses a small floor for short arcs and more segments for long arcs', () => {
 		expect(adaptiveSegmentCount([1, 0, 0], [1, 0, 0])).toBe(2);
 		expect(adaptiveSegmentCount([1, 0, 0], [0, 1, 0])).toBe(12);
@@ -208,7 +247,7 @@ describe('adaptiveSegmentCount', () => {
 
 		camera.position.set(0, 0, 36);
 		layer.render(camera);
-		expect(lines.visible).toBe(true);
+		expect(lines.visible).toBe(false);
 		expect(selectedRibbon.visible).toBe(true);
 
 		layer.updateRoute({
@@ -227,5 +266,54 @@ describe('adaptiveSegmentCount', () => {
 		layer.render(camera);
 		expect(routeRibbon.visible).toBe(true);
 		layer.dispose();
+	});
+
+	it('hides unrelated edges during selection and keeps highlights independent of the base-edge toggle', () => {
+		const group = new Group();
+		const layer = new EdgeLayer(group, DEFAULT_SETTINGS.appearance, theme);
+		layer.setSnapshot(prepareRenderSnapshot({ snapshotId: 'visibility', nodes: ['A', 'B', 'C'].map((id, index) => ({
+			id, index, path: `${id}.md`, basename: id, degree: 2, weightedDegree: 2,
+		})), edges: [{ source: 0, target: 1, weight: 1 }, { source: 1, target: 2, weight: 1 }],
+		positions: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]) }));
+		const camera = new PerspectiveCamera();
+		camera.position.set(0, 0, 25);
+		const base = group.getObjectByName('spherical-graph-edges') as LineSegments;
+		layer.render(camera);
+		expect(base.visible).toBe(true);
+		layer.updateSelection('A');
+		layer.render(camera);
+		expect(base.visible).toBe(false);
+		const selected = group.getObjectByName('spherical-graph-selected-edge-ribbon') as Mesh;
+		expect(selected.visible).toBe(true);
+		expect(group.getObjectByName('spherical-graph-selected-edge-halo')?.visible).toBe(true);
+		const oneEdgeVertices = selected.geometry.getAttribute('position').count;
+		layer.updateSelection('B');
+		layer.render(camera);
+		expect((group.getObjectByName(selected.name) as Mesh).geometry.getAttribute('position').count).toBe(oneEdgeVertices * 2);
+		layer.updateSelection(undefined);
+		layer.render(camera);
+		expect(base.visible).toBe(true);
+		expect(group.getObjectByName('spherical-graph-selected-edge-halo')).toBeUndefined();
+		layer.updateAppearance({ ...DEFAULT_SETTINGS.appearance, showEdges: false });
+		layer.updateSearch(new Set(['B.md', 'C.md']));
+		layer.updateRoute({ startNodeId: 'A', nodeIds: ['A', 'B'], edges: [{ source: 0, target: 1 }] });
+		layer.render(camera);
+		expect(base.visible).toBe(false);
+		expect(group.getObjectByName('spherical-graph-route-edge-ribbon')?.visible).toBe(true);
+		expect(group.getObjectByName('spherical-graph-route-edge-halo')?.visible).toBe(true);
+		expect(group.getObjectByName('spherical-graph-search-edge-ribbon')?.visible).toBe(true);
+		layer.updateSelection('C');
+		layer.render(camera);
+		expect(group.getObjectByName(selected.name)?.visible).toBe(true);
+		layer.updateSelection(undefined);
+		layer.updateRoute(undefined);
+		layer.updateSearch(new Set());
+		layer.render(camera);
+		expect(base.visible).toBe(false);
+		layer.updateAppearance(DEFAULT_SETTINGS.appearance);
+		layer.render(camera);
+		expect(base.visible).toBe(true);
+		layer.dispose();
+		expect(group.children).toHaveLength(0);
 	});
 });

@@ -316,6 +316,10 @@ export default class SphericalGraphPlugin extends Plugin {
 					this.changeSurfaceMode(mode),
 				onContinentsVisibilityChange: (visible) =>
 					this.changeContinentsVisibility(visible),
+				onCountryBordersVisibilityChange: (visible) =>
+					this.changeCountryBordersVisibility(visible),
+				onEdgesVisibilityChange: (visible) =>
+					this.changeEdgesVisibility(visible),
 				onAtmosphereVisibilityChange: (visible) =>
 					this.changeAtmosphereVisibility(visible),
 				onPinChange: (node, pinned) =>
@@ -972,6 +976,18 @@ export default class SphericalGraphPlugin extends Plugin {
 	private changeSurfaceMode(mode: SurfaceMode): void {
 		const next = cloneSphericalGraphSettings(this.settings);
 		next.appearance.surfaceMode = mode;
+		void this.updateSettings(next, 'appearance');
+	}
+
+	private changeCountryBordersVisibility(visible: boolean): void {
+		const next = cloneSphericalGraphSettings(this.settings);
+		next.appearance.showCountryBorders = visible;
+		void this.updateSettings(next, 'appearance');
+	}
+
+	private changeEdgesVisibility(visible: boolean): void {
+		const next = cloneSphericalGraphSettings(this.settings);
+		next.appearance.showEdges = visible;
 		void this.updateSettings(next, 'appearance');
 	}
 

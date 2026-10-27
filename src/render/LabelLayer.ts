@@ -1,3 +1,4 @@
+import { countryLabels } from './countryGeometry';
 import { Camera, Group, Vector3 } from 'three';
 import { SPHERE_RADIUS } from '../constants';
 import { AppearanceSettings } from '../settings/settings';
@@ -21,6 +22,7 @@ import {
 export class LabelLayer {
 	private readonly root: HTMLElement;
 	private readonly pool: HTMLElement[] = [];
+	private countries: ReturnType<typeof countryLabels> = [];
 	private readonly continentPool: HTMLElement[] = [];
 	private snapshot: PreparedRenderSnapshot | undefined;
 	private selection: RenderSelectionState = {};
@@ -47,6 +49,7 @@ export class LabelLayer {
 
 	setSnapshot(snapshot: PreparedRenderSnapshot): void {
 		this.snapshot = snapshot;
+		this.countries = countryLabels(snapshot.geography.territory);
 		this.rankedNodes = [...snapshot.nodes].sort(
 			(left, right) =>
 				right.degree - left.degree ||
@@ -287,7 +290,7 @@ export class LabelLayer {
 		}
 		const continentCount =
 			this.appearance.showContinents
-				? (this.snapshot?.geography.continents.length ?? 0)
+				? (this.snapshot?.geography.continents.length ?? 0) + this.countries.length
 				: 0;
 		while (this.continentPool.length < continentCount) {
 			const element = this.root.createDiv();
@@ -331,13 +334,20 @@ export class LabelLayer {
 		}
 		const cameraDirection = camera.position.clone().normalize();
 		let visibleIndex = 0;
-		for (const continent of snapshot.geography.continents) {
+		const zoomPercent = cameraZoomInPercent(camera.position.length());
+		const labels = [
+			...snapshot.geography.continents.map((continent) => ({ ...continent, country: false })),
+			...(this.appearance.showCountryBorders && zoomPercent >= 60 && !this.interactionActive
+				? this.countries.map((country) => ({ ...country, id: country.key, country: true })) : []),
+		];
+		const occupied: Array<{ x: number; y: number }> = [];
+		for (const continent of labels) {
 			const element = this.continentPool[visibleIndex];
 			if (element === undefined) {
 				break;
 			}
 			this.worldPosition
-				.set(...continent.center)
+				.set(continent.center[0] ?? 0, continent.center[1] ?? 0, continent.center[2] ?? 0)
 				.multiplyScalar(SPHERE_RADIUS + 0.05)
 				.applyMatrix4(this.graphGroup.matrixWorld);
 			const facing = this.worldPosition
@@ -360,6 +370,9 @@ export class LabelLayer {
 			const screenY = (-this.projectedPosition.y * 0.5 + 0.5) * height;
 			const opacity = Math.min(0.78, Math.max(0, (facing - 0.12) / 0.5));
 			const zoom = cameraZoomInPercent(camera.position.length()) / 100;
+			if (continent.country && occupied.some((point) => Math.abs(point.x - screenX) < 95 && Math.abs(point.y - screenY) < 25)) continue;
+			occupied.push({ x: screenX, y: screenY });
+			element.className = continent.country ? 'spherical-graph-country-label' : 'spherical-graph-continent-label';
 			element.textContent = continent.label;
 			element.dataset.continentId = continent.id;
 			element.style.opacity = opacity.toFixed(3);

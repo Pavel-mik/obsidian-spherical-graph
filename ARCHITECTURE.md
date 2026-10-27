@@ -32,6 +32,13 @@ flowchart LR
 
 ## Modules
 
+- `src/search` follows one core Search pane using an opt-in, read-only adapter
+  for its private result map and completion state. The controller publishes
+  only stable completed file-path sets and owns its workspace subscription and
+  timer. Results feed independent node rings and edge ribbons, never graph
+  indexing, layout workers, persistence or camera state. See the scoped API
+  exception and compatibility requirements in `DECISIONS.md`.
+
 - `src/graph` builds a deterministic path-indexed graph from Markdown files and
   `MetadataCache.resolvedLinks`, filters data, signs descriptors, computes
   detailed diffs, debounces vault events, and computes the O(V + E) union of
@@ -294,3 +301,11 @@ Obsidian plugin `data.json` is therefore sufficient for restart stability and
 for Obsidian Sync when community-plugin data syncing is enabled. These writes
 cannot reconstruct or mutate the position map. A successful Renew increments
 `renewGeneration`; a cancelled or failed Renew cannot.
+
+### Hierarchical directory countries
+
+`countryTerritories.ts` partitions fixed continent cells by immediate child directory. Its persisted keys distinguish direct-folder notes from descendants without a reserved folder name. Country ownership travels with the territory through solver and geography workers, disk persistence and render snapshots. All folder notes participate, including orphans; root notes share an explicit ocean owner in the country constraint.
+
+The solver projects country membership during relaxation, then alternates collision and marker-clearance projection. Refresh retains hard anchors and displacement caps, rejecting incompatible geographic changes transactionally. Persistence validates country ownership against note paths and positions. Cross-country rename hints are not applied to committed positions. Old maps without countries retain the previous behavior until Renew.
+
+`countryGeometry.ts` derives exact spherical Voronoi dual borders from the same grid. Land meshing clips them to the visible coast in its existing worker. A single dashed line batch renders the borders. Country label anchors are cached per snapshot; camera actions, filters, search and selection never repartition land.

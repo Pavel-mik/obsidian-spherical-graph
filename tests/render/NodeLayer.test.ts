@@ -10,6 +10,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { NodeLayer } from '../../src/render/NodeLayer';
+import { SEARCH_HIGHLIGHT_COLOR } from '../../src/render/searchHighlight';
 import {
 	prepareRenderSnapshot,
 	type RenderTheme,
@@ -42,6 +43,55 @@ const theme: RenderTheme = {
 };
 
 describe('NodeLayer instance colors', () => {
+	it('highlights every matching note independently of selection and route without moving nodes', () => {
+		const group = new Group();
+		const layer = new NodeLayer(group, DEFAULT_SETTINGS.appearance, theme);
+		const nodes = Array.from({ length: 35 }, (_, index) => ({
+			index, id: `id-${index}`, path: `${index}.md`, basename: 'Same name', degree: 1, weightedDegree: 1,
+		}));
+		const positions = new Float32Array(nodes.flatMap((_, index) => [Math.cos(index), Math.sin(index), 0]));
+		const original = positions.slice();
+		layer.setSnapshot(prepareRenderSnapshot({ snapshotId: 'search', nodes, edges: [], positions }));
+		layer.updateSearch(new Set(nodes.map((node) => node.path)));
+		const rings = group.getObjectByName('spherical-graph-search-node-highlights') as InstancedMesh;
+		const routeRings = group.getObjectByName('spherical-graph-node-highlights') as InstancedMesh;
+		const color = new Color();
+		layer.mesh?.getColorAt(2, color);
+		expect(color.getHexString()).toBe(new Color(SEARCH_HIGHLIGHT_COLOR).getHexString());
+		expect(rings.count).toBe(35);
+		layer.updateSelection({ selectedNodeId: 'id-0' });
+		layer.updateRoute({ nodeIds: ['id-0', 'id-1'], startNodeId: 'id-0', endNodeId: 'id-1', edges: [] });
+		expect(rings.count).toBe(35);
+		expect(routeRings.count).toBe(4);
+		layer.mesh?.getColorAt(0, color);
+		expect(color.getHexString()).toBe(new Color(theme.nodeSelected).getHexString());
+		layer.mesh?.getColorAt(1, color);
+		expect(color.getHexString()).toBe(new Color(theme.nodeRouteEnd).getHexString());
+		layer.updateSearch(new Set());
+		layer.mesh?.getColorAt(2, color);
+		expect(color.getHexString()).toBe(new Color(theme.node).getHexString());
+		expect(rings.count).toBe(0);
+		expect(routeRings.count).toBe(4);
+		expect(group.getObjectByName('spherical-graph-node-reticle')?.visible).toBe(true);
+		expect(positions).toEqual(original);
+		layer.dispose();
+		expect(group.children).toHaveLength(0);
+	});
+
+	it('matches paths after snapshot reordering and respects hidden notes and non-note nodes', () => {
+		const group = new Group();
+		const layer = new NodeLayer(group, DEFAULT_SETTINGS.appearance, theme);
+		layer.updateSearch(new Set(['A.md', 'B.md', 'image.png']));
+		layer.setSnapshot(prepareRenderSnapshot({ snapshotId: 'reordered', nodes: [
+			{ index: 1, id: 'a', path: 'A.md', basename: 'A', degree: 0, weightedDegree: 0, isOrphan: true },
+			{ index: 0, id: 'b', path: 'B.md', basename: 'B', degree: 1, weightedDegree: 1 },
+			{ index: 2, id: 'image', path: 'image.png', basename: 'image', degree: 1, weightedDegree: 1, kind: 'attachment' },
+		], edges: [], positions: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]) }));
+		layer.updateFilters({ showAttachments: true, showTags: false, showOrphans: false, existingFilesOnly: true });
+		expect((group.getObjectByName('spherical-graph-search-node-highlights') as InstancedMesh).count).toBe(1);
+		layer.dispose();
+	});
+
 	it('uses smooth tangent discs with a view-angle contrast shader', () => {
 		const group = new Group();
 		const layer = new NodeLayer(

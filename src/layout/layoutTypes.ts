@@ -1,3 +1,4 @@
+import type { CountryTerritories } from '../geography/countryTerritories';
 export type LayoutOperationMode = 'initialize' | 'refresh' | 'renew';
 
 export type LayoutPhase =
@@ -79,6 +80,7 @@ export interface LayoutDirectoryTerritory {
 	readonly subdivision: number;
 	readonly folderKeys: readonly string[];
 	readonly ownerByCell: Int32Array;
+	readonly countries?: CountryTerritories;
 }
 
 export interface LayoutSolverInput {
@@ -98,6 +100,7 @@ export interface LayoutSolverInput {
 	readonly folderIndexByNode?: Int32Array;
 	/** Stable subdirectory/topology district owner per node; -1 means none. */
 	readonly regionIndexByNode?: Int32Array;
+	readonly countryIndexByNode?: Int32Array;
 	/** Render-aware angular marker radius used by the final collision pass. */
 	readonly collisionAngularRadii?: Float32Array;
 	/** Relative strength of selected coastal-port nodes. */

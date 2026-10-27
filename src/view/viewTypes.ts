@@ -79,6 +79,8 @@ export interface SphericalGraphViewCallbacks {
 	onCameraChange(camera: CameraState): Promise<void> | void;
 	onSurfaceModeChange(mode: SurfaceMode): Promise<void> | void;
 	onContinentsVisibilityChange(visible: boolean): Promise<void> | void;
+	onEdgesVisibilityChange(visible: boolean): Promise<void> | void;
+	onCountryBordersVisibilityChange?(visible: boolean): Promise<void> | void;
 	onAtmosphereVisibilityChange(visible: boolean): Promise<void> | void;
 	onPinChange(node: RenderNode, pinned: boolean): Promise<void> | void;
 	onManualSave(camera: CameraState): Promise<void> | void;

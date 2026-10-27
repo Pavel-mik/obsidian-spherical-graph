@@ -1,3 +1,6 @@
+import { DirectoryTerritoryConstraint } from '../layout/territoryConstraints';
+import { validCountries, freezeCountries } from '../geography/countryTerritories';
+import { directoryRegionKey } from '../geography/directorySemantics';
 import {
 	applyRenameMapToDescriptor,
 	GraphRename,
@@ -27,7 +30,7 @@ import { createIntrinsicSphericalGrid } from "../geography/sphericalGrid";
 import type { PersistedGraphCache } from "./graphCache";
 
 export const CURRENT_SCHEMA_VERSION = 4;
-export const CURRENT_ALGORITHM_VERSION = 10;
+export const CURRENT_ALGORITHM_VERSION = 11;
 export const MINIMUM_LOADABLE_ALGORITHM_VERSION = 9;
 export const DEFAULT_POSITION_NORM_TOLERANCE = 1e-4;
 
@@ -389,6 +392,24 @@ export function validateGraphDescriptor(
 	});
 }
 
+
+function countryPositionsValid(geography: PersistedContinentalGeography | undefined, positions: Readonly<Record<string, Vector3Tuple>>): boolean {
+	const territory = geography?.territory;
+	const countries = territory?.countries;
+	if (territory === undefined || countries === undefined) return true;
+	const byKey = new Map(countries.keys.map((key, owner) => [key, owner]));
+	const constraint = new DirectoryTerritoryConstraint({
+		subdivision: territory.subdivision,
+		ownerCount: countries.keys.length + 1,
+		ownerByCell: Int32Array.from(countries.ownerByCell, (owner) => owner < 0 ? countries.keys.length : owner),
+	});
+	return Object.entries(positions).every(([path, position]) => {
+		const key = directoryRegionKey(path);
+		const owner = key === undefined ? countries.keys.length : byKey.get(key);
+		return owner !== undefined && constraint.contains(position, owner);
+	});
+}
+
 export function validatePersistedLayoutSnapshot(
 	value: unknown,
 ): PersistedLayoutSnapshot | undefined {
@@ -445,7 +466,7 @@ export function validatePersistedLayoutSnapshot(
 		value.geography === undefined
 			? undefined
 			: validateContinentalGeography(value.geography, descriptor);
-	if (value.geography !== undefined && geography === undefined) {
+	if ((value.geography !== undefined && geography === undefined) || !countryPositionsValid(geography, positionsByPath)) {
 		return undefined;
 	}
 
@@ -467,6 +488,7 @@ export function validatePersistedLayoutSnapshot(
 function validatePersistedContinent(
 	value: unknown,
 	validNodeIds: ReadonlySet<string>,
+	allowEmpty = false,
 ): PersistedContinent | undefined {
 	if (
 		!isRecord(value) ||
@@ -475,7 +497,7 @@ function validatePersistedContinent(
 		typeof value.label !== "string" ||
 		value.label.length === 0 ||
 		!Array.isArray(value.nodeIds) ||
-		value.nodeIds.length === 0 ||
+		(!allowEmpty && value.nodeIds.length === 0) ||
 		!value.nodeIds.every(
 			(nodeId) =>
 				typeof nodeId === "string" &&
@@ -561,7 +583,9 @@ function validatePersistedTerritory(
 	) {
 		return undefined;
 	}
+	if (value.countries !== undefined && !validCountries(value.countries, value.folderKeys, value.ownerByCell as number[])) return undefined;
 	return Object.freeze({
+		...(value.countries === undefined ? {} : { countries: freezeCountries(value.countries) }),
 		subdivision,
 		folderKeys: Object.freeze([...value.folderKeys]),
 		ownerByCell: Object.freeze([...(value.ownerByCell as number[])]),
@@ -618,7 +642,7 @@ export function diagnoseContinentalGeography(
 				continentIndex,
 			});
 		}
-		if (!Array.isArray(raw.nodeIds) || raw.nodeIds.length === 0) {
+		if (!Array.isArray(raw.nodeIds) || (raw.nodeIds.length === 0 && !(isRecord(value.territory) && value.territory.countries !== undefined))) {
 			return validationFailure("geography", "invalid-continent-node-list", {
 				continentIndex,
 			});
@@ -777,6 +801,7 @@ export function validateContinentalGeography(
 		const continent = validatePersistedContinent(
 			rawContinent,
 			validNodeIds,
+			isRecord(value.territory) && value.territory.countries !== undefined,
 		);
 		if (
 			continent === undefined ||
@@ -1044,6 +1069,7 @@ export function createCommittedLayoutSnapshot(
 	} catch {
 		return undefined;
 	}
+	if (!countryPositionsValid(geography, validated.positionsByPath)) return undefined;
 	return Object.freeze({
 		snapshotId: input.snapshotId,
 		schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -1086,7 +1112,8 @@ export function reconcileCommittedLayout(
 ): ReconciledCommittedLayout {
 	const currentIds = new Set(graph.nodes.map((node) => node.path));
 	const renamedFromByCurrentPath = new Map(
-		renames.map((rename) => [rename.newPath, rename.oldPath] as const),
+		renames.filter((rename) => snapshot.geography?.territory?.countries === undefined || directoryRegionKey(rename.oldPath) === directoryRegionKey(rename.newPath))
+			.map((rename) => [rename.newPath, rename.oldPath] as const),
 	);
 	const consumedOldPaths = new Set<string>();
 	const visibleNodeIds: string[] = [];
@@ -1176,6 +1203,7 @@ export function renameSnapshotPaths(
 	snapshot: PersistedLayoutSnapshot,
 	renames: readonly GraphRename[],
 ): PersistedLayoutSnapshot | undefined {
+	if (snapshot.geography?.territory?.countries !== undefined && renames.some((rename) => directoryRegionKey(rename.oldPath) !== directoryRegionKey(rename.newPath))) return undefined;
 	const pathMap = new Map<string, string>();
 	const newPaths = new Set<string>();
 	for (const rename of renames) {
@@ -1273,7 +1301,7 @@ export function pruneSnapshotPaths(
 					),
 				}),
 			)
-			.filter((continent) => continent.nodeIds.length > 0);
+			.filter((continent) => snapshot.geography?.territory?.countries !== undefined || continent.nodeIds.length > 0);
 		const territory =
 			continents.length === snapshot.geography.continents.length
 				? snapshot.geography.territory

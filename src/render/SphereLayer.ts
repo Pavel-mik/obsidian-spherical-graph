@@ -205,6 +205,7 @@ export class SphereLayer {
 	private coastGeometry: BufferGeometry | undefined;
 	private coastMaterial: LineBasicMaterial | undefined;
 	private coastLines: LineSegments | undefined;
+	private countryBorders: LineSegments<BufferGeometry, LineDashedMaterial> | undefined;
 	private readonly landWorker =
 		typeof Worker === 'undefined'
 			? undefined
@@ -522,6 +523,20 @@ export class SphereLayer {
 		this.coastGeometry = coastGeometry;
 		this.coastMaterial = coastMaterial;
 		this.coastLines = coastLines;
+		if (data.countryBorderPositions !== undefined && data.countryBorderPositions.length > 0) {
+			const borderGeometry = new BufferGeometry();
+			borderGeometry.setAttribute('position', new BufferAttribute(data.countryBorderPositions, 3));
+			borderGeometry.computeBoundingSphere();
+			const borderMaterial = new LineDashedMaterial({
+				color: '#594034', opacity: 0.68, dashSize: 0.1, gapSize: 0.055,
+				transparent: true, depthTest: true, depthWrite: false, toneMapped: false,
+			});
+			this.countryBorders = new LineSegments(borderGeometry, borderMaterial);
+			this.countryBorders.name = 'spherical-graph-country-borders';
+			this.countryBorders.renderOrder = 2;
+			this.countryBorders.computeLineDistances();
+			this.group.add(this.countryBorders);
+		}
 		this.recolorLand();
 		this.updateLandVisibility();
 		this.onInvalidate?.();
@@ -566,6 +581,7 @@ export class SphereLayer {
 		const visible =
 			this.appearance.surfaceMode !== 'hidden' &&
 			this.appearance.showContinents;
+		if (this.countryBorders !== undefined) this.countryBorders.visible = visible && this.appearance.showCountryBorders;
 		if (this.landMesh !== undefined && this.landMaterial !== undefined) {
 			this.landMesh.visible = visible;
 			this.landMaterial.transparent =
@@ -605,6 +621,12 @@ export class SphereLayer {
 	}
 
 	private removeLand(): void {
+		if (this.countryBorders !== undefined) {
+			this.group.remove(this.countryBorders);
+			this.countryBorders.geometry.dispose();
+			this.countryBorders.material.dispose();
+			this.countryBorders = undefined;
+		}
 		if (this.landMesh !== undefined) {
 			this.group.remove(this.landMesh);
 		}

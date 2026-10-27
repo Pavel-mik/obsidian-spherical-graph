@@ -64,6 +64,7 @@ function createView(deviceClass: 'desktop' | 'phone' | 'tablet' = 'desktop'): Sp
 			onCameraChange: vi.fn(),
 			onSurfaceModeChange: vi.fn(),
 			onContinentsVisibilityChange: vi.fn(),
+			onEdgesVisibilityChange: vi.fn(),
 			onAtmosphereVisibilityChange: vi.fn(),
 			onPinChange: vi.fn(),
 			onManualSave: vi.fn(),

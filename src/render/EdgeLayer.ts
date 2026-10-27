@@ -28,6 +28,8 @@ import {
 	RenderTheme,
 } from './renderTypes';
 import { edgesVisibleAtCameraDistance } from './edgeVisibility';
+import { isSearchMatch, SEARCH_HIGHLIGHT_COLOR } from './searchHighlight';
+import { createEdgeHaloMaterial } from './edgeHalo';
 
 interface EdgeDrawRecord {
 	edge: RenderEdge;
@@ -44,7 +46,12 @@ export class EdgeLayer {
 	private selectedNodeId: string | undefined;
 	private route: RenderRouteState | undefined;
 	private selectedRibbon: Mesh | undefined;
+	private selectedHalo: Mesh | undefined;
 	private routeRibbon: Mesh | undefined;
+	private routeHalo: Mesh | undefined;
+	private searchRibbon: Mesh | undefined;
+	private searchHalo: Mesh | undefined;
+	private searchPaths: ReadonlySet<string> = new Set();
 	private appearance: AppearanceSettings;
 	private theme: RenderTheme;
 	private filters: RenderFilterState = DEFAULT_RENDER_FILTERS;
@@ -162,6 +169,7 @@ export class EdgeLayer {
 		this.records = records;
 		this.group.add(lines);
 		this.updateColors();
+		this.rebuildSearchOverlay();
 	}
 
 	updateAppearance(appearance: AppearanceSettings): void {
@@ -178,7 +186,10 @@ export class EdgeLayer {
 			this.appearance.edgeZoomThresholdPercent,
 		);
 		if (this.lines !== undefined) {
-			this.lines.visible = visible && !this.interactionActive;
+			const hasSelection = this.selectedNodeId !== undefined &&
+				this.snapshot?.nodeById.has(this.selectedNodeId);
+			this.lines.visible = visible && this.appearance.showEdges &&
+				!hasSelection && !this.interactionActive;
 		}
 		if (this.selectedRibbon !== undefined) {
 			this.selectedRibbon.visible = visible;
@@ -186,6 +197,8 @@ export class EdgeLayer {
 		if (this.routeRibbon !== undefined) {
 			this.routeRibbon.visible = visible;
 		}
+		if (this.selectedHalo) this.selectedHalo.visible = visible;
+		if (this.routeHalo) this.routeHalo.visible = visible;
 	}
 
 	setInteractionActive(active: boolean): void {
@@ -214,10 +227,35 @@ export class EdgeLayer {
 		this.rebuildOverlays();
 	}
 
+	updateSearch(paths: ReadonlySet<string>): void {
+		this.searchPaths = new Set(paths);
+		this.rebuildSearchOverlay();
+	}
+
+	private rebuildSearchOverlay(): void {
+		this.removeOverlay('searchRibbon');
+		this.removeOverlay('searchHalo');
+		const snapshot = this.snapshot;
+		const positions = this.geometry?.getAttribute('position');
+		if (!snapshot || !(positions instanceof BufferAttribute)) return;
+		const records = this.records.filter(({ edge }) => {
+			const source = snapshot.nodeByIndex.get(edge.source);
+			const target = snapshot.nodeByIndex.get(edge.target);
+			return source !== undefined && target !== undefined &&
+				isSearchMatch(source, this.searchPaths) && isSearchMatch(target, this.searchPaths);
+		});
+		// The fine wine-colored stroke sits over a soft, translucent halo.
+		this.searchHalo = this.createRibbon(records, positions, SEARCH_HIGHLIGHT_COLOR,
+			0.075, 6, 'spherical-graph-search-edge-halo', true);
+		this.searchRibbon = this.createRibbon(records, positions, SEARCH_HIGHLIGHT_COLOR,
+			0.018, 7, 'spherical-graph-search-edge-ribbon');
+	}
+
 	dispose(): void {
 		this.removeLines();
 		this.snapshot = undefined;
 		this.records = [];
+		this.searchPaths = new Set();
 	}
 
 	private updateColors(): void {
@@ -230,40 +268,19 @@ export class EdgeLayer {
 		) {
 			return;
 		}
-		const selectedNode = this.selectedNodeId
-			? snapshot.nodeById.get(this.selectedNodeId)
-			: undefined;
 		const baseColor = new Color(this.theme.edge);
-		const dimColor = new Color(this.theme.edge).multiplyScalar(0.07);
-		const selectedColor = new Color(this.theme.edgeSelected);
-
-		for (const record of this.records) {
-			const incident =
-				selectedNode !== undefined &&
-				(record.edge.source === selectedNode.index ||
-					record.edge.target === selectedNode.index);
-			const color =
-				selectedNode === undefined
-					? baseColor
-					: incident
-						? selectedColor
-						: dimColor;
-			const end = record.firstVertex + record.vertexCount;
-			for (
-				let vertex = record.firstVertex;
-				vertex < end;
-				vertex += 1
-			) {
-				attribute.setXYZ(vertex, color.r, color.g, color.b);
-			}
+		for (let vertex = 0; vertex < attribute.count; vertex += 1) {
+			attribute.setXYZ(vertex, baseColor.r, baseColor.g, baseColor.b);
 		}
 		attribute.needsUpdate = true;
 		this.rebuildOverlays();
 	}
 
 	private rebuildOverlays(): void {
-		this.removeOverlay('selected');
-		this.removeOverlay('route');
+		this.removeOverlay('selectedRibbon');
+		this.removeOverlay('selectedHalo');
+		this.removeOverlay('routeRibbon');
+		this.removeOverlay('routeHalo');
 		const snapshot = this.snapshot;
 		const positionAttribute = this.geometry?.getAttribute('position');
 		if (
@@ -294,11 +311,13 @@ export class EdgeLayer {
 						),
 					),
 			);
+			this.selectedHalo = this.createRibbon(records, positionAttribute, this.theme.edgeSelected,
+				0.075, 3, 'spherical-graph-selected-edge-halo', true);
 			this.selectedRibbon = this.createRibbon(
 				records,
 				positionAttribute,
 				this.theme.edgeSelected,
-				0.044,
+				0.018,
 				4,
 				'spherical-graph-selected-edge-ribbon',
 			);
@@ -313,11 +332,13 @@ export class EdgeLayer {
 					),
 				),
 			);
+			this.routeHalo = this.createRibbon(records, positionAttribute, this.theme.edgeRoute,
+				0.075, 4, 'spherical-graph-route-edge-halo', true);
 			this.routeRibbon = this.createRibbon(
 				records,
 				positionAttribute,
 				this.theme.edgeRoute,
-				0.036,
+				0.018,
 				5,
 				'spherical-graph-route-edge-ribbon',
 			);
@@ -331,6 +352,7 @@ export class EdgeLayer {
 		halfWidth: number,
 		renderOrder: number,
 		name: string,
+		softHalo = false,
 	): Mesh | undefined {
 		if (records.length === 0) {
 			return undefined;
@@ -340,10 +362,11 @@ export class EdgeLayer {
 			positions,
 			SPHERE_RADIUS + EDGE_SURFACE_LIFT + 0.025,
 			halfWidth,
+			softHalo,
 		);
 		const mesh = new Mesh(
 			geometry,
-			new MeshBasicMaterial({
+			softHalo ? createEdgeHaloMaterial(color) : new MeshBasicMaterial({
 				color,
 				depthTest: true,
 				depthWrite: false,
@@ -373,8 +396,12 @@ export class EdgeLayer {
 	}
 
 	private removeLines(): void {
-		this.removeOverlay('selected');
-		this.removeOverlay('route');
+		this.removeOverlay('searchRibbon');
+		this.removeOverlay('searchHalo');
+		this.removeOverlay('selectedRibbon');
+		this.removeOverlay('selectedHalo');
+		this.removeOverlay('routeRibbon');
+		this.removeOverlay('routeHalo');
 		if (this.lines !== undefined) {
 			this.group.remove(this.lines);
 		}
@@ -385,9 +412,8 @@ export class EdgeLayer {
 		this.lines = undefined;
 	}
 
-	private removeOverlay(kind: 'selected' | 'route'): void {
-		const overlay =
-			kind === 'selected' ? this.selectedRibbon : this.routeRibbon;
+	private removeOverlay(kind: 'selectedRibbon' | 'selectedHalo' | 'routeRibbon' | 'routeHalo' | 'searchRibbon' | 'searchHalo'): void {
+		const overlay = this[kind];
 		if (overlay === undefined) {
 			return;
 		}
@@ -401,11 +427,7 @@ export class EdgeLayer {
 		} else {
 			material.dispose();
 		}
-		if (kind === 'selected') {
-			this.selectedRibbon = undefined;
-		} else {
-			this.routeRibbon = undefined;
-		}
+		this[kind] = undefined;
 	}
 }
 
@@ -414,8 +436,10 @@ function createRibbonGeometry(
 	positions: BufferAttribute,
 	radius: number,
 	halfWidth: number,
+	withUvs: boolean,
 ): BufferGeometry {
 	const vertices: number[] = [];
+	const uvs: number[] = [];
 	const start = new Vector3();
 	const end = new Vector3();
 	const radial = new Vector3();
@@ -467,6 +491,7 @@ function createRibbonGeometry(
 				.multiplyScalar(radius);
 			pushTriangle(vertices, startLeft, startRight, endLeft);
 			pushTriangle(vertices, startRight, endRight, endLeft);
+			if (withUvs) uvs.push(0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1);
 		}
 	}
 
@@ -476,6 +501,7 @@ function createRibbonGeometry(
 		new BufferAttribute(new Float32Array(vertices), 3),
 	);
 	geometry.computeBoundingSphere();
+	if (withUvs) geometry.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
 	return geometry;
 }
 

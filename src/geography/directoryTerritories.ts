@@ -1,3 +1,4 @@
+import type { CountryTerritories } from '../geography/countryTerritories';
 import {
 	hashNumbers,
 	hashToSignedUnitFloat,
@@ -33,6 +34,7 @@ export interface DirectoryTerritoryPlan {
 	readonly subdivision: number;
 	readonly folderKeys: readonly string[];
 	readonly ownerByCell: Int32Array;
+	readonly countries?: CountryTerritories;
 	readonly targetCellCounts: Int32Array;
 }
 
@@ -59,11 +61,11 @@ interface OwnerShape {
 	readonly phase: number;
 }
 
-function folderKeys(graph: GraphData): string[] {
+function folderKeys(graph: GraphData, includeOrphans = false): string[] {
 	return [
 		...new Set(
 			graph.nodes
-				.filter(isContinentalNode)
+				.filter((node) => includeOrphans || isContinentalNode(node))
 				.map((node) => topLevelFolder(node.path))
 				.filter((value): value is string => value !== undefined),
 		),
@@ -234,7 +236,9 @@ function growthPriority(
 	const point = grid.vertices[cell] ?? shape.center;
 	const x = dotVec3(point, shape.tangentX) / shape.xScale;
 	const y = dotVec3(point, shape.tangentY) / shape.yScale;
-	const radial = Math.hypot(x, y);
+	// A tangent-plane radius is sin(theta): it shrinks again past the horizon
+	// and can attract a thin corridor toward the antipode. Keep growth monotone.
+	const radial = Math.atan2(Math.hypot(x, y), dotVec3(point, shape.center));
 	const angle = Math.atan2(y, x);
 	const relief =
 		Math.sin(angle * 3 + shape.phase) * 0.018 +
@@ -309,6 +313,7 @@ export function createDirectoryTerritoryPlan(
 	positions: ArrayLike<number>,
 	folderIndexByNode: Int32Array,
 	seed: number,
+	includeOrphans = false,
 ): DirectoryTerritoryPlan {
 	if (
 		positions.length !== graph.nodes.length * 3 ||
@@ -316,9 +321,9 @@ export function createDirectoryTerritoryPlan(
 	) {
 		throw new RangeError('Territory planning buffers must align with graph nodes.');
 	}
-	const keys = folderKeys(graph);
+	const keys = folderKeys(graph, includeOrphans);
 	const subdivision =
-		graph.nodes.length > 900 || keys.length > 64
+		includeOrphans || graph.nodes.length > 900 || keys.length > 64
 			? DIRECTORY_TERRITORY_MAX_SUBDIVISION
 			: DIRECTORY_TERRITORY_MIN_SUBDIVISION;
 	const grid = createIntrinsicSphericalGrid(subdivision);
@@ -326,6 +331,14 @@ export function createDirectoryTerritoryPlan(
 	for (const owner of folderIndexByNode) {
 		if (owner >= 0 && owner < counts.length) {
 			counts[owner] = (counts[owner] ?? 0) + 1;
+		}
+	}
+	// Each state contributes a minimum-area budget to its parent continent.
+	if (includeOrphans) {
+		const regions = new Set(graph.nodes.map((node) => node.path.replaceAll('\\', '/').split('/').slice(0, -1).slice(0, 2).join('/')));
+		for (const region of regions) {
+			const owner = keys.indexOf(region.split('/')[0] ?? '');
+			if (owner >= 0) counts[owner] = (counts[owner] ?? 0) + 4;
 		}
 	}
 	const targets = targetCounts(counts, grid.vertices.length);
@@ -346,6 +359,9 @@ export function createDirectoryTerritoryPlan(
 		const cell = nearestAvailableSeed(grid, owners, centers[owner] ?? [0, 0, 1]);
 		owners[cell] = owner;
 		actual[owner] = 1;
+		// Separation can move a seed away from its preferred center. Grow around
+		// the actual seed, otherwise the frontier first draws a long connecting neck.
+		shapes[owner] = shapeForOwner(grid.vertices[cell] ?? [0, 0, 1], seed, owner);
 	}
 	const enqueueNeighbors = (owner: number, cell: number): void => {
 		const shape = shapes[owner];
@@ -435,7 +451,7 @@ export function restoreDirectoryTerritoryPlan(
 	if (value === undefined) {
 		return undefined;
 	}
-	const keys = folderKeys(graph);
+	const keys = folderKeys(graph, value.countries !== undefined);
 	if (
 		keys.length !== value.folderKeys.length ||
 		keys.some((key, index) => key !== value.folderKeys[index]) ||
@@ -464,6 +480,7 @@ export function restoreDirectoryTerritoryPlan(
 		folderKeys: Object.freeze(keys),
 		ownerByCell: owners,
 		targetCellCounts: counts.slice(),
+		...(value.countries === undefined ? {} : { countries: value.countries }),
 	};
 }
 

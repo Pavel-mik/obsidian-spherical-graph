@@ -51,3 +51,26 @@
   keep the controls panel above mobile navigation with momentum scrolling,
   frame newly generated globes, and decouple continent names from note-label
   zoom suppression.
+
+## Follow Search
+
+- [x] Read core Search results through a guarded, isolated adapter.
+- [x] Add opt-in following, query/count status and a Clear control.
+- [x] Highlight matching notes and links with both endpoints matched, preserving
+  selection, routes, filters, camera and committed layout.
+- [x] Verify lifecycle, stale-result protection, rendering and native Search;
+  run the complete project validation gate.
+- [x] Refine Search to thin, contrasting strokes and a single-row mode selector;
+  preserve note queries, expose native Search and keep the focus command usable.
+- [x] Change Search highlights to wine red and replace the dark edge casing
+  with a soft, fading halo.
+- [x] Fill Search node centers, refine selection and route highlights, hide
+  unrelated edges on selection, and persist the Globe Edges visibility toggle.
+
+## Subfolder countries
+
+- [x] Partition each continent into connected child-directory territories, including a direct-note Common district.
+- [x] Constrain note centers and marker disks to their country and keep root notes outside continental land.
+- [x] Persist ownership, preserve old maps until Renew, and guard Refresh when folder membership changes.
+- [x] Render shared geographic borders, zoomed country names, and an independent Country borders toggle.
+- [x] Verify end-to-end ownership, persistence, refresh, and native Obsidian rendering; package a test build.

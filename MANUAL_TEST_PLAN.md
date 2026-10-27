@@ -378,3 +378,12 @@ vault.
 Record pass/fail for every step. Attach console errors, screenshots, and exact
 reproduction steps for failures. Do not mark an automated unit test as a GUI
 pass.
+
+## Countries
+
+- Open an existing map: confirm it remains unchanged until Renew. Renew a vault with unequal subfolder populations, a single-note subfolder, deeper descendants, direct notes and orphan notes. Check each country against note paths.
+- Turn off graph Edges and inspect the thin country borders. Toggle Country borders; positions, coasts, routes and search results must remain unchanged. Reload and confirm the toggle and territories persist.
+- Zoom in to reveal smaller country names; check laptop-width layout and rotate across the back of the globe for correct occlusion.
+- Add a note in an existing state and Refresh. Confirm borders stay fixed and the note lands in the right state. Add a new subfolder or move a note between states: Refresh must request Renew and preserve the old saved map.
+- Rename within a state: preserve its exact position. Remove/filter all notes from a state or continent: retain saved geography until explicit Renew.
+- Cancel Renew and confirm the previous map survives.

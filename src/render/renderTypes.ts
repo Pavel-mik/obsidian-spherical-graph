@@ -1,3 +1,5 @@
+import { validCountries, freezeCountries } from '../geography/countryTerritories';
+import type { CountryTerritories } from '../geography/countryTerritories';
 import { AppearanceSettings } from '../settings/settings';
 import type { RuntimeRenderProfile } from '../platform/runtimeProfile';
 import { directoryRegionKey } from '../geography/directorySemantics';
@@ -44,6 +46,7 @@ export interface RenderGeography {
 		readonly subdivision: number;
 		readonly folderKeys: readonly string[];
 		readonly ownerByCell: Int32Array;
+	readonly countries?: CountryTerritories;
 	};
 }
 
@@ -310,7 +313,7 @@ function prepareRenderGeography(
 			continent.id.length === 0 ||
 			continent.label.length === 0 ||
 			continentIds.has(continent.id) ||
-			nodeIndices.length === 0 ||
+			(nodeIndices.length === 0 && value.territory?.countries === undefined) ||
 			nodeIndices.some(
 				(index) => !nodeByIndex.has(index) || assigned.has(index),
 			) ||
@@ -362,10 +365,12 @@ function prepareRenderGeography(
 		) {
 			throw new Error('Render geography contains an invalid territory raster.');
 		}
+		if (value.territory.countries !== undefined && !validCountries(value.territory.countries, value.territory.folderKeys, value.territory.ownerByCell)) throw new Error('Invalid country raster.');
 		territory = {
 			subdivision: value.territory.subdivision,
 			folderKeys: Object.freeze([...value.territory.folderKeys]),
 			ownerByCell: value.territory.ownerByCell.slice(),
+			...(value.territory.countries === undefined ? {} : { countries: freezeCountries(value.territory.countries) }),
 		};
 	}
 	return {

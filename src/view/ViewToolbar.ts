@@ -11,8 +11,12 @@ import {
 } from './SearchController';
 import { VIEW_CONTROL_COPY } from './viewCopy';
 import type { RuntimeRenderProfile } from '../platform/runtimeProfile';
+import { GraphSearchControl } from './GraphSearchControl';
+import type { FollowSearchState } from '../search/FollowSearchController';
 
 export interface ViewToolbarCallbacks extends SearchControllerCallbacks {
+	onFollowSearchToggle?(enabled: boolean): void;
+	onOpenObsidianSearch?(): void;
 	onRefresh(): void;
 	onRenew(): void;
 	onCancel(): void;
@@ -21,6 +25,8 @@ export interface ViewToolbarCallbacks extends SearchControllerCallbacks {
 	onFiltersChange(filters: RenderFilterState): void;
 	onSurfaceModeChange(mode: SurfaceMode): void;
 	onContinentsVisibilityChange(visible: boolean): void;
+	onEdgesVisibilityChange(visible: boolean): void;
+	onCountryBordersVisibilityChange?(visible: boolean): void;
 	onAtmosphereVisibilityChange(visible: boolean): void;
 	onManualSave(): void;
 	onManualLoad(): void;
@@ -51,6 +57,7 @@ interface FilterToggle {
 export class ViewToolbar {
 	readonly element: HTMLElement;
 	readonly search: SearchController;
+	private readonly graphSearch: GraphSearchControl;
 	private readonly menu: HTMLDetailsElement;
 	private readonly menuSummary: HTMLElement;
 	private readonly menuCloseButton: HTMLButtonElement;
@@ -67,6 +74,8 @@ export class ViewToolbar {
 	private readonly existingFilesToggle: FilterToggle;
 	private readonly orphansToggle: FilterToggle;
 	private readonly continentsToggle: FilterToggle;
+	private readonly edgesToggle: FilterToggle;
+	private readonly countryBordersToggle: FilterToggle;
 	private readonly atmosphereToggle: FilterToggle;
 	private readonly surfaceSelect: HTMLSelectElement;
 
@@ -77,6 +86,7 @@ export class ViewToolbar {
 		initialFilters: RenderFilterState = DEFAULT_RENDER_FILTERS,
 		initialContinentsVisible = true,
 		initialAtmosphereVisible = true,
+		initialEdgesVisible = true,
 		profile?: RuntimeRenderProfile,
 	) {
 		this.element = parent.createDiv();
@@ -86,13 +96,14 @@ export class ViewToolbar {
 
 		const searchSlot = this.element.createDiv();
 		searchSlot.className = 'spherical-graph-toolbar-search';
-		this.search = new SearchController(searchSlot, callbacks);
+		this.graphSearch = new GraphSearchControl(searchSlot, callbacks);
+		this.search = this.graphSearch.search;
 
 		this.menu = this.element.createEl('details');
 		this.menu.className = 'spherical-graph-controls-menu';
 		this.menuSummary = this.menu.createEl('summary');
 		this.menuSummary.className = 'spherical-graph-controls-summary';
-		this.menuSummary.textContent = VIEW_CONTROL_COPY.graphControls;
+		this.menuSummary.createSpan({ cls: 'spherical-graph-controls-label', text: VIEW_CONTROL_COPY.graphControls });
 		this.menuSummary.title = VIEW_CONTROL_COPY.graphControls;
 		this.menuSummary.setAttribute(
 			'aria-label',
@@ -290,6 +301,11 @@ export class ViewToolbar {
 			'continents',
 		);
 		this.continentsToggle.input.checked = initialContinentsVisible;
+		this.edgesToggle = createFilterToggle(appearance, VIEW_CONTROL_COPY.edges, 'edges');
+		this.countryBordersToggle = createFilterToggle(appearance, VIEW_CONTROL_COPY.countryBorders, 'country-borders');
+		this.countryBordersToggle.input.checked = true;
+		this.edgesToggle.input.checked = initialEdgesVisible;
+		this.edgesToggle.label.title = 'Show ordinary links. Selection, search and route highlights remain available.';
 		this.atmosphereToggle = createFilterToggle(
 			appearance,
 			VIEW_CONTROL_COPY.atmosphere,
@@ -299,6 +315,8 @@ export class ViewToolbar {
 		this.atmosphereToggle.label.hidden = profile?.deviceClass === 'phone';
 		appearance.append(
 			this.continentsToggle.label,
+			this.edgesToggle.label,
+			this.countryBordersToggle.label,
 			this.atmosphereToggle.label,
 			surfaceLabel,
 		);
@@ -338,6 +356,8 @@ export class ViewToolbar {
 			this.onFiltersChange,
 		);
 		this.surfaceSelect.addEventListener('change', this.onSurfaceChange);
+		this.edgesToggle.input.addEventListener('change', this.onEdgesChange);
+		this.countryBordersToggle.input.addEventListener('change', this.onCountryBordersChange);
 		this.continentsToggle.input.addEventListener(
 			'change',
 			this.onContinentsChange,
@@ -351,6 +371,14 @@ export class ViewToolbar {
 	setNodes(nodes: readonly RenderNode[]): void {
 		this.search.setNodes(nodes);
 		this.routeButton.disabled = nodes.length < 2;
+	}
+
+	setSearchState(state: FollowSearchState, visibleCount: number): void {
+		this.graphSearch.update(state, visibleCount);
+	}
+
+	focusSearch(): void {
+		this.graphSearch.focus();
 	}
 
 	setTags(tags: readonly RenderTag[]): void {
@@ -395,6 +423,14 @@ export class ViewToolbar {
 
 	setContinentsVisible(visible: boolean): void {
 		this.continentsToggle.input.checked = visible;
+	}
+
+	setCountryBordersVisible(visible: boolean): void {
+		this.countryBordersToggle.input.checked = visible;
+	}
+
+	setEdgesVisible(visible: boolean): void {
+		this.edgesToggle.input.checked = visible;
 	}
 
 	setAtmosphereVisible(visible: boolean): void {
@@ -496,7 +532,9 @@ export class ViewToolbar {
 			'change',
 			this.onAtmosphereChange,
 		);
-		this.search.dispose();
+		this.graphSearch.dispose();
+		this.edgesToggle.input.removeEventListener('change', this.onEdgesChange);
+		this.countryBordersToggle.input.removeEventListener('change', this.onCountryBordersChange);
 		this.element.remove();
 	}
 
@@ -587,6 +625,14 @@ export class ViewToolbar {
 		this.callbacks.onContinentsVisibilityChange(
 			this.continentsToggle.input.checked,
 		);
+	};
+
+	private readonly onCountryBordersChange = (): void => {
+		this.callbacks.onCountryBordersVisibilityChange?.(this.countryBordersToggle.input.checked);
+	};
+
+	private readonly onEdgesChange = (): void => {
+		this.callbacks.onEdgesVisibilityChange(this.edgesToggle.input.checked);
 	};
 
 	private readonly onAtmosphereChange = (): void => {

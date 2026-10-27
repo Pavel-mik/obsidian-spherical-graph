@@ -225,7 +225,8 @@ describe("GraphChangeTracker", () => {
 			{ oldPath: 'Old/Nested/b.md', newPath: 'New/Nested/b.md' },
 			{ oldPath: 'Old/a.md', newPath: 'New/a.md' },
 		]);
-		expect(observation?.diff.requiresLayout).toBe(false);
+		// Descendant identities survive, but their geographic country keys changed.
+		expect(observation?.diff.requiresLayout).toBe(true);
 		tracker.dispose();
 	});
 
