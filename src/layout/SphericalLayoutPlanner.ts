@@ -1,3 +1,6 @@
+import { createCountryTerritories, countryIndices } from '../geography/countryTerritories';
+import { DirectoryTerritoryConstraint } from './territoryConstraints';
+import { directoryRegionKey } from '../geography/directorySemantics';
 import type { GraphDiff } from '../graph/graphDiff';
 import type { GraphData } from '../graph/graphTypes';
 import { nodeCollisionAngularRadius } from '../geometry/nodeMarkerMetrics';
@@ -241,26 +244,32 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 		if (context.mode !== 'refresh') {
 			this.latestRefreshPlan = null;
 			const movableMask = new Uint8Array(graph.nodes.length);
+			const hasFolderNotes = graph.nodes.some((node) => topLevelFolder(node.path) !== undefined);
 			for (const node of graph.nodes) {
-				movableMask[node.index] = node.degree === 0 ? 0 : 1;
+				movableMask[node.index] = node.degree === 0 && !hasFolderNotes ? 0 : 1;
 			}
 			const initialized = initializeDirectoryLayout(
 				graph,
 				context.effectiveSeed,
+				true,
 			);
-			const territory = createDirectoryTerritoryPlan(
+			const continentPlan = createDirectoryTerritoryPlan(
 				graph,
 				initialized.positions,
 				initialized.folderIndexByNode,
 				context.effectiveSeed,
+				true,
 			);
+			const countries = createCountryTerritories(graph, continentPlan);
+			const territory = { ...continentPlan, countries };
+			const countryIndexByNode = countryIndices(graph, countries);
 			const seededPositions = territory.folderKeys.length === 0
 				? initialized.positions
 				: seedDirectoryNodesInTerritories(
 						graph,
 						initialized.positions,
-						initialized.folderIndexByNode,
-						territory,
+						countryIndexByNode,
+						{ ...territory, folderKeys: countries.keys, ownerByCell: Int32Array.from(countries.ownerByCell) },
 						context.effectiveSeed,
 					);
 			const solverGraph = solverGraphBuffers(
@@ -272,6 +281,7 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 			);
 			return {
 				positions: seededPositions,
+				countryIndexByNode,
 				edgeEndpoints: solverGraph.edgeEndpoints,
 				edgeWeights: solverGraph.edgeWeights,
 				edgeTargetAngles: solverGraph.edgeTargetAngles,
@@ -289,9 +299,10 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 			};
 		}
 
+		const hasCountries = context.committedSnapshot?.geography?.territory?.countries !== undefined;
 		const buffers = graphBuffers(graph);
 		const folderIndexByNode =
-			directoryFolderIndexByNode(graph);
+			directoryFolderIndexByNode(graph, hasCountries);
 		const regionIndexByNode =
 			directoryRegionIndexByNode(graph);
 		const directoryEdgeWeights = directoryAwareEdgeWeights(
@@ -322,7 +333,7 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 		let hasNewOrphans = false;
 		for (const node of graph.nodes) {
 			if (
-				node.degree === 0 &&
+				!hasCountries && node.degree === 0 &&
 				initialized.newNodeMask[node.index] === 1
 			) {
 				newOrphanMask[node.index] = 1;
@@ -384,7 +395,7 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 			anchorStrengths: plan.anchorStrengths.slice(),
 			maxAnchorDistances: plan.maxAnchorDistances.slice(),
 			alignToAnchors:
-				existingCount > 0 && hardFixedCount === 0,
+				!hasCountries && existingCount > 0 && hardFixedCount === 0,
 		};
 		const solverGraph = solverGraphBuffers(
 			graph,
@@ -393,19 +404,34 @@ export class SphericalLayoutPlanner implements LayoutOperationPlanner {
 			regionIndexByNode,
 			context.effectiveSeed,
 		);
-		const territory =
-			restoreDirectoryTerritoryPlan(
-				graph,
-				snapshot.geography?.territory,
-			) ??
-			createDirectoryTerritoryPlan(
-				graph,
-				initialized.positions,
-				folderIndexByNode,
-				context.effectiveSeed,
-			);
+		const restored = restoreDirectoryTerritoryPlan(graph, snapshot.geography?.territory);
+		if (hasCountries && restored === undefined) {
+			throw new Error('The continent folders changed. Use Renew layout to rebuild their countries.');
+		}
+		const territory = restored ?? createDirectoryTerritoryPlan(graph, initialized.positions, folderIndexByNode, context.effectiveSeed);
+		const countryIndexByNode = territory.countries === undefined ? undefined : countryIndices(graph, territory.countries);
+		if (countryIndexByNode !== undefined && territory.countries !== undefined) {
+			if (diff.renamedNodes.some((rename) => directoryRegionKey(rename.oldPath) !== directoryRegionKey(rename.newPath))) {
+				throw new Error('Notes moved between countries. Use Renew layout to place them in their new territory.');
+			}
+			const constraint = new DirectoryTerritoryConstraint({
+				subdivision: territory.subdivision,
+				ownerByCell: Int32Array.from(territory.countries.ownerByCell, (owner) => owner < 0 ? territory.countries!.keys.length : owner),
+				ownerCount: territory.countries.keys.length + 1,
+			});
+			// Check immutable old nodes before spending time in a worker. Only new nodes may be reseeded.
+			for (const node of graph.nodes) {
+				if (initialized.existingNodeMask[node.index] === 1 && !constraint.contains(
+					[initialized.positions[node.index * 3]!, initialized.positions[node.index * 3 + 1]!, initialized.positions[node.index * 3 + 2]!], countryIndexByNode[node.index]!)) {
+					throw new Error('A note no longer belongs to its saved country. Use Renew layout.');
+				}
+			}
+			constraint.projectPositions(initialized.positions, countryIndexByNode, initialized.newNodeMask);
+		}
+
 		return {
 			positions: initialized.positions,
+			...(countryIndexByNode === undefined ? {} : { countryIndexByNode }),
 			edgeEndpoints: solverGraph.edgeEndpoints,
 			edgeWeights: solverGraph.edgeWeights,
 			edgeTargetAngles: solverGraph.edgeTargetAngles,
@@ -429,5 +455,6 @@ function territoryPayload(plan: DirectoryTerritoryPlan) {
 		subdivision: plan.subdivision,
 		folderKeys: Object.freeze([...plan.folderKeys]),
 		ownerByCell: plan.ownerByCell.slice(),
+		...(plan.countries === undefined ? {} : { countries: plan.countries }),
 	};
 }

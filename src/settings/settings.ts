@@ -36,6 +36,8 @@ export interface AppearanceSettings {
 	tagOrbitHeightPercent: number;
 	tagViewProtectionEnabled: boolean;
 	sizeNodesByDegree: boolean;
+	showEdges: boolean;
+	showCountryBorders: boolean;
 	edgeOpacity: number;
 	edgeZoomThresholdPercent: number;
 	showLabels: boolean;
@@ -102,6 +104,8 @@ export const DEFAULT_SPHERICAL_GRAPH_SETTINGS: SphericalGraphSettings = {
 		tagOrbitHeightPercent: DEFAULT_TAG_ORBIT_HEIGHT_PERCENT,
 		tagViewProtectionEnabled: false,
 		sizeNodesByDegree: true,
+		showEdges: true,
+		showCountryBorders: true,
 		edgeOpacity: 0.28,
 		edgeZoomThresholdPercent: 50,
 		showLabels: true,
@@ -384,6 +388,8 @@ export function parseSphericalGraphSettings(
 				defaults.appearance.labelZoomThresholdPercent,
 				{ min: 0, max: 100 },
 			),
+			showEdges: booleanValue(appearance.showEdges, defaults.appearance.showEdges),
+			showCountryBorders: booleanValue(appearance.showCountryBorders, defaults.appearance.showCountryBorders),
 			showContinents: booleanValue(
 				appearance.showContinents,
 				defaults.appearance.showContinents,

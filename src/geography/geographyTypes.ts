@@ -1,3 +1,4 @@
+import type { CountryTerritories } from '../geography/countryTerritories';
 import type { Vec3 } from '../geometry/vector3';
 
 export const CONTINENTAL_GEOGRAPHY_VERSION = 1;
@@ -40,12 +41,14 @@ export interface PersistedDirectoryTerritory {
 	readonly subdivision: number;
 	readonly folderKeys: readonly string[];
 	readonly ownerByCell: readonly number[];
+	readonly countries?: CountryTerritories;
 }
 
 export interface DirectoryTerritorySource {
 	readonly subdivision: number;
 	readonly folderKeys: readonly string[];
 	readonly ownerByCell: ArrayLike<number>;
+	readonly countries?: CountryTerritories;
 }
 
 export interface PersistedContinentalGeography {

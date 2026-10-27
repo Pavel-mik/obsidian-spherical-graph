@@ -6,6 +6,8 @@ import {
 	WorkspaceLeaf,
 } from 'obsidian';
 import { VIEW_TYPE } from '../constants';
+import { EMPTY_SEARCH_STATE, FollowSearchController, type FollowSearchState } from '../search/FollowSearchController';
+import { isSearchMatch } from '../render/searchHighlight';
 import {
 	findAllShortestPathUnion,
 } from '../graph/shortestPaths';
@@ -82,6 +84,8 @@ export class SphericalGraphView extends ItemView {
 	private currentSettings: SphericalGraphSettings;
 	private renderer: SphericalGraphRenderer | undefined;
 	private toolbar: ViewToolbar | undefined;
+	private followSearch: FollowSearchController | undefined;
+	private searchState: FollowSearchState = EMPTY_SEARCH_STATE;
 	private detailsPanel: SelectionDetailsPanel | undefined;
 	private statusPresenter: LayoutStatusPresenter | undefined;
 	private autoRotateToggle: HTMLInputElement | undefined;
@@ -178,10 +182,17 @@ export class SphericalGraphView extends ItemView {
 		this.stage = this.root.createDiv();
 		this.stage.className = 'spherical-graph-stage';
 		this.contentEl.append(this.root);
+		this.followSearch = new FollowSearchController(this.app.workspace, (state) => {
+			this.searchState = state;
+			this.renderer?.setSearchResults(state.paths);
+			this.syncSearchStatus();
+		}, this.root.win);
 
 		this.toolbar = new ViewToolbar(
 			this.root,
 			{
+				onFollowSearchToggle: (enabled) => this.followSearch?.setEnabled(enabled),
+				onOpenObsidianSearch: () => this.invoke(() => this.followSearch?.openSearch()),
 				onRefresh: () => {
 					this.invoke(() =>
 						this.options.callbacks.onRefresh(),
@@ -209,6 +220,12 @@ export class SphericalGraphView extends ItemView {
 				},
 				onContinentsVisibilityChange: (visible) => {
 					this.changeContinentsVisibility(visible);
+				},
+				onCountryBordersVisibilityChange: (visible) => {
+					this.changeCountryBordersVisibility(visible);
+				},
+				onEdgesVisibilityChange: (visible) => {
+					this.changeEdgesVisibility(visible);
 				},
 				onAtmosphereVisibilityChange: (visible) => {
 					this.changeAtmosphereVisibility(visible);
@@ -244,8 +261,10 @@ export class SphericalGraphView extends ItemView {
 			this.displayFilters,
 			this.currentSettings.appearance.showContinents,
 			this.currentSettings.appearance.showAtmosphere,
+			this.currentSettings.appearance.showEdges,
 			this.options.runtimeProfile,
 		);
+		this.toolbar.setCountryBordersVisible(this.currentSettings.appearance.showCountryBorders);
 		if (this.options.runtimeProfile.deviceClass === 'tablet') {
 			this.presentationExitButton = this.root.createEl('button');
 			this.presentationExitButton.type = 'button';
@@ -377,6 +396,9 @@ export class SphericalGraphView extends ItemView {
 
 	async onClose(): Promise<void> {
 		this.opened = false;
+		this.followSearch?.dispose();
+		this.followSearch = undefined;
+		this.searchState = EMPTY_SEARCH_STATE;
 		this.exitPresentationMode();
 		this.root?.ownerDocument.removeEventListener(
 			'fullscreenchange',
@@ -481,6 +503,8 @@ export class SphericalGraphView extends ItemView {
 		this.toolbar?.setAtmosphereVisible(
 			this.currentSettings.appearance.showAtmosphere,
 		);
+		this.toolbar?.setEdgesVisible(this.currentSettings.appearance.showEdges);
+		this.toolbar?.setCountryBordersVisible(this.currentSettings.appearance.showCountryBorders);
 	}
 
 	setPinnedNodeIds(nodeIds: readonly string[]): void {
@@ -494,7 +518,7 @@ export class SphericalGraphView extends ItemView {
 	}
 
 	focusSearch(): void {
-		this.toolbar?.search.focus();
+		this.toolbar?.focusSearch();
 	}
 
 	focusNode(nodeId: string): boolean {
@@ -760,6 +784,7 @@ export class SphericalGraphView extends ItemView {
 	}
 
 	private syncVisibleNodes(snapshot: RenderGraphSnapshot): void {
+		this.syncSearchStatus();
 		this.toolbar?.setNodes(
 			snapshot.nodes.filter(
 				(node) =>
@@ -770,6 +795,12 @@ export class SphericalGraphView extends ItemView {
 		this.toolbar?.setTags(
 			this.displayFilters.showTags ? (snapshot.tags ?? []) : [],
 		);
+	}
+
+	private syncSearchStatus(): void {
+		const count = this.model.snapshot?.nodes.filter((node) =>
+			isSearchMatch(node, this.searchState.paths) && isRenderNodeVisible(node, this.displayFilters)).length ?? 0;
+		this.toolbar?.setSearchState(this.searchState, count);
 	}
 
 	private setRouteSource(node: RenderNode): void {
@@ -1238,6 +1269,20 @@ export class SphericalGraphView extends ItemView {
 		this.invoke(() =>
 			this.options.callbacks.onSurfaceModeChange(mode),
 		);
+	}
+
+	private changeCountryBordersVisibility(visible: boolean): void {
+		this.currentSettings = cloneSphericalGraphSettings(this.currentSettings);
+		this.currentSettings.appearance.showCountryBorders = visible;
+		this.renderer?.updateAppearance(this.currentSettings.appearance);
+		this.invoke(() => this.options.callbacks.onCountryBordersVisibilityChange?.(visible));
+	}
+
+	private changeEdgesVisibility(visible: boolean): void {
+		this.currentSettings = cloneSphericalGraphSettings(this.currentSettings);
+		this.currentSettings.appearance.showEdges = visible;
+		this.renderer?.updateAppearance(this.currentSettings.appearance);
+		this.invoke(() => this.options.callbacks.onEdgesVisibilityChange(visible));
 	}
 
 	private changeContinentsVisibility(visible: boolean): void {

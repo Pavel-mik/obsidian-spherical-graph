@@ -1,3 +1,4 @@
+import { validCountries, freezeCountries } from '../geography/countryTerritories';
 import { hashNumbers } from '../geometry/deterministicHash';
 import {
 	computeSphericalCoverage,
@@ -146,6 +147,8 @@ export class SphericalSolver {
 	private readonly coastalPortDirections: Float32Array | undefined;
 	private readonly territory: LayoutSolverInput['territory'];
 	private readonly territoryConstraint: DirectoryTerritoryConstraint | undefined;
+	private readonly countryConstraint: DirectoryTerritoryConstraint | undefined;
+	private readonly countryIndexByNode: Int32Array | undefined;
 	private readonly baseMovableMask: Uint8Array;
 	private readonly refresh: LayoutSolverInput['refresh'];
 	private readonly cappedNodes: Uint8Array;
@@ -240,6 +243,7 @@ export class SphericalSolver {
 				subdivision: input.territory.subdivision,
 				folderKeys: Object.freeze([...input.territory.folderKeys]),
 				ownerByCell: input.territory.ownerByCell.slice(),
+				...(input.territory.countries === undefined ? {} : { countries: freezeCountries(input.territory.countries) }),
 			};
 			this.territoryConstraint = new DirectoryTerritoryConstraint({
 				subdivision: this.territory.subdivision,
@@ -249,6 +253,20 @@ export class SphericalSolver {
 		} else {
 			this.territory = undefined;
 			this.territoryConstraint = undefined;
+		}
+		const countries = this.territory?.countries;
+		if (countries !== undefined && this.territory !== undefined) {
+			if (!validCountries(countries, this.territory.folderKeys, this.territory.ownerByCell) ||
+				input.countryIndexByNode?.length !== nodeCount ||
+				[...input.countryIndexByNode].some((owner) => owner < 0 || owner > countries.keys.length)) {
+				throw new RangeError('Invalid country territory or note ownership.');
+			}
+			this.countryIndexByNode = input.countryIndexByNode.slice();
+			this.countryConstraint = new DirectoryTerritoryConstraint({
+				subdivision: this.territory.subdivision,
+				ownerByCell: Int32Array.from(countries.ownerByCell, (owner) => owner < 0 ? countries.keys.length : owner),
+				ownerCount: countries.keys.length + 1,
+			});
 		}
 		this.velocities = new Float64Array(this.positions.length);
 		this.cappedNodes = new Uint8Array(nodeCount);
@@ -589,6 +607,9 @@ export class SphericalSolver {
 				forceEvaluation.forces,
 				movableMask,
 			);
+			if (this.countryConstraint !== undefined && this.countryIndexByNode !== undefined) {
+				this.countryConstraint.projectPositions(this.positions, this.countryIndexByNode, movableMask);
+			}
 			this.iteration += 1;
 
 			const convergenceEligible =
@@ -914,6 +935,35 @@ export class SphericalSolver {
 			);
 		}
 
+		if (this.countryConstraint !== undefined && this.countryIndexByNode !== undefined) {
+			// Resolve collisions and boundaries together. Existing refresh anchors remain authoritative.
+			for (let pass = 0; pass < 4; pass += 1) {
+				this.countryConstraint.projectWithClearance(this.positions, this.countryIndexByNode, this.collisionAngularRadii);
+				if (pass < 3) this.applyCollisionProjection();
+			}
+			if (this.refresh !== undefined) {
+				for (let index = 0; index < this.countryIndexByNode.length; index += 1) {
+					if (this.refresh.existingNodeMask[index] !== 1) continue;
+					const anchor = readVec3(this.refresh.anchorPositions, index);
+					if (this.refresh.relaxationMovableMask[index] !== 1 || geodesicDistance(anchor, readVec3(this.positions, index)) > (this.refresh.maxAnchorDistances[index] ?? 0)) {
+						writeVec3(this.positions, index, anchor);
+					}
+				}
+			}
+			for (let index = 0; index < this.countryIndexByNode.length; index += 1) {
+				if (!this.countryConstraint.contains(readVec3(this.positions, index), this.countryIndexByNode[index]!, (this.collisionAngularRadii?.[index] ?? 0) + 0.0008)) {
+					throw new Error('The saved map cannot fit this change inside its countries. Use Renew layout.');
+				}
+			}
+		}
+
+		if (this.countryConstraint !== undefined && this.collisionAngularRadii !== undefined) {
+			const measured = projectSphericalCollisions({ positions: this.positions, angularRadii: this.collisionAngularRadii,
+				movableMask: this.baseMovableMask, deterministicSeed: this.effectiveSeed, maxPasses: 0, tolerance: 2e-5 });
+			this.collisionRemainingOverlapCount = measured.remainingOverlapCount;
+			this.collisionMaximumPenetration = measured.maximumPenetration;
+		}
+
 		const maximumNormError = this.maximumNormError();
 		if (!Number.isFinite(maximumNormError) || maximumNormError > 1e-5) {
 			throw new RangeError(
@@ -932,6 +982,7 @@ export class SphericalSolver {
 							subdivision: this.territory.subdivision,
 							folderKeys: Object.freeze([...this.territory.folderKeys]),
 							ownerByCell: this.territory.ownerByCell.slice(),
+							...(this.territory.countries === undefined ? {} : { countries: this.territory.countries }),
 						},
 					}),
 		};

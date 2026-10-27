@@ -113,11 +113,11 @@ function buildAdjacency(graph: GraphData): WeightedNeighbor[][] {
 	return adjacency;
 }
 
-export function directoryFolderIndexByNode(graph: GraphData): Int32Array {
+export function directoryFolderIndexByNode(graph: GraphData, includeOrphans = false): Int32Array {
 	const folders = [
 		...new Set(
 			graph.nodes
-				.filter(isContinentalNode)
+				.filter((node) => includeOrphans || isContinentalNode(node))
 				.map((node) => topLevelFolder(node.path))
 				.filter((folder): folder is string => folder !== undefined),
 		),
@@ -128,7 +128,7 @@ export function directoryFolderIndexByNode(graph: GraphData): Int32Array {
 	const result = new Int32Array(graph.nodes.length);
 	result.fill(-1);
 	for (const node of graph.nodes) {
-		if (!isContinentalNode(node)) {
+		if (!includeOrphans && !isContinentalNode(node)) {
 			continue;
 		}
 		const folder = topLevelFolder(node.path);
@@ -998,9 +998,10 @@ export function initializeDirectoryOrphanPositions(
 export function initializeDirectoryLayout(
 	graph: GraphData,
 	effectiveSeed: number,
+	includeOrphans = false,
 ): DirectoryInitialization {
 	const positions = new Float32Array(graph.nodes.length * 3);
-	const folderIndexByNode = directoryFolderIndexByNode(graph);
+	const folderIndexByNode = directoryFolderIndexByNode(graph, includeOrphans);
 	const adjacency = buildAdjacency(graph);
 	const groups = folderGroups(
 		graph,

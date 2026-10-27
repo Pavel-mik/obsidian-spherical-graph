@@ -95,23 +95,12 @@
 - Top-level vault folders are authoritative continent owners. This replaces
   inferred graph communities with a stable, explainable mapping users control
   through their existing vault structure.
-- Initialize and Renew use top-level folders plus deterministic subdirectory
-  and topology cohorts only as a starting hierarchy. The worker receives owner
-  indexes, not circular territory centers or hard radial limits. This lets
-  graph topology and collision packing determine the final irregular shape;
-  land masks, coastlines, colors, and texture remain downstream render
-  products.
+- Initialize and Renew allocate a fixed connected spherical territory per top-level folder, then connected child-folder countries inside it. The note solver uses the same ownership grid as the rendered boundaries; geographic ownership takes precedence over cross-folder links.
 - Same-folder springs retain full strength, cross-folder springs use 14%, and
   root-note edges use 35%. Rendering, selection, and Route Finder always use
   the original graph weights.
-- Every linked note under a top-level folder is a continent member regardless
-  of degree. Linked root notes are islands; all degree-zero notes stay as cities
-  over open water. The degree-one/two island rule was removed because it made
-  large vaults visually speckled.
-- Region initialization grows asymmetric district centers and uses seeded
-  best-candidate samples. A bounded landmark stress layer adds graph-distance
-  targets inside each region, preventing hub leaves from sharing one radius.
-  No territory barrier or hard folder clamp remains.
+- Country-enabled maps include every Markdown note under a top-level folder, including orphans. Immediate child folders own all deeper descendants. Direct notes get a synthetic Common country identified by the parent path; it cannot collide with a real subfolder name. Linked root notes remain islands; all root notes are constrained to the ocean outside continental countries.
+- Region initialization and bounded landmark stress still provide topology hints, while country constraints prevent springs, port placement and collision projection from leaving the assigned region.
 - Global coverage treats each top-level folder centroid as one sample. This
   prevents a large population from being pulled into a sphere-spanning disc
   while still distributing continent centers over the globe.
@@ -120,9 +109,7 @@
   recomputed from converged real cross-folder neighbors before the coastward
   move. A final marker-aware intrinsic collision projection is separate from
   force convergence and preserves Refresh fixed masks and anchor caps.
-- Degree-zero notes use seeded random ocean samples with local separation and
-  are hard-fixed during full solves. This deliberately favors an organic ocean
-  scatter over globally uniform coverage for nodes with no topology.
+- Legacy maps preserve their old orphan placement until Renew. Country-enabled Refresh reuses exact ownership, admits new notes only into existing countries, and rejects geographic moves/new country keys with an actionable Renew message. Same-country renames preserve positions; cross-country moves stay pending rather than appearing in the wrong state.
 - Refresh continuity preserves compatible continent identity and color through
   full-path and relative-path overlap matching. Current folder names always
   determine labels.
@@ -130,10 +117,8 @@
   triangle acceptance was rejected because it exposes a regular sawtooth
   coastline. Land uses a variably inset ownership mask while a wider,
   independently perturbed sand mask forms an irregular beach around it.
-- Land triangles are derived and batched at render time; persistence stores
-  semantic geography only. This keeps snapshots compact and lets themes recolor
-  the atlas without moving notes. Density, watershed, and cell-ownership arrays
-  are temporary analytical data and are not persisted.
+- Land triangles are derived and batched in a worker. Snapshots persist continental and country cell ownership, so Sync and reload reproduce the same map. Algorithm 11 remains able to load algorithm 9/10 maps without introducing countries until Renew. Disk and commit validation reject notes outside their country.
+- Country frontiers grow only through adjacent unclaimed cells within their parent. Population plus a minimum-area allowance controls growth; every land cell belongs to exactly one country. Borders follow the exact spherical Voronoi dual, clipped to the rendered coast, without smoothing across note markers. The Country borders toggle is independent of graph Edges; smaller names appear on zoom.
 - Linked root notes can receive deterministic, density-scaled island polygons
   when there is enough clearance from a continent and another island. Orphan
   notes never seed a polygon.
@@ -163,3 +148,46 @@
   coastlines, irregular bays/headlands, gently mottled relief and contours,
   ivory cities, coral selection, amber routes/tags, restrained typography, and
   no additive glow.
+
+## Follow Search
+
+- The user explicitly approved a narrow exception to the public-API-only rule:
+  read existing core Search results, without invoking or modifying its engine.
+  `SearchResultsAdapter` is the only module that knows the private shape.
+  Desktop Obsidian 1.14.5 source has `dom.resultDomLookup` keyed by files,
+  `dom.working`, `searchQuery.query/caseSensitive`, `matchingCase`, and
+  `queue.queue.items.length`. Missing/changed shapes disable the integration.
+- Follow Search is per-view, opt-in and ephemeral. A workspace listener tracks
+  the most recently selected Search pane; moving focus to the graph preserves
+  that source. Closing the source clears highlights and waits for explicit
+  selection of another Search pane. No global prototype hooks or DOM scraping.
+- Poll every 250 ms while enabled. Require an idle queue, matching compiled
+  query/case setting and two identical completed samples before publishing.
+  Pending, cancelled or invalid queries cannot reuse stale results. Empty
+  input clears immediately on the next poll. Do not redraw unchanged results.
+- Copy file paths only; no file reads, indexing, match excerpts, result limit,
+  stored query, layout solver or camera operation. Graph visibility filters
+  still apply, and files absent from the saved map are counted but not added.
+- A single-row toolbar selects Find a note or Obsidian search. Switching to
+  Obsidian search reveals/creates its pane through public Workspace APIs; no
+  query or search-engine method is invoked. Switching back stops following,
+  clears only Search highlights and preserves the note-finder input. The
+  existing focus-search command always reveals and focuses the note finder.
+- Search rings and edge ribbons are separate from selection and route.
+  Wine red (`#963652`) fits the atlas palette. A subtle rose-tinted halo fades
+  smoothly to transparent around the thin edge stroke, without a hard casing.
+  Smaller, thin rings no longer crowd note markers.
+  Search fills matching node centers; selection, hover and route center colors
+  take precedence, while the wine ring continues to mark Search membership.
+  Selection and route strokes use the same fine width and shared halo shader.
+  Route endpoint double rings retain their distinct colors at a smaller size.
+  Selecting a node hides the entire ordinary-edge layer; incident ribbons,
+  route and Search overlays provide the meaningful connections independently.
+  The Globe Edges control persists appearance.showEdges (default true) and only
+  controls ordinary edges. Selection and route overlays retain their zoom threshold.
+  An edge qualifies only when both note endpoints match. Search ribbons reuse
+  cached geodesic geometry and remain visible while rotating or zoomed out.
+  The clear icon disables following without editing core Search. The query
+  button then offers Show search results to explicitly resume following.
+
+- Country terrain uses monotone geodesic growth around each actual allocated continent seed. The previous tangent-plane radius decreased beyond the horizon and a seed displaced by separation could draw a thin neck back toward its old preferred center; both behaviors are incompatible with readable country areas.

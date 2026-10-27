@@ -35,6 +35,7 @@ self.addEventListener('message', (event: MessageEvent<unknown>) => {
 			data.shades.buffer,
 			data.beachPositions.buffer,
 			data.coastPositions.buffer,
+			...(data.countryBorderPositions === undefined ? [] : [data.countryBorderPositions.buffer]),
 		]);
 	} catch (error) {
 		self.postMessage({

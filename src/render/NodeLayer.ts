@@ -25,6 +25,7 @@ import {
 	nodeMarkerScaleForGlobe,
 } from '../geometry/nodeMarkerMetrics';
 import { AppearanceSettings } from '../settings/settings';
+import { isSearchMatch, SEARCH_HIGHLIGHT_COLOR } from './searchHighlight';
 import {
 	DEFAULT_RENDER_FILTERS,
 	isRenderNodeVisible,
@@ -46,6 +47,7 @@ export class NodeLayer {
 	private meshValue: InstancedMesh | undefined;
 	private glowMesh: InstancedMesh | undefined;
 	private highlightMesh: InstancedMesh | undefined;
+	private searchHighlightMesh: InstancedMesh | undefined;
 	private reticle: LineSegments | undefined;
 	private reticleMaterial: LineBasicMaterial | undefined;
 	private snapshot: PreparedRenderSnapshot | undefined;
@@ -55,6 +57,7 @@ export class NodeLayer {
 	private selection: RenderSelectionState = {};
 	private route: RenderRouteState | undefined;
 	private routeNodeIds = new Set<string>();
+	private searchPaths: ReadonlySet<string> = new Set();
 	private filters: RenderFilterState = DEFAULT_RENDER_FILTERS;
 	private readonly matrix = new Matrix4();
 	private readonly position = new Vector3();
@@ -108,10 +111,10 @@ export class NodeLayer {
 		this.group.add(glowMesh);
 
 		const highlightMesh = new InstancedMesh(
-			new RingGeometry(0.82, 1, NODE_DISC_SEGMENTS),
+			new RingGeometry(0.93, 1, NODE_DISC_SEGMENTS),
 			new MeshBasicMaterial({
 				transparent: true,
-				opacity: 0.78,
+				opacity: 0.72,
 				depthTest: true,
 				depthWrite: false,
 				side: DoubleSide,
@@ -125,11 +128,30 @@ export class NodeLayer {
 		this.highlightMesh = highlightMesh;
 		this.group.add(highlightMesh);
 
+		const searchHighlightMesh = new InstancedMesh(
+			new RingGeometry(0.93, 1, NODE_DISC_SEGMENTS),
+			new MeshBasicMaterial({
+				color: SEARCH_HIGHLIGHT_COLOR,
+				transparent: true,
+				opacity: 0.96,
+				depthTest: true,
+				depthWrite: false,
+				side: DoubleSide,
+				toneMapped: false,
+			}),
+			Math.max(1, this.nodesByInstance.length),
+		);
+		searchHighlightMesh.name = 'spherical-graph-search-node-highlights';
+		searchHighlightMesh.count = 0;
+		searchHighlightMesh.renderOrder = 5;
+		this.searchHighlightMesh = searchHighlightMesh;
+		this.group.add(searchHighlightMesh);
+
 		const reticleMaterial = new LineBasicMaterial({
 			color: this.theme.nodeSelected,
 			depthTest: true,
 			depthWrite: false,
-			opacity: 0.92,
+			opacity: 0.72,
 			toneMapped: false,
 			transparent: true,
 		});
@@ -179,6 +201,11 @@ export class NodeLayer {
 		this.updateInstances();
 	}
 
+	updateSearch(paths: ReadonlySet<string>): void {
+		this.searchPaths = new Set(paths);
+		this.updateInstances();
+	}
+
 	nodeForInstance(instanceId: number): RenderNode | undefined {
 		const node = this.nodesByInstance[instanceId];
 		return node !== undefined && isRenderNodeVisible(node, this.filters)
@@ -213,6 +240,7 @@ export class NodeLayer {
 		this.nodesByInstance = [];
 		this.route = undefined;
 		this.routeNodeIds.clear();
+		this.searchPaths = new Set();
 	}
 
 	private updateInstances(): void {
@@ -285,11 +313,11 @@ export class NodeLayer {
 				(directoryPeers?.has(node.id) ?? false);
 			let scale = this.baseScaleForNode(node);
 			if (isSelected) {
-				scale *= 1.62;
+				scale *= 1.25;
 			} else if (isHovered) {
 				scale *= 1.45;
 			} else if (isRoute) {
-				scale *= 1.28;
+				scale *= 1.14;
 			} else if (isActive) {
 				scale *= 1.25;
 			} else if (isNeighbor) {
@@ -318,6 +346,8 @@ export class NodeLayer {
 							? this.theme.nodeRouteEnd
 					: isRoute
 						? this.theme.nodeRoute
+						: isSearchMatch(node, this.searchPaths)
+							? SEARCH_HIGHLIGHT_COLOR
 						: isActive
 							? this.theme.nodeActive
 							: isNeighbor
@@ -346,12 +376,16 @@ export class NodeLayer {
 			return;
 		}
 		let instanceId = 0;
+		let searchInstanceId = 0;
 		const addRing = (
 			nodeId: string | undefined,
 			scaleMultiplier: number,
 			color: string,
+			search = false,
 		): void => {
-			if (nodeId === undefined || instanceId >= mesh.instanceMatrix.count) {
+			const target = search ? this.searchHighlightMesh : mesh;
+			const index = search ? searchInstanceId : instanceId;
+			if (nodeId === undefined || !target || index >= target.instanceMatrix.count) {
 				return;
 			}
 			const node = snapshot.nodeById.get(nodeId);
@@ -380,20 +414,23 @@ export class NodeLayer {
 			this.rotation.setFromUnitVectors(NODE_NORMAL, this.radial);
 			this.scale.setScalar(baseScale * scaleMultiplier);
 			this.matrix.compose(this.position, this.rotation, this.scale);
-			mesh.setMatrixAt(instanceId, this.matrix);
-			mesh.setColorAt(instanceId, this.color.set(color));
-			instanceId += 1;
+			target.setMatrixAt(index, this.matrix);
+			if (search) searchInstanceId += 1;
+			else {
+				target.setColorAt(index, this.color.set(color));
+				instanceId += 1;
+			}
 		};
 
 		for (const nodeId of this.route?.nodeIds ?? []) {
 			if (nodeId === this.route?.startNodeId) {
-				addRing(nodeId, 2.2, this.theme.nodeRouteStart);
-				addRing(nodeId, 2.75, this.theme.nodeRouteStart);
+				addRing(nodeId, 1.85, this.theme.nodeRouteStart);
+				addRing(nodeId, 2.25, this.theme.nodeRouteStart);
 			} else if (nodeId === this.route?.endNodeId) {
-				addRing(nodeId, 2.2, this.theme.nodeRouteEnd);
-				addRing(nodeId, 2.75, this.theme.nodeRouteEnd);
+				addRing(nodeId, 1.85, this.theme.nodeRouteEnd);
+				addRing(nodeId, 2.25, this.theme.nodeRouteEnd);
 			} else {
-				addRing(nodeId, 1.9, this.theme.nodeRoute);
+				addRing(nodeId, 1.65, this.theme.nodeRoute);
 			}
 		}
 		const selectedRegion =
@@ -422,8 +459,17 @@ export class NodeLayer {
 				this.theme.nodeActive,
 			);
 		}
+		for (const node of snapshot.nodes) {
+			if (isSearchMatch(node, this.searchPaths)) {
+				addRing(node.id, 2.55, SEARCH_HIGHLIGHT_COLOR, true);
+			}
+		}
 		mesh.count = instanceId;
 		updateInstancedMesh(mesh);
+		if (this.searchHighlightMesh) {
+			this.searchHighlightMesh.count = searchInstanceId;
+			updateInstancedMesh(this.searchHighlightMesh);
+		}
 		this.updateReticle(snapshot);
 	}
 
@@ -458,7 +504,7 @@ export class NodeLayer {
 			return;
 		}
 
-		const selectedScale = this.baseScaleForNode(node) * 1.62;
+		const selectedScale = this.baseScaleForNode(node) * 1.25;
 		this.radial.set(x, y, z).normalize();
 		reticle.position
 			.copy(this.radial)
@@ -485,9 +531,11 @@ export class NodeLayer {
 		disposeInstancedMesh(this.group, this.meshValue);
 		disposeInstancedMesh(this.group, this.glowMesh);
 		disposeInstancedMesh(this.group, this.highlightMesh);
+		disposeInstancedMesh(this.group, this.searchHighlightMesh);
 		this.meshValue = undefined;
 		this.glowMesh = undefined;
 		this.highlightMesh = undefined;
+		this.searchHighlightMesh = undefined;
 		if (this.reticle !== undefined) {
 			this.group.remove(this.reticle);
 			this.reticle.geometry.dispose();

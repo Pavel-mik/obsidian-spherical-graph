@@ -1,3 +1,4 @@
+import { freezeCountries, validCountries } from './countryTerritories';
 import { hashString } from '../geometry/deterministicHash';
 import {
 	geodesicDistance,
@@ -153,10 +154,10 @@ function matchPreviousContinents(
 	return matches;
 }
 
-function directoryGroups(graph: GraphData): DirectoryGroup[] {
+function directoryGroups(graph: GraphData, includeOrphans = false): DirectoryGroup[] {
 	const indicesByFolder = new Map<string, number[]>();
 	for (const node of graph.nodes) {
-		if (!isContinentalNode(node)) {
+		if (!includeOrphans && !isContinentalNode(node)) {
 			continue;
 		}
 		const folder = topLevelFolder(node.path);
@@ -257,6 +258,7 @@ function freezeGeography(
 						subdivision: territory.subdivision,
 						folderKeys: Object.freeze([...territory.folderKeys]),
 						ownerByCell: Object.freeze([...territory.ownerByCell]),
+						...(territory.countries === undefined ? {} : { countries: freezeCountries(territory.countries) }),
 					}),
 			}),
 	});
@@ -286,10 +288,12 @@ function persistTerritory(
 		}
 		return owner;
 	});
+	if (source.countries !== undefined && !validCountries(source.countries, source.folderKeys, source.ownerByCell)) throw new Error('Invalid country territories.');
 	return {
 		subdivision: source.subdivision,
 		folderKeys: Object.freeze([...source.folderKeys]),
 		ownerByCell: Object.freeze(owners),
+		...(source.countries === undefined ? {} : { countries: freezeCountries(source.countries) }),
 	};
 }
 
@@ -309,7 +313,7 @@ export function derivePostLayoutGeography(
 	if (positions.length !== graph.nodes.length * 3) {
 		throw new RangeError('Geography positions must contain one vector per note.');
 	}
-	const groups = directoryGroups(graph);
+	const groups = directoryGroups(graph, territorySource?.countries !== undefined);
 	const assignmentByNode = new Int32Array(graph.nodes.length);
 	assignmentByNode.fill(-1);
 	for (let owner = 0; owner < groups.length; owner += 1) {

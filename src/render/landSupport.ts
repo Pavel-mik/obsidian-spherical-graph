@@ -283,7 +283,7 @@ function semanticAssignments(
 				Number.isSafeInteger(nodeIndex) &&
 				nodeIndex >= 0 &&
 				nodeIndex < nodeCount &&
-				(degree === undefined || degree > 0) &&
+				(geography.territory?.countries !== undefined || degree === undefined || degree > 0) &&
 				assignments[nodeIndex] === -2
 			) {
 				assignments[nodeIndex] = owner;

@@ -4,38 +4,87 @@
 [![Latest release](https://img.shields.io/github/v/release/Pavel-mik/obsidian-spherical-graph?label=release)](https://github.com/Pavel-mik/obsidian-spherical-graph/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
 
-Turn your Obsidian vault into a world you can navigate. Each top-level vault folder
-becomes its own continent, notes become cities, links become roads across the
-surface, and tags orbit overhead as satellites. Linked notes stored directly
-in the vault root become islands; orphan notes remain cities over open water.
-The cartography reserves approximately half the globe for ocean. A
-territory-first spherical allocator gives every folder one connected,
-non-overlapping landmass before cities are relaxed, so even densely
-cross-linked vaults cannot pull continents into interwoven ribbons. Route
-Finder reveals every shortest path between distant notes.
+Turn your Obsidian vault into a world you can navigate. Folders become
+continents, subfolders become countries, notes become cities, and links become
+roads. Explore your ideas in a quiet, antique-cartography style.
 
-Spherical Graph is designed as a stable spatial map: a finite layout operation
-computes positions, validates and saves one complete snapshot, and then stops.
-Normal reading, search, filtering, selection, rotation, zoom, theme changes,
-and resizing do not move notes.
+![A vault mapped as continents and countries on an interactive globe](docs/screenshots/spherical-graph-globe.png)
 
-Initialize and Renew first grow deterministic folder territories on an
-intrinsic icosphere raster. Area quotas follow folder size, simultaneous growth
-keeps every region connected, and a permanent water buffer separates different
-owners. Cities are then seeded across their own land with an irregular
-blue-noise distribution and relaxed without crossing the fixed coast. Sparse
-graph-distance stress arranges internal roads, while cross-folder links mostly
-influence macro orientation and relative coastal-port placement. The renderer
-adds multi-scale shoreline detail and beaches to that committed raster; it no
-longer invents corridors between cities after layout.
+- **A map you can remember.** Notes stay in place while you search, rotate,
+  zoom, filter, and read. Update the layout only when you choose.
+- **Your folders, made visible.** Follow coastlines, country borders, and
+  labels to find your way through a vault.
+- **Search in context.** Find a note by name, or highlight native Obsidian
+  Search results and the connections between them.
+- **Follow a thought.** Route Finder reveals every shortest path between
+  two notes, including equally short alternatives.
+- **Local and private.** No account, cloud service, telemetry, or changes to
+  your note contents.
 
-## See your vault as a world
+## Folders become continents. Subfolders become countries.
 
-![Spherical Graph globe with note cities and tag satellites](docs/screenshots/spherical-graph-globe.png)
+Run **Renew layout** once to add countries to an existing map. Each immediate subfolder becomes a country; deeper folders stay in that country. Notes directly in a top-level folder share a **Common** territory. Folder notes without links belong on land too; root notes stay outside the continents.
 
-![Route Finder highlighting shortest paths across the globe](docs/screenshots/spherical-graph-route.png)
+Fine dashed borders and smaller country names appear on the globe. Use **Map controls → Globe → Country borders** to hide the borders and country labels independently of graph links. Names appear when zoomed in.
 
-![Task-oriented Map controls for layout, exploration, saved state, visible content, and globe layers](docs/screenshots/spherical-graph-filters.png)
+**Refresh** preserves country boundaries and inserts notes into existing countries. New country folders, moves between countries, or changes that cannot fit the saved map require **Renew layout**. Same-country renames preserve positions. Existing maps keep their current layout until Renew succeeds.
+
+![Research, Design, Systems, and Common territories inside the Knowledge continent](docs/screenshots/spherical-graph-countries.png)
+
+## Search in the graph
+
+![Native Obsidian Search results highlighted in wine on the same saved map](docs/screenshots/spherical-graph-search.png)
+
+The toolbar has one row with a search-mode selector. **Find a note** searches
+note names, paths and tags. **Obsidian search** opens the built-in Search pane
+and follows its results. The same toolbar space then shows the query, the number
+of matching notes in the graph, and an **×** button to clear highlights. Click
+the query to return to Search; hover over the count to see the total files found.
+
+Matching notes get wine-colored centers and fine rings. Existing links between two
+matching notes get thin wine-colored lines surrounded by a soft, fading halo.
+Selection and Route Finder remain independent; the camera and saved layout
+stay unchanged. Graph filters still apply, and files missing from the saved
+map are not added automatically.
+
+Selection and Route Finder use the same fine strokes and soft halo, with smaller
+node markers. Selecting a note hides unrelated ordinary links completely.
+**Map controls → Globe → Edges** toggles ordinary links and remembers the choice;
+selection, Search and route highlights remain independent. Selection and route
+links still respect the edge zoom threshold. Selected, hovered and route nodes
+retain their own center colors when they also match Search; the wine ring stays visible.
+
+The graph follows the most recently selected Search pane. **×** stops following
+and removes highlights without changing the native query; **Show search results**
+resumes it. Switching back to **Find a note** also clears Search highlights and
+restores the previous note-finder query. Clearing the native Search clears
+highlights. Closing the followed pane pauses until another Search pane is selected.
+Keep Search visible until its search finishes; Obsidian can pause work in a
+hidden pane. New graph views start in **Find a note** mode.
+
+Results use Obsidian's search syntax and case/diacritic behavior. This optional
+integration reads undocumented Search state, checked against desktop Obsidian
+1.14.4 and 1.14.5, and can stop working after an Obsidian update. If that state is unavailable,
+Follow Search stops with a status message; the rest of the graph still works.
+
+## Trace the connections between ideas
+
+Select a starting note, choose **Map controls → Explore → Find route**, then
+select a destination. The map highlights all shortest paths and lists their
+notes in the details panel. Click a listed note to open it.
+
+![Route Finder showing two equally short routes from Mental maps to Feedback](docs/screenshots/spherical-graph-route.png)
+
+## Keep the view as quiet as you need
+
+Hide ordinary links, country borders, tags, or atmosphere independently.
+Search, selection, and route highlights remain available with ordinary links
+hidden. The compact search toolbar leaves more room for the globe.
+
+![Map controls with independent Edges and Country borders switches](docs/screenshots/spherical-graph-filters.png)
+
+*Screenshots use a fictional 150-note demo vault in desktop Obsidian. The
+same saved map is shown throughout; only the view and display options change.*
 
 ## Requirements
 
@@ -122,7 +171,7 @@ and a reliable rename keeps the old position under the new path. Select
 - Intrinsic, seam-free spherical layout with deterministic exact and sampled
   repulsion modes.
 - Territory-first Initialize/Renew placement directly on \(S^2\): every
-  non-orphan top-level folder receives a connected irregular raster region,
+  top-level folder containing notes receives a connected irregular raster region,
   different owners remain separated by sea, and approximately 52% of the
   surface remains ocean.
 - Cities use deterministic farthest-point/blue-noise seeding across their
@@ -135,10 +184,12 @@ and a reliable rename keeps the old position under the new path. Select
   port cities and can reach the coastline on the side of their strongest roads.
 - Post-layout cartography consumes the committed owner raster directly and
   only adds sub-cell coast detail, relief, beaches, and root-note islands.
-- Degree-zero notes stay as cities over water. Degree-one/two folder notes
-  remain on their continent; only linked root notes receive island patches.
+- Folder notes, including notes without links, stay inside their country.
+  Linked root notes receive island patches; root orphans remain over water.
+  Older saved maps retain their previous geography until Renew.
 - Membership matching preserves stable continent identity and color across
-  compatible Refreshes and multi-note top-level folder renames.
+  compatible Refreshes. Country-enabled maps require Renew after moving notes
+  between countries or renaming a country or continent.
 - Incremental Refresh with a new-node warm-up, graph-neighborhood affected set,
   hard-fixed remote nodes, anchors, and a displacement cap.
 - Transactional committed snapshot, schema migrations, stable camera state,
@@ -314,7 +365,7 @@ partial state.
 
 ## Installation
 
-After publication, install **Spherical Graph** from **Settings → Community
+Install **Spherical Graph** from **Settings → Community
 plugins → Browse**.
 
 For a manual or beta installation:

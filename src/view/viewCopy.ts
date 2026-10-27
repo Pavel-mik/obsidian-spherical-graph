@@ -43,6 +43,8 @@ export const VIEW_CONTROL_COPY = {
 	existingFilesOnly: 'Existing files only',
 	orphans: 'Orphans',
 	continents: 'Continents',
+	edges: 'Edges',
+	countryBorders: 'Country borders',
 	atmosphere: 'Atmosphere',
 	showTags: 'Show tags',
 	hideTags: 'Hide tags',

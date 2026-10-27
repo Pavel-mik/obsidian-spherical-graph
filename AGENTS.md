@@ -16,6 +16,9 @@
 - Worker code must be bundled inline into the single release `main.js`.
 - Do not modify note contents, make runtime network calls, add telemetry, or
   use undocumented Obsidian APIs.
+  Exception approved by the user: the optional Follow Search integration may
+  read core Search results through `SearchResultsAdapter.ts`. Keep private
+  access confined to that adapter, read-only, guarded, and fail-closed.
 - Required local gate: `npm run check`.
 
 ## Project overview

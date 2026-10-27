@@ -159,22 +159,23 @@ export function createRenderGraphSnapshot(
 							capRadius: continent.capRadius,
 							colorIndex: continent.colorIndex,
 						}))
-						.filter((continent) => continent.nodeIndices.length > 0),
+						.filter((continent) => snapshot.geography?.territory?.countries !== undefined || continent.nodeIndices.length > 0),
 					islandNodeIndices: snapshot.geography.islandNodeIds
 						.map((nodeId) => renderIndexById.get(nodeId))
 						.filter(
 							(index): index is number => index !== undefined,
 						),
 					...(snapshot.geography.territory === undefined ||
-					snapshot.geography.continents.some(
+					(snapshot.geography.territory.countries === undefined && snapshot.geography.continents.some(
 						(continent) =>
 							!continent.nodeIds.some((nodeId) =>
 								renderIndexById.has(nodeId),
 							),
-					)
+					))
 						? {}
 						: {
 								territory: {
+									...(snapshot.geography.territory.countries === undefined ? {} : { countries: snapshot.geography.territory.countries }),
 									subdivision:
 										snapshot.geography.territory.subdivision,
 									folderKeys: Object.freeze([

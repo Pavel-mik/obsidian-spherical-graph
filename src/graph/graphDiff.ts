@@ -1,3 +1,4 @@
+import { directoryRegionKey } from '../geography/directorySemantics';
 import { compareGraphIds } from "./graphFilters";
 import { GraphDescriptor, GraphDescriptorEdge } from "./graphTypes";
 
@@ -303,6 +304,7 @@ export function diffGraphDescriptors(
 		previous !== undefined &&
 		previous.filterSignature !== current.filterSignature;
 	const requiresLayout =
+		accepted.renames.some((rename) => directoryRegionKey(rename.oldPath) !== directoryRegionKey(rename.newPath)) ||
 		addedNodeIds.length > 0 ||
 		removedNodeIds.length > 0 ||
 		addedEdges.length > 0 ||

@@ -1,5 +1,34 @@
 # Validation
 
+## Countries, native Search, and release 1.10.0
+
+- Date: 2026-10-28. `RELEASE_TAG=1.10.0 npm run check` with
+  `VITEST_MAX_WORKERS=4`: PASS (64 files / 397 tests, lint, TypeScript,
+  production build, matching release metadata).
+- `npm audit --omit=dev`: zero vulnerabilities. `git diff --check`: PASS.
+- Native screenshot and smoke QA: desktop Obsidian 1.14.4 on Windows,
+  isolated fictional vault with 150 notes, 228 links, four continents and
+  fourteen countries; viewports 1600x1080 and 900x760. Browser plugin not
+  available; used existing bundled Playwright over local CDP.
+- Flow: restore saved map -> choose Obsidian search -> nine matching files
+  highlighted -> switch to note finder -> select route endpoints -> four-hop
+  shortest-path union -> toggle ordinary edges and inspect country borders.
+  Verified meaningful UI, correct page identity, no error overlay and no
+  application console errors in the completed checks.
+- A cold-restored Search pane initially exposed a deferred-view timing issue.
+  Added a regression test and one retry after the public reveal lifecycle.
+  Final build 1.10.0 passed a reload with the Search sidebar initially hidden:
+  nine matches, unchanged saved coordinates, no console errors.
+- Five README screenshots are direct captures of the same fictional saved map:
+  globe, countries, native Search, Route Finder and Map controls. No real vault
+  notes were used. Production artifacts and test-vault backups remain ignored.
+- The first local gate encountered temporary screenshot scripts in the lint
+  scope; moved those helpers outside the repository and reran the complete
+  gate successfully. No lint exclusions were added for them.
+- Mobile devices, very large real vaults, and future Obsidian Search internals
+  were not newly validated for this release. Earlier country-specific checks
+  and their larger synthetic fixture are recorded below.
+
 ## Fixed polar-axis autorotation (1.9.5)
 
 - Date: 2026-10-07
@@ -964,3 +993,13 @@ SHA-256 values from the final build:
 - `main.js`: `72E0B878BDAD258DDF134CFF153824A9EC801DF856292460FFB9814BB3C58A87`
 - `manifest.json`: `77D53541E250B9CAA3642718F6EABCD0B996A4C014C64BEF9E32FA5E6D2E5788`
 - `styles.css`: `2AE79536251378C02CA7C78DEA7B9F40124F91CE919F7680E885861862979441`
+
+## Subfolder countries (local development build)
+
+- Required gate: `npm run check`, with `VITEST_MAX_WORKERS=4`, passed (64 files, 396 tests; lint, typecheck, build and release validation passed).
+- Coverage includes connected country allocation, parent ownership, direct notes, deep descendants, singleton states, folder orphans, root exclusion, marker clearance, disk round trip, invalid-position rejection, preserved geography after pruning, Refresh displacement limits, and geographic rename/new-country guards.
+- Native desktop QA: Obsidian 1.14.5, isolated synthetic vault, 184 notes initially / 185 after Refresh, 4 continents and 11 states. Browser plugin not available; used bundled Playwright over local CDP. Renew completed, the existing-country addition preserved exact ownership, and a new-country Refresh produced a Renew message while preserving the committed map.
+- Viewports: 1280x900 and 820x760. Inspected country borders, zoomed names, Map controls, hidden graph edges and marker ownership. Toggle actions preserved coordinates and ownership. After the automatic save queue completed, reload preserved both the false visibility preference and exact territory/position data. No application console errors during the completed checks.
+- Corrected continent growth to use monotone geodesic distance around the actual allocated seed, avoiding antipodal necks exposed by the finer country grid. The complete gate above was rerun after this correction.
+- Test automation retries addressed menu labels, a synthetic route-state mutation and save timing; these were not treated as product passes. The temporary new-country note was removed after verifying the guard.
+- TheMainOne2 was not modified or used for native runtime validation. No publication or version bump; the test ZIP contains the current local build.

@@ -449,6 +449,12 @@ export class SphericalGraphRenderer {
 		this.requestRender();
 	}
 
+	setSearchResults(paths: ReadonlySet<string>): void {
+		this.nodeLayer.updateSearch(paths);
+		this.edgeLayer.updateSearch(paths);
+		this.requestRender();
+	}
+
 	setHoveredNode(nodeId: string | undefined): void {
 		if (this.selection.hoveredNodeId === nodeId) {
 			return;

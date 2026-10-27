@@ -1,3 +1,4 @@
+import { validCountries } from '../geography/countryTerritories';
 import type {
 	LayoutFinalDiagnostics,
 	LayoutOperationMode,
@@ -185,6 +186,7 @@ function isRunPayload(value: unknown): value is LayoutRunPayload {
 			value.edgeTargetAngles instanceof Float32Array) &&
 		(value.folderIndexByNode === undefined ||
 			value.folderIndexByNode instanceof Int32Array) &&
+		(value.countryIndexByNode === undefined || value.countryIndexByNode instanceof Int32Array) &&
 		(value.regionIndexByNode === undefined ||
 			value.regionIndexByNode instanceof Int32Array) &&
 		(value.collisionAngularRadii === undefined ||
@@ -198,7 +200,8 @@ function isRunPayload(value: unknown): value is LayoutRunPayload {
 				Number.isSafeInteger(value.territory.subdivision) &&
 				Array.isArray(value.territory.folderKeys) &&
 				value.territory.folderKeys.every((key) => typeof key === 'string') &&
-				value.territory.ownerByCell instanceof Int32Array)) &&
+				value.territory.ownerByCell instanceof Int32Array &&
+				(value.territory.countries === undefined || validCountries(value.territory.countries, value.territory.folderKeys, value.territory.ownerByCell)))) &&
 		(value.movableMask === undefined ||
 			value.movableMask instanceof Uint8Array) &&
 		(value.refresh === undefined || isRefreshPayload(value.refresh)) &&
@@ -257,7 +260,8 @@ export function isLayoutWorkerResponse(
 						Number.isSafeInteger(value.territory.subdivision) &&
 						Array.isArray(value.territory.folderKeys) &&
 						value.territory.folderKeys.every((key) => typeof key === 'string') &&
-						value.territory.ownerByCell instanceof Int32Array))
+						value.territory.ownerByCell instanceof Int32Array &&
+				(value.territory.countries === undefined || validCountries(value.territory.countries, value.territory.folderKeys, value.territory.ownerByCell))))
 			);
 		case 'cancelled':
 			return isLayoutFinalDiagnostics(value.diagnostics);
@@ -315,6 +319,7 @@ export function getRunRequestTransferables(
 	add(request.payload.edgeTargetAngles);
 	add(request.payload.folderIndexByNode);
 	add(request.payload.regionIndexByNode);
+	add(request.payload.countryIndexByNode);
 	add(request.payload.collisionAngularRadii);
 	add(request.payload.coastalPortScores);
 	add(request.payload.coastalPortDirections);
