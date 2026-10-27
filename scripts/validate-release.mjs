@@ -94,11 +94,12 @@ if (
 	typeof manifest.description === 'string' &&
 	(
 		manifest.description.length > 250 ||
-		!manifest.description.endsWith('.')
+		!manifest.description.endsWith('.') ||
+		/\bobsidian\b/iu.test(manifest.description)
 	)
 ) {
 	errors.push(
-		'manifest.json: "description" must be at most 250 characters and end with a period.',
+		'manifest.json: "description" must be at most 250 characters, end with a period, and omit the redundant word "Obsidian".',
 	);
 }
 
