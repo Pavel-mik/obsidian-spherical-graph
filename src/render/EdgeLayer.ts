@@ -3,16 +3,11 @@ import {
 	BufferGeometry,
 	Camera,
 	Color,
-	DoubleSide,
 	Group,
-	LineBasicMaterial,
-	LineSegments,
 	Mesh,
-	MeshBasicMaterial,
-	Vector3,
+	ShaderMaterial,
 } from 'three';
-import { EDGE_SURFACE_LIFT, SPHERE_RADIUS } from '../constants';
-import { sampleGeodesicArc } from '../geometry/geodesicArc';
+import { sampleSurfaceRoad } from './surfaceRoad';
 import { Vec3 } from '../geometry/vector3';
 import { canonicalEdgeKey } from '../graph/shortestPaths';
 import { AppearanceSettings } from '../settings/settings';
@@ -29,7 +24,9 @@ import {
 } from './renderTypes';
 import { edgesVisibleAtCameraDistance } from './edgeVisibility';
 import { isSearchMatch, SEARCH_HIGHLIGHT_COLOR } from './searchHighlight';
-import { createEdgeHaloMaterial } from './edgeHalo';
+import { screenSpaceLine } from './screenSpaceLine';
+import { CARTOGRAPHY as T, updateLineViewport } from './cartography';
+import { ordinaryRoadEmphasis } from './roadEmphasis';
 
 interface EdgeDrawRecord {
 	edge: RenderEdge;
@@ -39,11 +36,13 @@ interface EdgeDrawRecord {
 
 export class EdgeLayer {
 	private geometry: BufferGeometry | undefined;
-	private material: LineBasicMaterial | undefined;
-	private lines: LineSegments | undefined;
+	private material: ShaderMaterial | undefined;
+	private lines: Mesh | undefined;
 	private snapshot: PreparedRenderSnapshot | undefined;
 	private records: readonly EdgeDrawRecord[] = [];
 	private selectedNodeId: string | undefined;
+	private hoveredNodeId: string | undefined;
+	private hoverRibbon: Mesh | undefined;
 	private route: RenderRouteState | undefined;
 	private selectedRibbon: Mesh | undefined;
 	private selectedHalo: Mesh | undefined;
@@ -111,14 +110,7 @@ export class EdgeLayer {
 					) * this.segmentScale,
 				),
 			);
-			const points = sampleGeodesicArc(
-				start,
-				end,
-				segments,
-				SPHERE_RADIUS + EDGE_SURFACE_LIFT,
-				startNode.id,
-				endNode.id,
-			);
+			const points = sampleSurfaceRoad(snapshot,edge,segments,this.appearance);
 			const firstVertex = positions.length / 3;
 			for (let index = 0; index < points.length - 1; index += 1) {
 				const point = points[index];
@@ -152,15 +144,10 @@ export class EdgeLayer {
 			new BufferAttribute(new Float32Array(positions.length), 3),
 		);
 		geometry.computeBoundingSphere();
-		const material = new LineBasicMaterial({
-			vertexColors: true,
-			transparent: true,
-			opacity: this.appearance.edgeOpacity,
-			depthTest: true,
-			depthWrite: false,
-			toneMapped: false,
+		const lines = screenSpaceLine(positions, {
+			color: this.theme.edge, widthPx: T.edges.normal.widthPx, opacity: this.appearance.edgeOpacity,
 		});
-		const lines = new LineSegments(geometry, material);
+		const material = lines.material;
 		lines.name = 'spherical-graph-edges';
 		lines.renderOrder = 1;
 		this.geometry = geometry;
@@ -169,18 +156,23 @@ export class EdgeLayer {
 		this.records = records;
 		this.group.add(lines);
 		this.updateColors();
-		this.rebuildSearchOverlay();
 	}
 
 	updateAppearance(appearance: AppearanceSettings): void {
+		const terrainChanged=appearance.showContinents!==this.appearance.showContinents||appearance.surfaceMode!==this.appearance.surfaceMode;
 		this.appearance = appearance;
+		if(terrainChanged)this.rebuildLines();
 		if (this.material !== undefined) {
 			this.material.opacity = appearance.edgeOpacity;
+			this.material.uniforms.lineOpacity!.value = appearance.edgeOpacity;
 			this.material.needsUpdate = true;
 		}
 	}
 
-	render(camera: Camera): void {
+	render(camera: Camera, width = 1, height = 1): void {
+		for (const mesh of [this.lines, this.hoverRibbon, this.selectedRibbon, this.selectedHalo, this.routeRibbon, this.routeHalo, this.searchRibbon, this.searchHalo]) {
+			if (mesh?.material instanceof ShaderMaterial) updateLineViewport(mesh.material, width, height);
+		}
 		const visible = edgesVisibleAtCameraDistance(
 			camera.position.length(),
 			this.appearance.edgeZoomThresholdPercent,
@@ -191,6 +183,7 @@ export class EdgeLayer {
 			this.lines.visible = visible && this.appearance.showEdges &&
 				!hasSelection && !this.interactionActive;
 		}
+		if (this.hoverRibbon) this.hoverRibbon.visible = visible && this.appearance.showEdges && !this.interactionActive && this.selectedNodeId === undefined;
 		if (this.selectedRibbon !== undefined) {
 			this.selectedRibbon.visible = visible;
 		}
@@ -211,8 +204,14 @@ export class EdgeLayer {
 	}
 
 	updateSelection(selectedNodeId: string | undefined): void {
+		if (this.selectedNodeId === selectedNodeId) return;
 		this.selectedNodeId = selectedNodeId;
 		this.updateColors();
+	}
+
+	updateHover(nodeId: string | undefined): void {
+		if (this.hoveredNodeId === nodeId) return;
+		this.hoveredNodeId = nodeId; this.rebuildOverlays();
 	}
 
 	updateRoute(route: RenderRouteState | undefined): void {
@@ -229,7 +228,7 @@ export class EdgeLayer {
 
 	updateSearch(paths: ReadonlySet<string>): void {
 		this.searchPaths = new Set(paths);
-		this.rebuildSearchOverlay();
+		this.rebuildOverlays();
 	}
 
 	private rebuildSearchOverlay(): void {
@@ -238,7 +237,11 @@ export class EdgeLayer {
 		const snapshot = this.snapshot;
 		const positions = this.geometry?.getAttribute('position');
 		if (!snapshot || !(positions instanceof BufferAttribute)) return;
+		const selected = snapshot.nodeById.get(this.selectedNodeId ?? '');
+		const route = new Set(this.route?.edges.map(edge => canonicalEdgeKey(edge.source, edge.target)) ?? []);
 		const records = this.records.filter(({ edge }) => {
+			if (route.has(canonicalEdgeKey(edge.source, edge.target)) ||
+				(selected && (edge.source === selected.index || edge.target === selected.index))) return false;
 			const source = snapshot.nodeByIndex.get(edge.source);
 			const target = snapshot.nodeByIndex.get(edge.target);
 			return source !== undefined && target !== undefined &&
@@ -246,9 +249,9 @@ export class EdgeLayer {
 		});
 		// The fine wine-colored stroke sits over a soft, translucent halo.
 		this.searchHalo = this.createRibbon(records, positions, SEARCH_HIGHLIGHT_COLOR,
-			0.075, 6, 'spherical-graph-search-edge-halo', true);
+			T.edges.search.haloWidthPx, 6, 'spherical-graph-search-edge-halo', true);
 		this.searchRibbon = this.createRibbon(records, positions, SEARCH_HIGHLIGHT_COLOR,
-			0.018, 7, 'spherical-graph-search-edge-ribbon');
+			T.edges.search.widthPx, 7, 'spherical-graph-search-edge-ribbon');
 	}
 
 	dispose(): void {
@@ -273,10 +276,12 @@ export class EdgeLayer {
 			attribute.setXYZ(vertex, baseColor.r, baseColor.g, baseColor.b);
 		}
 		attribute.needsUpdate = true;
+		if (this.material?.uniforms.lineColor) (this.material.uniforms.lineColor.value as Color).set(this.theme.edge);
 		this.rebuildOverlays();
 	}
 
 	private rebuildOverlays(): void {
+		this.removeOverlay('hoverRibbon');
 		this.removeOverlay('selectedRibbon');
 		this.removeOverlay('selectedHalo');
 		this.removeOverlay('routeRibbon');
@@ -312,12 +317,12 @@ export class EdgeLayer {
 					),
 			);
 			this.selectedHalo = this.createRibbon(records, positionAttribute, this.theme.edgeSelected,
-				0.075, 3, 'spherical-graph-selected-edge-halo', true);
+				T.edges.selected.haloWidthPx, 3, 'spherical-graph-selected-edge-halo', true);
 			this.selectedRibbon = this.createRibbon(
 				records,
 				positionAttribute,
 				this.theme.edgeSelected,
-				0.018,
+				T.edges.selected.widthPx,
 				4,
 				'spherical-graph-selected-edge-ribbon',
 			);
@@ -333,23 +338,59 @@ export class EdgeLayer {
 				),
 			);
 			this.routeHalo = this.createRibbon(records, positionAttribute, this.theme.edgeRoute,
-				0.075, 4, 'spherical-graph-route-edge-halo', true);
+				T.edges.route.haloWidthPx, 4, 'spherical-graph-route-edge-halo', true);
 			this.routeRibbon = this.createRibbon(
 				records,
 				positionAttribute,
 				this.theme.edgeRoute,
-				0.018,
+				T.edges.route.widthPx,
 				5,
 				'spherical-graph-route-edge-ribbon',
 			);
 		}
+		const hovered = snapshot.nodeById.get(this.hoveredNodeId ?? '');
+		if (hovered && !selectedNode) {
+			const records = this.records.filter(({edge}) => {
+				const a = snapshot.nodeByIndex.get(edge.source), b = snapshot.nodeByIndex.get(edge.target);
+				return (edge.source === hovered.index || edge.target === hovered.index) &&
+					!routeEdgeKeys.has(canonicalEdgeKey(edge.source, edge.target)) &&
+					!(a && b && isSearchMatch(a, this.searchPaths) && isSearchMatch(b, this.searchPaths));
+			});
+			this.hoverRibbon = this.createRibbon(records, positionAttribute, this.theme.edge,
+				T.edges.hoveredIncident.widthPx, 2, 'spherical-graph-hover-edge-ribbon');
+		}
+		this.rebuildSearchOverlay();
+		this.updateBaseRoads();
+	}
+
+	private updateBaseRoads(): void {
+		if (!this.lines || !this.snapshot || !this.geometry) return;
+		const source = this.geometry.getAttribute('position');
+		const route = new Set(this.route?.edges.map(edge => canonicalEdgeKey(edge.source, edge.target)) ?? []);
+		const hovered = this.snapshot.nodeById.get(this.hoveredNodeId ?? '');
+		const segments: number[] = [];
+		const opacities: number[] = [];
+		for (const record of this.records) {
+			const a = this.snapshot.nodeByIndex.get(record.edge.source), b = this.snapshot.nodeByIndex.get(record.edge.target);
+			if ((hovered && (record.edge.source === hovered.index || record.edge.target === hovered.index)) || route.has(canonicalEdgeKey(record.edge.source, record.edge.target)) ||
+				(a && b && isSearchMatch(a, this.searchPaths) && isSearchMatch(b, this.searchPaths))) continue;
+			const emphasis=ordinaryRoadEmphasis(this.snapshot,record.edge);
+			for (let i = record.firstVertex; i < record.firstVertex + record.vertexCount; i++) {
+				segments.push(source.getX(i), source.getY(i), source.getZ(i));
+				if((i-record.firstVertex)%2===0)opacities.push(emphasis);
+			}
+		}
+		const replacement = screenSpaceLine(segments, { color: this.theme.edge, widthPx: T.edges.normal.widthPx, opacity: this.appearance.edgeOpacity, opacityBySegment:opacities });
+		this.lines.geometry.dispose();
+		this.lines.geometry = replacement.geometry;
+		replacement.material.dispose();
 	}
 
 	private createRibbon(
 		records: readonly EdgeDrawRecord[],
 		positions: BufferAttribute,
 		color: string,
-		halfWidth: number,
+		widthPx: number,
 		renderOrder: number,
 		name: string,
 		softHalo = false,
@@ -357,25 +398,17 @@ export class EdgeLayer {
 		if (records.length === 0) {
 			return undefined;
 		}
-		const geometry = createRibbonGeometry(
-			records,
-			positions,
-			SPHERE_RADIUS + EDGE_SURFACE_LIFT + 0.025,
-			halfWidth,
-			softHalo,
-		);
-		const mesh = new Mesh(
-			geometry,
-			softHalo ? createEdgeHaloMaterial(color) : new MeshBasicMaterial({
-				color,
-				depthTest: true,
-				depthWrite: false,
-				opacity: 0.96,
-				side: DoubleSide,
-				toneMapped: false,
-				transparent: true,
-			}),
-		);
+		const segments: number[] = [];
+		for (const record of records) {
+			for (let i = record.firstVertex; i < record.firstVertex + record.vertexCount; i++) {
+				segments.push(positions.getX(i), positions.getY(i), positions.getZ(i));
+			}
+		}
+		const state = name.includes('hover') ? T.edges.hoveredIncident : name.includes('search') ? T.edges.search : name.includes('route') ? T.edges.route : T.edges.selected;
+		const mesh = screenSpaceLine(segments, {
+			color: softHalo && name.includes('search') ? T.colors.node.searchHalo : color,
+			widthPx: widthPx, opacity: softHalo ? state.haloPeakOpacity : state.opacity, halo: softHalo,
+		});
 		mesh.name = name;
 		mesh.renderOrder = renderOrder;
 		this.group.add(mesh);
@@ -396,6 +429,7 @@ export class EdgeLayer {
 	}
 
 	private removeLines(): void {
+		this.removeOverlay('hoverRibbon');
 		this.removeOverlay('searchRibbon');
 		this.removeOverlay('searchHalo');
 		this.removeOverlay('selectedRibbon');
@@ -405,6 +439,7 @@ export class EdgeLayer {
 		if (this.lines !== undefined) {
 			this.group.remove(this.lines);
 		}
+		this.lines?.geometry.dispose();
 		this.geometry?.dispose();
 		this.material?.dispose();
 		this.geometry = undefined;
@@ -412,7 +447,7 @@ export class EdgeLayer {
 		this.lines = undefined;
 	}
 
-	private removeOverlay(kind: 'selectedRibbon' | 'selectedHalo' | 'routeRibbon' | 'routeHalo' | 'searchRibbon' | 'searchHalo'): void {
+	private removeOverlay(kind: 'hoverRibbon' | 'selectedRibbon' | 'selectedHalo' | 'routeRibbon' | 'routeHalo' | 'searchRibbon' | 'searchHalo'): void {
 		const overlay = this[kind];
 		if (overlay === undefined) {
 			return;
@@ -429,99 +464,6 @@ export class EdgeLayer {
 		}
 		this[kind] = undefined;
 	}
-}
-
-function createRibbonGeometry(
-	records: readonly EdgeDrawRecord[],
-	positions: BufferAttribute,
-	radius: number,
-	halfWidth: number,
-	withUvs: boolean,
-): BufferGeometry {
-	const vertices: number[] = [];
-	const uvs: number[] = [];
-	const start = new Vector3();
-	const end = new Vector3();
-	const radial = new Vector3();
-	const tangent = new Vector3();
-	const side = new Vector3();
-	const startLeft = new Vector3();
-	const startRight = new Vector3();
-	const endLeft = new Vector3();
-	const endRight = new Vector3();
-
-	for (const record of records) {
-		const endVertex = record.firstVertex + record.vertexCount;
-		for (
-			let vertex = record.firstVertex;
-			vertex + 1 < endVertex;
-			vertex += 2
-		) {
-			start.fromBufferAttribute(positions, vertex).normalize();
-			end.fromBufferAttribute(positions, vertex + 1).normalize();
-			radial.copy(start).add(end).normalize();
-			tangent.copy(end).sub(start).normalize();
-			side.crossVectors(radial, tangent).normalize();
-			if (side.lengthSq() < 1e-10) {
-				continue;
-			}
-			startLeft
-				.copy(start)
-				.multiplyScalar(radius)
-				.addScaledVector(side, halfWidth)
-				.normalize()
-				.multiplyScalar(radius);
-			startRight
-				.copy(start)
-				.multiplyScalar(radius)
-				.addScaledVector(side, -halfWidth)
-				.normalize()
-				.multiplyScalar(radius);
-			endLeft
-				.copy(end)
-				.multiplyScalar(radius)
-				.addScaledVector(side, halfWidth)
-				.normalize()
-				.multiplyScalar(radius);
-			endRight
-				.copy(end)
-				.multiplyScalar(radius)
-				.addScaledVector(side, -halfWidth)
-				.normalize()
-				.multiplyScalar(radius);
-			pushTriangle(vertices, startLeft, startRight, endLeft);
-			pushTriangle(vertices, startRight, endRight, endLeft);
-			if (withUvs) uvs.push(0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1);
-		}
-	}
-
-	const geometry = new BufferGeometry();
-	geometry.setAttribute(
-		'position',
-		new BufferAttribute(new Float32Array(vertices), 3),
-	);
-	geometry.computeBoundingSphere();
-	if (withUvs) geometry.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
-	return geometry;
-}
-
-function pushTriangle(
-	vertices: number[],
-	first: Vector3,
-	second: Vector3,
-	third: Vector3,
-): void {
-	vertices.push(
-		first.x,
-		first.y,
-		first.z,
-		second.x,
-		second.y,
-		second.z,
-		third.x,
-		third.y,
-		third.z,
-	);
 }
 
 export function adaptiveSegmentCount(start: Vec3, end: Vec3): number {

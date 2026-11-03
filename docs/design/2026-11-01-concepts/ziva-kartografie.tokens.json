@@ -1,0 +1,473 @@
+{
+  "schemaVersion": 7,
+  "name": "Spherical Graph — Živá kartografie",
+  "status": "Runtime design tokens; iteration 7, 2026-11-03",
+  "reference": {
+    "globeDiameterCssPx": 700,
+    "devicePixelRatio": 1,
+    "widthUnit": "CSS px; šířka je vždy celá, nikoli poloviční",
+    "colorSpace": "sRGB",
+    "opacityUnit": "0..1",
+    "sourceConcept": "03-ziva-kartografie.png"
+  },
+  "colors": {
+    "ui": {
+      "void": "#081D21",
+      "stage": "#102D31",
+      "panel": "#10282D",
+      "raised": "#17343A",
+      "hover": "#21454B",
+      "selectedSurface": "#28555B",
+      "border": "#35575D",
+      "borderStrong": "#56777C",
+      "text": "#F4EBD8",
+      "secondary": "#BBC9C5",
+      "muted": "#B2C4BE",
+      "disabled": "#6E8584",
+      "focus": "#A4DED2",
+      "primary": "#D9AE69",
+      "primaryHover": "#E8BF7C",
+      "primaryPressed": "#C99B54",
+      "onPrimary": "#152B2E",
+      "success": "#9EC8AC",
+      "warning": "#EDC478",
+      "danger": "#F49D90",
+      "sliderActive": "#91C8BD",
+      "tooltip": "#F2E7CF",
+      "onTooltip": "#153239",
+      "tooltipBorder": "#D3C5A8"
+    },
+    "globe": {
+      "ocean": "#10343E",
+      "oceanDeep": "#061C27",
+      "oceanLight": "#17444A",
+      "coast": "#E4BA70",
+      "coastShadow": "#352D22",
+      "contourLight": "#F0D7A1",
+      "contourShadow": "#3B4438",
+      "countryBorder": "#F3D6A0",
+      "graticule": "#6F989C",
+      "rim": "#DEE6CB",
+      "cloud": "#D8E4DA",
+      "countryBorderShadow": "#3C3022"
+    },
+    "node": {
+      "base": "#F6DEAA",
+      "hotspot": "#FFF3D0",
+      "keyline": "#263F3D",
+      "neighbor": "#FFF0C9",
+      "directoryPeer": "#A8CBB3",
+      "active": "#9FD8CD",
+      "hover": "#FFF4D6",
+      "selected": "#FF866A",
+      "route": "#F3C66B",
+      "routeStart": "#A7D9B7",
+      "routeEnd": "#9FCAD9",
+      "search": "#963652",
+      "searchHalo": "#D982A0",
+      "attachment": "#B9C8CF",
+      "unresolved": "#839A99",
+      "pin": "#A58AFF"
+    },
+    "edge": {
+      "base": "#E5CB8E",
+      "underlay": "#12313A",
+      "selected": "#F5CE76",
+      "route": "#F3C66B",
+      "search": "#963652",
+      "searchHalo": "#D982A0",
+      "satellite": "#B7C8CE",
+      "satelliteSelected": "#DCEAED"
+    },
+    "satellite": {
+      "base": "#D9E2E7",
+      "light": "#F5FAFC",
+      "shadow": "#7E969D",
+      "related": "#A8D1CB",
+      "selected": "#F5FAFC",
+      "ring": "#A8D1CB"
+    }
+  },
+  "land": [
+    {
+      "id": "ochre",
+      "base": "#C0852F",
+      "shadow": "#67381B",
+      "highlight": "#F0BD64",
+      "mineralA": "#DBAA50",
+      "mineralB": "#99532C",
+      "mineralC": "#8F8B49"
+    },
+    {
+      "id": "jade",
+      "base": "#477D64",
+      "shadow": "#254D45",
+      "highlight": "#9DB886",
+      "mineralA": "#8AA271",
+      "mineralB": "#3F786F",
+      "mineralC": "#ADAA7B"
+    },
+    {
+      "id": "clay",
+      "base": "#A56546",
+      "shadow": "#583A2C",
+      "highlight": "#D79A6D",
+      "mineralA": "#CE9471",
+      "mineralB": "#9B646B",
+      "mineralC": "#B1A16B"
+    },
+    {
+      "id": "slate",
+      "base": "#567D85",
+      "shadow": "#294B57",
+      "highlight": "#A2BDB7",
+      "mineralA": "#8CA3A9",
+      "mineralB": "#627E84",
+      "mineralC": "#A79D81"
+    },
+    {
+      "id": "sage",
+      "base": "#B27A32",
+      "shadow": "#63371D",
+      "highlight": "#EABC65",
+      "mineralA": "#D69A3D",
+      "mineralB": "#8E4928",
+      "mineralC": "#8E8945"
+    },
+    {
+      "id": "rose",
+      "base": "#956369",
+      "shadow": "#553E4D",
+      "highlight": "#D2A28F",
+      "mineralA": "#CC9B89",
+      "mineralB": "#A06E82",
+      "mineralC": "#B7AA79"
+    },
+    {
+      "id": "sand",
+      "base": "#B19755",
+      "shadow": "#6E5729",
+      "highlight": "#E5CB87",
+      "mineralA": "#DBAA50",
+      "mineralB": "#A66D36",
+      "mineralC": "#A39B55"
+    },
+    {
+      "id": "moss",
+      "base": "#5F855E",
+      "shadow": "#354F39",
+      "highlight": "#A5C185",
+      "mineralA": "#8AA271",
+      "mineralB": "#3F786F",
+      "mineralC": "#ADAA7B"
+    }
+  ],
+  "node": {
+    "baseDiameterPx": 9,
+    "degreeGain": 0.08,
+    "degreeGainCap": 0.45,
+    "interactionScale": 1.35,
+    "interactionMinDiameterPx": 8,
+    "scale": {
+      "formula": "clamp(globeDiameterCssPx / 700, 0.70, 1.60)",
+      "minDiameterPx": 7.5
+    },
+    "states": {
+      "normal": {
+        "fill": "base",
+        "coreOpacity": 1,
+        "haloDiameterPx": 18,
+        "haloPeakOpacity": 0.17,
+        "ringWidthPx": 0,
+        "coreScale": 1,
+        "minDiameterPx": 7.5
+      },
+      "neighbor": {
+        "fill": "neighbor",
+        "coreOpacity": 1,
+        "haloDiameterPx": 20,
+        "haloPeakOpacity": 0.19,
+        "ringWidthPx": 0,
+        "coreScale": 1,
+        "minDiameterPx": 8.5
+      },
+      "directoryPeer": {
+        "fill": "directoryPeer",
+        "coreOpacity": 0.95,
+        "haloDiameterPx": 16,
+        "haloPeakOpacity": 0.09,
+        "ringWidthPx": 0,
+        "coreScale": 1,
+        "minDiameterPx": 7.5
+      },
+      "active": {
+        "fill": "active",
+        "coreOpacity": 1,
+        "haloDiameterPx": 20,
+        "haloPeakOpacity": 0.18,
+        "ringWidthPx": 1,
+        "ringGapPx": 2,
+        "coreScale": 1.15,
+        "minDiameterPx": 9
+      },
+      "hovered": {
+        "fill": "keepSemanticFill",
+        "coreOpacity": 1,
+        "haloDiameterPx": 23,
+        "haloPeakOpacity": 0.22,
+        "ringWidthPx": 1,
+        "ringGapPx": 2,
+        "coreScale": 1.2,
+        "minDiameterPx": 10
+      },
+      "selected": {
+        "fill": "selected",
+        "coreOpacity": 1,
+        "haloDiameterPx": 42,
+        "haloPeakOpacity": 0.6,
+        "ringWidthPx": 1.1,
+        "ringGapPx": 1.5,
+        "coreScale": 1.65,
+        "minDiameterPx": 17
+      },
+      "route": {
+        "fill": "route",
+        "coreOpacity": 1,
+        "haloDiameterPx": 21,
+        "haloPeakOpacity": 0.19,
+        "ringWidthPx": 0,
+        "coreScale": 1.15,
+        "minDiameterPx": 9
+      },
+      "routeEndpoint": {
+        "fill": "routeStartOrRouteEnd",
+        "coreOpacity": 1,
+        "haloDiameterPx": 25,
+        "haloPeakOpacity": 0.22,
+        "ringWidthPx": 1.25,
+        "ringGapPx": 2,
+        "coreScale": 1.35,
+        "minDiameterPx": 12
+      },
+      "search": {
+        "fill": "search",
+        "coreOpacity": 1,
+        "haloDiameterPx": 23,
+        "haloPeakOpacity": 0.22,
+        "ringWidthPx": 1.25,
+        "ringGapPx": 2,
+        "coreScale": 1.15,
+        "minDiameterPx": 9
+      }
+    },
+    "fillPriority": [
+      "selected",
+      "routeStart",
+      "routeEnd",
+      "route",
+      "search",
+      "active",
+      "neighbor",
+      "directoryPeer",
+      "kind"
+    ],
+    "maxVisibleRings": 2,
+    "haloFormula": "alpha(r) = peak * pow(1 - smoothstep(0, haloRadius, r), 2)",
+    "haloBlending": "normal alpha; no additive blending; no scene-wide bloom"
+  },
+  "edges": {
+    "normal": {
+      "widthPx": 1.1,
+      "opacity": 0.24,
+      "haloWidthPx": 0,
+      "haloPeakOpacity": 0
+    },
+    "hoveredIncident": {
+      "widthPx": 1.55,
+      "opacity": 0.6,
+      "haloWidthPx": 0,
+      "haloPeakOpacity": 0
+    },
+    "selected": {
+      "widthPx": 2,
+      "opacity": 0.92,
+      "haloWidthPx": 6,
+      "haloPeakOpacity": 0.22
+    },
+    "route": {
+      "widthPx": 2.2,
+      "opacity": 0.98,
+      "haloWidthPx": 5.5,
+      "haloPeakOpacity": 0.2
+    },
+    "search": {
+      "widthPx": 1.75,
+      "opacity": 1,
+      "haloWidthPx": 4.75,
+      "haloPeakOpacity": 0.2
+    },
+    "satelliteContext": {
+      "widthPx": 0.7,
+      "opacity": 0.26,
+      "haloWidthPx": 0,
+      "haloPeakOpacity": 0
+    },
+    "satelliteSelected": {
+      "widthPx": 1.1,
+      "opacity": 0.64,
+      "haloWidthPx": 3.5,
+      "haloPeakOpacity": 0.08
+    },
+    "coast": {
+      "widthPx": 1.6,
+      "opacity": 0.94,
+      "underlayWidthPx": 3.6,
+      "underlayOpacity": 0.64
+    },
+    "countryBorder": {
+      "widthPx": 1.45,
+      "opacity": 0.9,
+      "dashPx": [
+        0,
+        0
+      ],
+      "underlayWidthPx": 3.1,
+      "underlayOpacity": 0.58
+    },
+    "graticule": {
+      "widthPx": 0.65,
+      "opacity": 0.28,
+      "dashPx": [
+        3,
+        5
+      ]
+    },
+    "priority": [
+      "route",
+      "selected",
+      "search",
+      "hoveredIncident",
+      "normal"
+    ],
+    "curvature": {
+      "relativeBend": 0.035,
+      "maxBendRadians": 0.025,
+      "unrelatedCityClearanceRadians": 0.018
+    }
+  },
+  "satellite": {
+    "shape": "stříbrný osmistěn; promítnutá silueta kosočtverce",
+    "normalDiameterPx": 7,
+    "relatedDiameterPx": 8,
+    "selectedDiameterPx": 9,
+    "haloDiameterPx": 18,
+    "haloPeakOpacity": 0.1,
+    "selectedRingWidthPx": 1,
+    "orbitHeightPercent": 33.333333333333336,
+    "orbitHeightPolicy": "Zachovat uloženou uživatelskou hodnotu; výchozí hodnota odpovídá 100/3 procent poloměru.",
+    "idleLinks": false,
+    "idleSpin": false
+  },
+  "material": {
+    "cameraLightDirection": [
+      -0.62,
+      0.7,
+      0.34
+    ],
+    "landAmbient": 0.27,
+    "landKey": 1.12,
+    "oceanAmbient": 0.82,
+    "oceanKey": 0.18,
+    "landMaxShadingDelta": 0.32,
+    "contourOpacity": 0.2,
+    "grainOpacity": 0.022,
+    "oceanVariation": 0.12,
+    "rimWidthPx": 1.7,
+    "rimPeakOpacity": 0.68,
+    "geometricDisplacement": 0.022,
+    "metalness": 0,
+    "roughnessReference": 0.92,
+    "reliefBands": 16,
+    "reliefNormalStrength": 3,
+    "hypsometricStrength": 0.72,
+    "ledgeShadowOpacity": 0.26,
+    "coastalPlateauHeight": 0.0045,
+    "reliefHeight": 0.0175,
+    "reliefFineNormalStrength": 0.025,
+    "countryHueStrength": 0.3,
+    "atmosphereSoftWidthPx": 8,
+    "atmospherePeakOpacity": 0.32,
+    "terraceRampStart": 0.41,
+    "terraceRampEnd": 0.59,
+    "terraceMix": 0.94,
+    "countryTintStrength": 1.0,
+    "strataShadowOpacity": 0.16,
+    "strataLipOpacity": 0.18,
+    "shallowsWidthRadians": 0.028
+  },
+  "layout": {
+    "toolbarHeightPx": 52,
+    "toolbarPaddingPx": 12,
+    "statusHeightPx": 32,
+    "inspectorWidthPx": 288,
+    "inspectorPaddingPx": 20,
+    "menuWidthPx": 320,
+    "menuPaddingPx": 12,
+    "controlHeightPx": 36,
+    "touchControlHeightPx": 44,
+    "menuRowMinHeightPx": 36,
+    "phoneInspectorMaxHeightPercent": 42,
+    "gapPx": 8,
+    "controlRadiusPx": 6,
+    "panelRadiusPx": 8,
+    "spacingPx": [
+      4,
+      8,
+      12,
+      16,
+      20,
+      24,
+      32
+    ]
+  },
+  "type": {
+    "uiFont": "var(--font-interface), system-ui, sans-serif",
+    "mapFont": "Georgia, Cambria, serif",
+    "bodyPx": 13,
+    "secondaryPx": 12,
+    "noteTitlePx": 18,
+    "continentPx": [
+      15,
+      19
+    ],
+    "countryPx": [
+      12,
+      14
+    ],
+    "cityLabelPx": 12,
+    "tagLabelPx": 12,
+    "uiLineHeight": 1.4
+  },
+  "motion": {
+    "hoverMs": 120,
+    "selectionMs": 180,
+    "panelMs": 160,
+    "labelMs": 180,
+    "focusCameraMs": 450,
+    "tooltipDelayMs": 280,
+    "easing": "cubic-bezier(0.2,0.7,0.2,1)",
+    "pulse": false,
+    "reducedMotionMs": 0
+  },
+  "performance": {
+    "idleAnimation": false,
+    "globalBloom": false,
+    "externalTextures": false,
+    "phoneNormalHalo": false,
+    "phoneHighlightHaloOpacityMultiplier": 0.75,
+    "phoneRim": false,
+    "desktopLabelBudget": 64,
+    "tabletLabelBudget": 36,
+    "phoneLabelBudget": 20
+  }
+}

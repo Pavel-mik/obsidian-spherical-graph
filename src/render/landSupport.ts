@@ -2601,6 +2601,11 @@ export function classifySupportedContinent(
 	return queryLand(direction, model).owner;
 }
 
+/** Read-only single query for decorative height and coastal transitions. */
+export function sampleOwnedLand(direction:Vec3,model:LandSupportModel):{owner:number;margin:number}{
+	const sample=queryLand(direction,model);return {owner:sample.owner,margin:sample.margin};
+}
+
 export function continentSupportClearance(
 	direction: Vec3,
 	continentIndex: number,

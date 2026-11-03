@@ -11,6 +11,8 @@ export interface LandWorkerRequest {
 	readonly detail: number;
 	readonly edges: readonly RenderEdge[];
 	readonly nodeDegrees: Uint32Array;
+	/** Optional legacy-map border overlay; never used for land ownership. */
+	readonly countryDisplayTerritory?: RenderGeography['territory'];
 }
 
 export type LandWorkerResponse =

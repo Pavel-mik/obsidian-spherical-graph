@@ -1,5 +1,34 @@
 # Validation
 
+## Living Cartography (1.11.0)
+
+- Date: 2026-11-03. `RELEASE_TAG=1.11.0 npm run check` with
+  `VITEST_MAX_WORKERS=2`: PASS, 73 files / 434 tests, lint, TypeScript,
+  production build and matching release metadata. `npm audit --omit=dev`:
+  zero vulnerabilities. `git diff --check`: PASS.
+- Native Obsidian 1.14.5, Windows, 1280x672: shared terrain height and exact
+  occlusion, country tints/borders, violet pins, hover with one basename-only
+  label and fallback, selection, combined route/Search/tag links, Solid,
+  Transparent and hidden continents. Zero failed GPU programs and zero cities
+  under terrain in the radial check. Phone detail fallback: 0.35 and 4px haze.
+- The complete committed layout, settings and pins match the copy from before
+  the visual iterations: 121 stored positions, maximum coordinate delta 0.
+  No Initialize, Refresh or Renew was invoked and note contents were untouched.
+- New README captures use the existing fictional Atlas of ideas demo map:
+  150 notes, 228 links, four continents and fourteen countries in isolated
+  desktop Obsidian 1.14.4 at 1600x1080. The captured graph view omits host
+  chrome; Search retains its real nine-file `wayfinding` result state and
+  Route Finder shows a four-hop, six-node shortest-path union.
+- Browser plugin not available for the Electron target. Used the existing
+  bundled Playwright via the isolated app's local CDP connection. No new
+  browser dependency was installed. Captures are direct rendered views,
+  without image generation or compositing. Completed capture runs reported
+  no page errors and zero failed GPU programs.
+- Detailed point-by-point implementation and reference comparisons:
+  [iteration 7](docs/design/2026-11-01-concepts/ITERATION_7_REVIEW.md).
+  The terrain has more vertices; physical mobile devices, DPR comparisons,
+  FPS and very large real vaults were not newly benchmarked for this release.
+
 ## Community manifest compatibility (1.10.1)
 
 - Date: 2026-10-28. Community validation rejected the 1.10.0 short description

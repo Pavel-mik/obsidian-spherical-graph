@@ -1,3 +1,5 @@
+import { CARTOGRAPHY as T } from './cartography';
+import { surfaceRadius } from './terrainSurface';
 import {
 	CylinderGeometry,
 	DynamicDrawUsage,
@@ -12,7 +14,6 @@ import {
 import {
 	DEFAULT_GLOBE_SIZE,
 	NODE_SURFACE_LIFT,
-	SPHERE_RADIUS,
 } from '../constants';
 import type { AppearanceSettings } from '../settings/settings';
 import {
@@ -27,9 +28,9 @@ import type {
 } from './renderTypes';
 
 const PIN_AXIS = new Vector3(0, 1, 0);
-const PIN_SHAFT_LENGTH = 0.46;
+const PIN_SHAFT_LENGTH = 0.24;
 const PIN_SHAFT_RADIUS = 0.018;
-const PIN_HEAD_RADIUS = 0.105;
+const PIN_HEAD_RADIUS = 0.10;
 const PIN_SURFACE_GAP = 0.015;
 const MINIMUM_PIN_SCALE = 0.42;
 const MAXIMUM_PIN_SCALE = 1.35;
@@ -86,10 +87,10 @@ export class PinLayer {
 		const shaftMaterial = this.shaftMesh?.material;
 		const headMaterial = this.headMesh?.material;
 		if (shaftMaterial instanceof MeshBasicMaterial) {
-			shaftMaterial.color.set(theme.coast);
+			shaftMaterial.color.set(T.colors.satellite.light);
 		}
 		if (headMaterial instanceof MeshBasicMaterial) {
-			headMaterial.color.set(theme.nodeSelected);
+			headMaterial.color.set(T.colors.node.pin);
 		}
 	}
 
@@ -110,7 +111,7 @@ export class PinLayer {
 				10,
 			),
 			new MeshBasicMaterial({
-				color: this.theme.coast,
+				color: T.colors.satellite.light,
 				depthTest: true,
 				depthWrite: true,
 				toneMapped: false,
@@ -126,7 +127,7 @@ export class PinLayer {
 		const headMesh = new InstancedMesh(
 			new SphereGeometry(PIN_HEAD_RADIUS, 18, 12),
 			new MeshBasicMaterial({
-				color: this.theme.nodeSelected,
+				color: T.colors.node.pin,
 				depthTest: true,
 				depthWrite: true,
 				toneMapped: false,
@@ -178,13 +179,14 @@ export class PinLayer {
 				continue;
 			}
 			this.radial.set(x, y, z).normalize();
+			const ground=surfaceRadius(snapshot,this.appearance,[this.radial.x,this.radial.y,this.radial.z]);
 			this.rotation.setFromUnitVectors(PIN_AXIS, this.radial);
 			this.scale.setScalar(visualScale);
 
 			this.position
 				.copy(this.radial)
 				.multiplyScalar(
-					SPHERE_RADIUS +
+					ground +
 						NODE_SURFACE_LIFT +
 						PIN_SURFACE_GAP +
 						(PIN_SHAFT_LENGTH * visualScale) / 2,
@@ -195,7 +197,7 @@ export class PinLayer {
 			this.position
 				.copy(this.radial)
 				.multiplyScalar(
-					SPHERE_RADIUS +
+					ground +
 						NODE_SURFACE_LIFT +
 						PIN_SURFACE_GAP +
 						PIN_SHAFT_LENGTH * visualScale,

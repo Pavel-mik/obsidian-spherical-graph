@@ -38,6 +38,7 @@ export interface SelectionDetailsModel {
 }
 
 export interface SelectionDetailsCallbacks {
+	onPresentationChange?(): void;
 	onOpen(node: RenderNode, openInNewLeaf: boolean): void;
 	onSelectTag(tag: RenderTag): void;
 	onTogglePin?(
@@ -59,6 +60,7 @@ export class SelectionDetailsPanel {
 	private pinnedNodeIds = new Set<string>();
 	private pendingPinNodeId: string | undefined;
 	private collapsed = false;
+	private expandedConnections = false;
 
 	constructor(
 		parent: HTMLElement,
@@ -113,6 +115,7 @@ export class SelectionDetailsPanel {
 	}
 
 	setSelectedNode(nodeId: string | undefined): void {
+		if(this.selectedNodeId!==nodeId)this.expandedConnections=false;
 		this.selectedNodeId = nodeId;
 		this.render();
 	}
@@ -159,6 +162,7 @@ export class SelectionDetailsPanel {
 			? 'Expand selection details'
 			: 'Collapse selection details';
 		this.content.hidden = collapsed;
+		this.callbacks.onPresentationChange?.();
 	}
 
 	private render(): void {
@@ -180,6 +184,7 @@ export class SelectionDetailsPanel {
 			model.route === undefined
 		) {
 			this.element.hidden = true;
+			this.callbacks.onPresentationChange?.();
 			return;
 		}
 		this.element.hidden = false;
@@ -192,6 +197,7 @@ export class SelectionDetailsPanel {
 		if (model.route !== undefined) {
 			this.renderRoute(model.route);
 		}
+		this.callbacks.onPresentationChange?.();
 	}
 
 	private renderTag(
@@ -229,33 +235,39 @@ export class SelectionDetailsPanel {
 	private renderSelected(
 		selected: NonNullable<SelectionDetailsModel['selected']>,
 	): void {
-		const section = this.createSection('Node', 'node');
-		section.append(this.createPrimaryLink(selected.node));
+		const kind=renderNodeKind(selected.node);
+		const section = this.createSection(kind==='note'?'Note':kind==='attachment'?'Attachment':'Unresolved', 'node');
+		const title = section.createEl('h3');
+		title.className = 'spherical-graph-inspector-title';
+		title.textContent = selected.node.basename;
+		const path = section.createDiv();
+		path.className = 'spherical-graph-inspector-path';
+		path.textContent = selected.node.path;
+		const actions=section.createDiv();actions.className='spherical-graph-inspector-actions';
+		actions.append(this.createPrimaryLink(selected.node));
+		section.append(title,path,actions);
 		if (
 			selected.pinnable &&
 			this.callbacks.onTogglePin !== undefined
 		) {
-			section.append(
+			actions.append(
 				this.createPinButton(selected.node, selected.pinned),
 			);
 		}
 
-		const metadata = section.createDiv();
-		metadata.className = 'spherical-graph-inspector-meta';
-		metadata.textContent = `${selected.connections.length} direct ${
-			selected.connections.length === 1 ? 'connection' : 'connections'
-		} · ${selected.tags.length} linked ${
-			selected.tags.length === 1 ? 'tag' : 'tags'
-		}`;
-		section.append(metadata);
-		section.append(
-			this.createNodeList(
-				'Linked notes',
-				selected.connections,
+		const connections=this.createNodeList(
+				'Connected notes · '+selected.connections.length,
+				this.expandedConnections?selected.connections:selected.connections.slice(0,4),
 				'No linked notes',
-			),
-		);
-		section.append(
+			);
+		connections.id=this.content.id+'-connections';section.append(connections);
+		if(selected.connections.length>4){
+			const more=section.createEl('button');more.type='button';more.className='spherical-graph-inspector-more';
+			more.textContent=this.expandedConnections?'Show fewer':'Show all '+selected.connections.length;
+			more.setAttribute('aria-expanded',String(this.expandedConnections));more.setAttribute('aria-controls',connections.id);
+			more.addEventListener('click',event=>{event.stopPropagation();this.expandedConnections=!this.expandedConnections;this.render();this.content.querySelector<HTMLButtonElement>('.spherical-graph-inspector-more')?.focus();});
+		}
+		if(selected.tags.length>0)section.append(
 			this.createTagList(
 				'Linked tags',
 				selected.tags,
@@ -284,6 +296,7 @@ export class SelectionDetailsPanel {
 		button.title = pinned
 			? `Remove ${node.basename} from pinned notes`
 			: `Pin ${node.basename} to the globe`;
+		button.setAttribute('aria-label',button.title);
 		const label = button.createSpan();
 		label.className = 'spherical-graph-inspector-link-name';
 		label.textContent = pinned ? 'Unpin note' : 'Pin note';
@@ -376,10 +389,8 @@ export class SelectionDetailsPanel {
 	private createPrimaryLink(node: RenderNode): HTMLButtonElement {
 		const button = this.createNodeButton(node);
 		button.classList.add('spherical-graph-inspector-primary');
-		const path = button.createSpan();
-		path.className = 'spherical-graph-inspector-path';
-		path.textContent = node.path;
-		button.append(path);
+		button.textContent = 'Open note';
+		button.setAttribute('aria-label', 'Open ' + node.basename);
 		return button;
 	}
 

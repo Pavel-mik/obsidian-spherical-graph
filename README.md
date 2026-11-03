@@ -6,7 +6,7 @@
 
 Turn your Obsidian vault into a world you can navigate. Folders become
 continents, subfolders become countries, notes become cities, and links become
-roads. Explore your ideas in a quiet, antique-cartography style.
+roads. Explore your ideas on a matte, sculpted cartographic globe.
 
 ![A vault mapped as continents and countries on an interactive globe](docs/screenshots/spherical-graph-globe.png)
 
@@ -21,15 +21,30 @@ roads. Explore your ideas in a quiet, antique-cartography style.
 - **Local and private.** No account, cloud service, telemetry, or changes to
   your note contents.
 
+## A living atlas of your notes
+
+Layered mineral terrain, softly lit coastlines, and a pale atmospheric rim
+bring depth to the globe. Countries share their continent's palette with
+slightly different hues. Ivory cities stay readable over the terrain; select
+one to reveal a coral marker, gold connections, and a compact note preview.
+Violet map pins mark favourites without changing a city's meaning.
+
+![Mental maps selected on the sculpted globe, with gold connections and note details](docs/screenshots/spherical-graph-selection.png)
+
+Your saved map stays in place when you upgrade. No Refresh or Renew is needed
+for the new look.
+
 ## Folders become continents. Subfolders become countries.
 
-Run **Renew layout** once to add countries to an existing map. Each immediate subfolder becomes a country; deeper folders stay in that country. Notes directly in a top-level folder share a **Common** territory. Folder notes without links belong on land too; root notes stay outside the continents.
+Each immediate subfolder becomes a country; deeper folders stay in that country. Notes directly in a top-level folder share a **Common** territory. Folder notes without links belong on land too; root notes stay outside the continents.
 
-Fine dashed borders and smaller country names appear on the globe. Use **Map controls → Globe → Country borders** to hide the borders and country labels independently of graph links. Names appear when zoomed in.
+The visual update keeps existing maps in place. Older maps without saved countries receive a display-only subdivision around their current notes. Choose **Renew layout** only when you want to generate new, persisted country allocations; it changes the layout.
+
+Warm borders, subtle country colours, and smaller country names appear on the globe. Use **Map controls → Globe → Country borders** to hide the borders and country labels independently of graph links. Names appear when zoomed in.
 
 **Refresh** preserves country boundaries and inserts notes into existing countries. New country folders, moves between countries, or changes that cannot fit the saved map require **Renew layout**. Same-country renames preserve positions. Existing maps keep their current layout until Renew succeeds.
 
-![Research, Design, Systems, and Common territories inside the Knowledge continent](docs/screenshots/spherical-graph-countries.png)
+![Subtle country colours and warm borders inside the Knowledge continent](docs/screenshots/spherical-graph-countries.png)
 
 ## Search in the graph
 
@@ -47,8 +62,8 @@ Selection and Route Finder remain independent; the camera and saved layout
 stay unchanged. Graph filters still apply, and files missing from the saved
 map are not added automatically.
 
-Selection and Route Finder use the same fine strokes and soft halo, with smaller
-node markers. Selecting a note hides unrelated ordinary links completely.
+Selection uses a filled coral city marker and warm gold connections. Route Finder
+uses amber strokes and soft local halos. Selecting a note hides unrelated ordinary links completely.
 **Map controls → Globe → Edges** toggles ordinary links and remembers the choice;
 selection, Search and route highlights remain independent. Selection and route
 links still respect the edge zoom threshold. Selected, hovered and route nodes
@@ -73,7 +88,7 @@ Select a starting note, choose **Map controls → Explore → Find route**, then
 select a destination. The map highlights all shortest paths and lists their
 notes in the details panel. Click a listed note to open it.
 
-![Route Finder showing two equally short routes from Mental maps to Feedback](docs/screenshots/spherical-graph-route.png)
+![Route Finder highlighting connections from Mental maps to Feedback](docs/screenshots/spherical-graph-route.png)
 
 ## Keep the view as quiet as you need
 
@@ -84,7 +99,8 @@ hidden. The compact search toolbar leaves more room for the globe.
 ![Map controls with independent Edges and Country borders switches](docs/screenshots/spherical-graph-filters.png)
 
 *Screenshots use a fictional 150-note demo vault in desktop Obsidian. The
-same saved map is shown throughout; only the view and display options change.*
+same saved map is shown throughout; only the view and display options change.
+Captured directly in the plugin, without compositing or generated artwork.*
 
 ## Requirements
 

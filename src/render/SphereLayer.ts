@@ -1,17 +1,29 @@
+import { oceanFragment } from './oceanMaterial';
 import {
 	BufferAttribute,
 	BufferGeometry,
 	Color,
+	PerspectiveCamera,
+	Raycaster,
+	Vector3,
+	Matrix4,
+	DoubleSide,
 	FrontSide,
 	Group,
-	LineBasicMaterial,
-	LineDashedMaterial,
-	LineSegments,
 	Mesh,
 	MeshBasicMaterial,
+	PlaneGeometry,
 	ShaderMaterial,
 	SphereGeometry,
 } from 'three';
+import { ATLAS_LIGHT_GLSL, CARTOGRAPHY as T, updateLineViewport } from './cartography';
+import { screenSpaceLine } from './screenSpaceLine';
+import { sculptedLandFragment } from './terrainMaterial';
+import { HorizonGlow } from './HorizonGlow';
+import { decorateLandRelief } from './reliefGeometry';
+import { surfaceForSnapshot } from './terrainSurface';
+import { TerrainOcclusionIndex,buildTerrainTree } from './terrainOcclusion';
+import { countryTerritoryForDisplay } from './countryPresentation';
 import { SPHERE_RADIUS } from '../constants';
 import { hashString } from '../geometry/deterministicHash';
 import { AppearanceSettings } from '../settings/settings';
@@ -28,7 +40,7 @@ import {
 // Keep the ocean depth skin slightly inside the logical globe. This gives
 // land, graticule, roads, and cities unambiguous depth layers even on GPUs
 // with modest depth-buffer precision.
-const OCEAN_SURFACE_RADIUS = SPHERE_RADIUS - 0.12;
+const OCEAN_SURFACE_RADIUS = SPHERE_RADIUS - 0.02;
 const LAND_SURFACE_RADIUS = SPHERE_RADIUS;
 
 const PROCEDURAL_NOISE_GLSL = `
@@ -70,44 +82,42 @@ const PROCEDURAL_NOISE_GLSL = `
 `;
 
 export class SphereLayer {
+	private readonly backdropGeometry = new PlaneGeometry(2, 2);
+	private readonly backdropMaterial = new ShaderMaterial({
+		depthTest: false, depthWrite: false, toneMapped: false,
+		uniforms: { base: { value: new Color(T.colors.ui.void) }, glow: { value: new Color(T.colors.globe.oceanLight) }, aspect: { value: 1 } },
+		vertexShader: 'varying vec2 backdropUv; void main(){ backdropUv=position.xy*0.5+0.5; gl_Position=vec4(position.xy,0.999,1.0); }',
+		fragmentShader: `uniform vec3 base; uniform vec3 glow; uniform float aspect; varying vec2 backdropUv;
+		 void main(){vec2 p=(backdropUv-vec2(0.48,0.54))*vec2(aspect,1.0);
+		 gl_FragColor=vec4(mix(base,glow,exp(-dot(p,p)*5.0)*0.22),1.0);
+		 #include <colorspace_fragment>
+		 }`,
+	});
+	private readonly backdrop = new Mesh(this.backdropGeometry, this.backdropMaterial);
 	private readonly oceanGeometry = new SphereGeometry(
 		OCEAN_SURFACE_RADIUS,
-		64,
-		40,
+		128,
+		80,
 	);
 	private readonly rimGeometry = new SphereGeometry(SPHERE_RADIUS, 64, 40);
 	private readonly oceanColor = new Color();
 	private readonly material = new ShaderMaterial({
 		depthTest: true,
 		depthWrite: true,
-		fragmentShader: `
-			uniform vec3 oceanColor;
-			uniform float oceanOpacity;
-			varying vec3 sphereDirection;
-			varying vec3 viewNormal;
-			varying vec3 viewDirection;
-			${PROCEDURAL_NOISE_GLSL}
-
-			void main() {
-				vec3 direction = normalize(sphereDirection);
-				float broadWater = atlasFbm(direction * 3.7 + vec3(2.4, 8.1, 4.3));
-				float fineWater = atlasNoise(direction * 38.0 + vec3(1.7, 9.2, 2.1));
-				float facing = abs(dot(normalize(viewNormal), normalize(viewDirection)));
-				float limb = smoothstep(0.0, 0.9, facing);
-				float texture = 0.88 + broadWater * 0.12 + (fineWater - 0.5) * 0.025;
-				vec3 color = oceanColor * texture;
-				color += oceanColor * limb * 0.055;
-				gl_FragColor = vec4(color, oceanOpacity);
-				#include <colorspace_fragment>
-			}
-		`,
+		fragmentShader: oceanFragment(PROCEDURAL_NOISE_GLSL),
 		side: FrontSide,
 		toneMapped: false,
 		uniforms: {
 			oceanColor: { value: this.oceanColor },
+			oceanDeep: { value: new Color(T.colors.globe.oceanDeep) },
+			oceanLight: { value: new Color(T.colors.globe.oceanLight) },
 			oceanOpacity: { value: 1 },
+			oceanDetail: { value: 1 },
+			showShallows: { value: 1 },
 		},
 		vertexShader: `
+			attribute float waterShallow;
+			varying float coastalWater;
 			varying vec3 sphereDirection;
 			varying vec3 viewNormal;
 			varying vec3 viewDirection;
@@ -117,6 +127,7 @@ export class SphereLayer {
 				sphereDirection = normalize(position);
 				viewNormal = normalize(normalMatrix * normal);
 				viewDirection = -viewPosition.xyz;
+				coastalWater=waterShallow;
 				gl_Position = projectionMatrix * viewPosition;
 			}
 		`,
@@ -140,22 +151,13 @@ export class SphereLayer {
 		this.depthMaskMaterial,
 	);
 	private readonly gridGeometry = createGridGeometry(
-		SPHERE_RADIUS + 0.008,
+		SPHERE_RADIUS + 0.001,
 	);
-	private readonly gridMaterial = new LineDashedMaterial({
-		dashSize: 0.12,
-		gapSize: 0.11,
-		depthTest: true,
-		depthWrite: false,
-		opacity: 0.11,
-		scale: 1,
-		toneMapped: false,
-		transparent: true,
+	private readonly grid = screenSpaceLine(this.gridGeometry.getAttribute('position').array as Float32Array, {
+		color: T.colors.globe.graticule, widthPx: T.edges.graticule.widthPx,
+		opacity: T.edges.graticule.opacity, dash: T.edges.graticule.dashPx,
 	});
-	private readonly grid = new LineSegments(
-		this.gridGeometry,
-		this.gridMaterial,
-	);
+	private readonly gridMaterial = this.grid.material;
 	private readonly rimColor = new Color();
 	private readonly rimMaterial = new ShaderMaterial({
 		depthTest: true,
@@ -168,8 +170,11 @@ export class SphereLayer {
 
 			void main() {
 				float facing = abs(dot(normalize(viewNormal), normalize(viewDirection)));
-				float rim = pow(max(0.0, 1.0 - facing), 3.1);
+				float edgeDistance = facing * facing / max(fwidth(facing * facing), 0.0001);
+				float rim = (1.0 - smoothstep(0.0, ${T.material.rimWidthPx.toFixed(2)}, edgeDistance)) *
+					max(dot(normalize(viewNormal), normalize(${ATLAS_LIGHT_GLSL})), 0.0);
 				gl_FragColor = vec4(rimColor, rim * rimOpacity);
+				#include <colorspace_fragment>
 			}
 		`,
 		side: FrontSide,
@@ -192,6 +197,14 @@ export class SphereLayer {
 		`,
 	});
 	private readonly rim = new Mesh(this.rimGeometry, this.rimMaterial);
+	private readonly horizonGlow: HorizonGlow;
+	private wallMesh: Mesh<BufferGeometry,ShaderMaterial>|undefined;
+	private readonly terrainRay=new Raycaster();
+	private readonly rayDirection=new Vector3();
+	private landOcclusion:TerrainOcclusionIndex|undefined;
+	private readonly inverseTerrain=new Matrix4();
+	private readonly localEye=new Vector3();
+	private readonly localTarget=new Vector3();
 	private snapshot: PreparedRenderSnapshot | undefined;
 	private appearance: AppearanceSettings;
 	private theme: RenderTheme;
@@ -203,9 +216,11 @@ export class SphereLayer {
 	private beachMaterial: ShaderMaterial | undefined;
 	private beachMesh: Mesh | undefined;
 	private coastGeometry: BufferGeometry | undefined;
-	private coastMaterial: LineBasicMaterial | undefined;
-	private coastLines: LineSegments | undefined;
-	private countryBorders: LineSegments<BufferGeometry, LineDashedMaterial> | undefined;
+	private coastMaterial: ShaderMaterial | undefined;
+	private coastLines: Mesh<BufferGeometry, ShaderMaterial> | undefined;
+	private countryBorders: Mesh<BufferGeometry, ShaderMaterial> | undefined;
+	private countryBorderShadow: Mesh<BufferGeometry, ShaderMaterial> | undefined;
+	private coastShadow: Mesh<BufferGeometry, ShaderMaterial> | undefined;
 	private readonly landWorker =
 		typeof Worker === 'undefined'
 			? undefined
@@ -219,6 +234,8 @@ export class SphereLayer {
 		private readonly onInvalidate?: () => void,
 		private readonly landDetailScale = 1,
 	) {
+		this.horizonGlow=new HorizonGlow(group);
+		this.oceanGeometry.setAttribute('waterShallow',new BufferAttribute(new Float32Array(this.oceanGeometry.getAttribute('position').count),1));
 		this.appearance = appearance;
 		this.theme = theme;
 		this.mesh.name = 'spherical-graph-surface';
@@ -227,10 +244,11 @@ export class SphereLayer {
 		this.depthMask.renderOrder = -1;
 		this.grid.name = 'spherical-graph-surface-grid';
 		this.grid.renderOrder = 1;
-		this.grid.computeLineDistances();
+
 		this.rim.name = 'spherical-graph-surface-rim';
 		this.rim.renderOrder = 3;
-		this.group.add(this.mesh, this.depthMask, this.grid, this.rim);
+		this.backdrop.name = 'spherical-graph-backdrop'; this.backdrop.renderOrder = -100; this.backdrop.frustumCulled = false;
+		this.group.add(this.backdrop, this.mesh, this.depthMask, this.grid, this.rim);
 		this.update(appearance, theme);
 	}
 
@@ -241,24 +259,29 @@ export class SphereLayer {
 			return;
 		}
 		this.landRevision = revision;
+		const ocean=this.oceanGeometry.getAttribute('position'),shallows=this.oceanGeometry.getAttribute('waterShallow') as BufferAttribute,surface=surfaceForSnapshot(snapshot);
+		for(let i=0;i<ocean.count;i++)shallows.setX(i,surface.shallowsAt([ocean.getX(i),ocean.getY(i),ocean.getZ(i)]));
+		shallows.needsUpdate=true;
 		this.rebuildLand();
 	}
 
 	update(appearance: AppearanceSettings, theme: RenderTheme): void {
 		this.appearance = appearance;
+		this.material.uniforms.showShallows!.value=appearance.showContinents?1:0;
 		const themeChanged =
 			this.theme !== theme ||
 			this.theme.land.join('|') !== theme.land.join('|') ||
 			this.theme.coast !== theme.coast;
 		this.theme = theme;
+		(this.backdropMaterial.uniforms.base!.value as Color).set(appearance.backgroundFollowsTheme ? theme.background : T.colors.ui.void);
 		const visible = appearance.surfaceMode !== 'hidden';
 		this.mesh.visible = visible;
 		this.depthMask.visible = appearance.surfaceMode === 'solid';
 		this.grid.visible = visible;
 		this.rim.visible = visible;
 		this.oceanColor.set(theme.sphere);
-		this.gridMaterial.color.set(theme.graticule);
-		this.rimColor.set(theme.coast);
+		(this.gridMaterial.uniforms.lineColor!.value as Color).set(theme.graticule);
+		this.rimColor.set(T.colors.globe.rim);
 
 		if (appearance.surfaceMode === 'transparent') {
 			this.material.transparent = true;
@@ -269,9 +292,9 @@ export class SphereLayer {
 				);
 			}
 			this.material.depthWrite = false;
-			this.gridMaterial.opacity = 0.08;
+			this.gridMaterial.uniforms.lineOpacity!.value = 0.08;
 			if (this.rimMaterial.uniforms.rimOpacity !== undefined) {
-				this.rimMaterial.uniforms.rimOpacity.value = 0.22;
+				this.rimMaterial.uniforms.rimOpacity.value = 0.10;
 			}
 		} else {
 			// "Solid" is an actual opaque surface. surfaceOpacity only
@@ -281,9 +304,9 @@ export class SphereLayer {
 				this.material.uniforms.oceanOpacity.value = 1;
 			}
 			this.material.depthWrite = true;
-			this.gridMaterial.opacity = 0.13;
+			this.gridMaterial.uniforms.lineOpacity!.value = T.edges.graticule.opacity;
 			if (this.rimMaterial.uniforms.rimOpacity !== undefined) {
-				this.rimMaterial.uniforms.rimOpacity.value = 0.16;
+				this.rimMaterial.uniforms.rimOpacity.value = T.material.rimPeakOpacity;
 			}
 		}
 		this.updateLandVisibility();
@@ -295,19 +318,45 @@ export class SphereLayer {
 		this.rimMaterial.needsUpdate = true;
 	}
 
+	render(camera: PerspectiveCamera, width: number, height: number, phone = false): void {
+		this.horizonGlow.render(camera,width,height,this.appearance.surfaceMode==='solid',phone);
+		this.backdropMaterial.uniforms.aspect!.value = Math.max(1, width) / Math.max(1, height);
+		for (const mesh of [this.grid, this.coastLines, this.countryBorders, this.coastShadow, this.countryBorderShadow]) {
+			if (mesh) updateLineViewport(mesh.material, width, height);
+		}
+		const diameter = SPHERE_RADIUS*camera.projectionMatrix.elements[5]*height/Math.sqrt(Math.max(1,camera.position.lengthSq()-SPHERE_RADIUS*SPHERE_RADIUS));
+		const fade = Math.min(1, Math.max(0, (diameter - 350) / 150));
+		if (this.landMaterial?.uniforms.detailFade) this.landMaterial.uniforms.detailFade.value = phone ? fade * 0.35 : fade;
+		this.material.uniforms.oceanDetail!.value=phone?0.35:fade;
+		this.rim.visible = !phone && this.appearance.surfaceMode !== 'hidden';
+	}
+
 	dispose(): void {
+		this.horizonGlow.dispose();
 		this.landWorker?.dispose();
 		this.removeLand();
-		this.group.remove(this.mesh, this.depthMask, this.grid, this.rim);
+		this.group.remove(this.backdrop, this.mesh, this.depthMask, this.grid, this.rim);
+		this.backdropGeometry.dispose(); this.backdropMaterial.dispose();
 		this.oceanGeometry.dispose();
 		this.rimGeometry.dispose();
 		this.gridGeometry.dispose();
+		this.grid.geometry.dispose();
 		this.material.dispose();
 		this.depthMaskMaterial.dispose();
 		this.gridMaterial.dispose();
 		this.rimMaterial.dispose();
 		this.snapshot = undefined;
 		this.landRevision = undefined;
+	}
+
+	/** Exact CPU geometry agrees with the depth buffer for picking and DOM labels. */
+	isTerrainOccluded(camera:Vector3,point:Vector3):boolean{
+	 if(this.appearance.surfaceMode!=='solid'||!this.appearance.showContinents)return false;
+	 const distance=this.rayDirection.subVectors(point,camera).length();if(distance<.02)return false;
+	 if(this.landMesh?.visible&&this.landOcclusion){this.landMesh.updateWorldMatrix(true,false);this.inverseTerrain.copy(this.landMesh.matrixWorld).invert();this.localEye.copy(camera).applyMatrix4(this.inverseTerrain);this.localTarget.copy(point).applyMatrix4(this.inverseTerrain);if(this.landOcclusion.occludesSegment(this.localEye,this.localTarget,1-.015/distance))return true;}
+	 this.terrainRay.set(camera,this.rayDirection.normalize());this.terrainRay.near=0;this.terrainRay.far=distance-.015;
+	 if(this.wallMesh?.visible){this.wallMesh.updateWorldMatrix(true,false);if(this.terrainRay.intersectObject(this.wallMesh,false).length)return true;}
+	 return false;
 	}
 
 	private rebuildLand(): void {
@@ -346,6 +395,7 @@ export class SphereLayer {
 						snapshot.nodes,
 						(node) => node.degree,
 					),
+					countryDisplayTerritory: countryTerritoryForDisplay(snapshot),
 				})
 				.then((data) => {
 					if (this.landRevision === requestId) {
@@ -366,17 +416,19 @@ export class SphereLayer {
 			detail,
 			snapshot.edges,
 			snapshot.nodes.map((node) => node.degree),
+			countryTerritoryForDisplay(snapshot),
 		);
 		this.applyLandData(data);
 	}
 
 	private applyLandData(data: LandSurfaceData): void {
+		if(!data.reliefPositions&&this.snapshot)data=decorateLandRelief(data,surfaceForSnapshot(this.snapshot));
 		this.removeLand();
 		this.landData = data;
 		const beachGeometry = new BufferGeometry();
 		beachGeometry.setAttribute(
 			'position',
-			new BufferAttribute(data.beachPositions, 3),
+			new BufferAttribute(data.reliefBeachPositions??data.beachPositions, 3),
 		);
 		beachGeometry.computeBoundingSphere();
 		const beachMaterial = new ShaderMaterial({
@@ -386,6 +438,7 @@ export class SphereLayer {
 				uniform vec3 beachColor;
 				uniform float beachOpacity;
 				varying vec3 sphereDirection;
+				varying vec3 beachNormal;
 				${PROCEDURAL_NOISE_GLSL}
 
 				void main() {
@@ -398,7 +451,8 @@ export class SphereLayer {
 						dunes * 0.2 +
 						(grains - 0.5) * 0.12 +
 						(wetEdge - 0.5) * 0.06;
-					gl_FragColor = vec4(beachColor * tone, beachOpacity);
+					float light=0.32+0.90*max(dot(normalize(beachNormal),normalize(${ATLAS_LIGHT_GLSL})),0.0);
+					gl_FragColor = vec4(beachColor * tone * light, beachOpacity);
 					#include <colorspace_fragment>
 				}
 			`,
@@ -411,9 +465,11 @@ export class SphereLayer {
 			},
 			vertexShader: `
 				varying vec3 sphereDirection;
+				varying vec3 beachNormal;
 
 				void main() {
 					sphereDirection = normalize(position);
+					beachNormal=normalize(normalMatrix*normalize(position));
 					gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 				}
 			`,
@@ -430,57 +486,70 @@ export class SphereLayer {
 		this.beachMesh = beachMesh;
 
 		const geometry = new BufferGeometry();
+		const landPositions=data.reliefPositions??data.positions,landVertexCount=landPositions.length/3;
+		this.landOcclusion=new TerrainOcclusionIndex(landPositions,data.occlusionTree??buildTerrainTree(landPositions));
 		geometry.setAttribute(
 			'position',
-			new BufferAttribute(data.positions, 3),
+			new BufferAttribute(landPositions, 3),
 		);
 		geometry.setAttribute(
 			'color',
-			new BufferAttribute(new Float32Array(data.positions.length), 3),
+			new BufferAttribute(new Float32Array(landPositions.length), 3),
 		);
+		geometry.setAttribute('shadeColor', new BufferAttribute(new Float32Array(landPositions.length), 3));
+		geometry.setAttribute('lightColor', new BufferAttribute(new Float32Array(landPositions.length), 3));
+		geometry.setAttribute('countryTint',new BufferAttribute(data.reliefCountryTints??data.countryTints??new Float32Array(landPositions.length).fill(1),3));
+		geometry.setAttribute('strata',new BufferAttribute(data.reliefStrata??new Float32Array(landVertexCount),1));
+		geometry.setAttribute('normal',new BufferAttribute(data.reliefNormals??data.positions.slice(),3));
+		geometry.setAttribute('elevation',new BufferAttribute(data.reliefElevations??new Float32Array(landVertexCount),1));
+		for(const name of ['mineralAColor','mineralBColor','mineralCColor'])geometry.setAttribute(name,new BufferAttribute(new Float32Array(landPositions.length),3));
 		geometry.computeBoundingSphere();
 		const material = new ShaderMaterial({
 			depthTest: true,
 			depthWrite: true,
-			fragmentShader: `
-				uniform float landOpacity;
-				varying vec3 landColor;
-				varying vec3 sphereDirection;
-				${PROCEDURAL_NOISE_GLSL}
-
-				void main() {
-					vec3 direction = normalize(sphereDirection);
-					float relief = atlasFbm(direction * 7.2 + vec3(6.3, 1.8, 9.4));
-					float strata = atlasFbm(direction * 17.0 + vec3(2.0, 7.6, 3.4));
-					float grain = atlasHash(direction * 307.0);
-					float ridge = 1.0 - abs(relief * 2.0 - 1.0);
-					float contourDistance = abs(fract(relief * 7.5) - 0.5);
-					float contour = 1.0 - smoothstep(0.035, 0.075, contourDistance);
-					float tone =
-						0.68 +
-						relief * 0.34 +
-						(strata - 0.5) * 0.16 +
-						(grain - 0.5) * 0.1;
-					vec3 color = landColor * tone;
-					color += vec3(0.08, 0.062, 0.038) * ridge;
-					color *= 1.0 - contour * 0.09;
-					gl_FragColor = vec4(color, landOpacity);
-					#include <colorspace_fragment>
-				}
-			`,
+			fragmentShader: sculptedLandFragment(PROCEDURAL_NOISE_GLSL),
 			side: FrontSide,
 			toneMapped: false,
 			transparent: false,
 			uniforms: {
-				landOpacity: { value: 0.96 },
+				landOpacity: { value: 1 },
+				detailFade: { value: 1 },
 			},
 			vertexShader: `
 				attribute vec3 color;
+				attribute vec3 shadeColor;
+				attribute vec3 lightColor;
+				attribute vec3 countryTint;
+				attribute float strata;
+				attribute float elevation;
+				attribute vec3 mineralAColor;
+				attribute vec3 mineralBColor;
+				attribute vec3 mineralCColor;
+				varying vec3 mineralA;
+				varying vec3 mineralB;
+				varying vec3 mineralC;
+				varying float landElevation;
 				varying vec3 landColor;
+				varying vec3 landShadeColor;
+				varying vec3 landLightColor;
+				varying vec3 landCountryTint;
+				varying float landStrata;
+				varying vec3 terrainViewPosition;
+				varying vec3 terrainViewNormal;
+				varying vec3 terrainObjectLight;
 				varying vec3 sphereDirection;
 
 				void main() {
 					landColor = color;
+					landShadeColor = shadeColor;
+					landLightColor = lightColor;
+					landCountryTint=countryTint;landStrata=strata;
+					mineralA=mineralAColor;mineralB=mineralBColor;mineralC=mineralCColor;landElevation=elevation;
+					terrainViewPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+					terrainViewNormal = normalize(normalMatrix * normal);
+					vec3 keyLight = normalize(${ATLAS_LIGHT_GLSL});
+					terrainObjectLight = vec3(dot(modelViewMatrix[0].xyz, keyLight),
+						dot(modelViewMatrix[1].xyz, keyLight), dot(modelViewMatrix[2].xyz, keyLight));
 					sphereDirection = normalize(position);
 					gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 				}
@@ -500,42 +569,58 @@ export class SphereLayer {
 		this.landMesh = mesh;
 
 		const coastGeometry = new BufferGeometry();
+		const coastInk = data.reliefCoastPositions??data.coastInkPositions ?? data.coastPositions;
 		coastGeometry.setAttribute(
 			'position',
-			new BufferAttribute(data.coastPositions, 3),
+			new BufferAttribute(coastInk, 3),
 		);
 		coastGeometry.computeBoundingSphere();
-		const coastMaterial = new LineBasicMaterial({
-			color: this.theme.coast,
-			depthTest: true,
-			depthWrite: false,
-			opacity: 0.9,
-			toneMapped: false,
-			transparent: true,
+		const coastLines = screenSpaceLine(coastInk, {
+			color: this.theme.coast, widthPx: T.edges.coast.widthPx, opacity: T.edges.coast.opacity, surfaceInk: true,
 		});
-		const coastLines = new LineSegments(
-			coastGeometry,
-			coastMaterial,
-		);
+		const coastMaterial = coastLines.material;
 		coastLines.name = 'spherical-graph-coastlines';
 		coastLines.renderOrder = 2;
 		this.group.add(coastLines);
 		this.coastGeometry = coastGeometry;
 		this.coastMaterial = coastMaterial;
 		this.coastLines = coastLines;
-		if (data.countryBorderPositions !== undefined && data.countryBorderPositions.length > 0) {
+		this.coastShadow = screenSpaceLine(coastInk, {
+			color: T.colors.globe.coastShadow, widthPx: T.edges.coast.underlayWidthPx, opacity: T.edges.coast.underlayOpacity,
+		});
+		this.coastShadow.name = 'spherical-graph-coast-shadow'; this.coastShadow.renderOrder = 0.7;
+		this.coastLines.renderOrder = 0.9; this.group.add(this.coastShadow);
+		const borders=data.reliefBorderPositions??data.countryBorderPositions;
+		if (borders !== undefined && borders.length > 0) {
 			const borderGeometry = new BufferGeometry();
-			borderGeometry.setAttribute('position', new BufferAttribute(data.countryBorderPositions, 3));
+			borderGeometry.setAttribute('position', new BufferAttribute(borders, 3));
 			borderGeometry.computeBoundingSphere();
-			const borderMaterial = new LineDashedMaterial({
-				color: '#594034', opacity: 0.68, dashSize: 0.1, gapSize: 0.055,
-				transparent: true, depthTest: true, depthWrite: false, toneMapped: false,
+			this.countryBorders = screenSpaceLine(borders, {
+				color: T.colors.globe.countryBorder, widthPx: T.edges.countryBorder.widthPx,
+				opacity: T.edges.countryBorder.opacity, dash: T.edges.countryBorder.dashPx,
 			});
-			this.countryBorders = new LineSegments(borderGeometry, borderMaterial);
+			borderGeometry.dispose();
 			this.countryBorders.name = 'spherical-graph-country-borders';
-			this.countryBorders.renderOrder = 2;
-			this.countryBorders.computeLineDistances();
+			this.countryBorders.renderOrder = 0.6;
+			this.countryBorderShadow = screenSpaceLine(borders, {
+				color: T.colors.globe.countryBorderShadow, widthPx: T.edges.countryBorder.underlayWidthPx,
+				opacity: T.edges.countryBorder.underlayOpacity,
+			});
+			this.countryBorderShadow.name = 'spherical-graph-country-border-shadow';
+			this.countryBorderShadow.renderOrder = 0.4; this.group.add(this.countryBorderShadow);
+
 			this.group.add(this.countryBorders);
+		}
+		if(data.coastalWallPositions?.length){
+		 const wallGeometry=new BufferGeometry();wallGeometry.setAttribute('position',new BufferAttribute(data.coastalWallPositions,3));wallGeometry.computeBoundingSphere();
+		 const wallMaterial=new ShaderMaterial({depthTest:true,depthWrite:true,side:DoubleSide,toneMapped:false,
+		  uniforms:{sand:{value:new Color(this.theme.coast)},wallOpacity:{value:1}},
+		  vertexShader:'varying vec3 wallPosition;varying float wallHeight;void main(){wallHeight=length(position)-10.0;wallPosition=(modelViewMatrix*vec4(position,1.0)).xyz;gl_Position=projectionMatrix*vec4(wallPosition,1.0);}',
+		  fragmentShader:`uniform vec3 sand;uniform float wallOpacity;varying vec3 wallPosition;varying float wallHeight;void main(){vec3 n=normalize(cross(dFdx(wallPosition),dFdy(wallPosition)));if(!gl_FrontFacing)n=-n;
+		   float key=max(dot(n,normalize(${ATLAS_LIGHT_GLSL})),0.0);float contact=mix(0.54,1.0,smoothstep(0.005,0.055,wallHeight));gl_FragColor=vec4(sand*(0.30+key*0.80)*contact,wallOpacity);
+		   #include <colorspace_fragment>
+		  }`});
+		 this.wallMesh=new Mesh(wallGeometry,wallMaterial);this.wallMesh.name='spherical-graph-coastal-walls';this.wallMesh.renderOrder=0.2;this.group.add(this.wallMesh);
 		}
 		this.recolorLand();
 		this.updateLandVisibility();
@@ -553,17 +638,28 @@ export class SphereLayer {
 		) {
 			return;
 		}
-		const color = new Color();
-		for (let vertex = 0; vertex < data.colorIndices.length; vertex += 1) {
-			const colorIndex = data.colorIndices[vertex] ?? 0;
-			const shade = data.shades[vertex] ?? 1;
+		const color = new Color(), shadow = new Color(), light = new Color();
+		const indices=data.reliefColorIndices??data.colorIndices,shades=data.reliefShades??data.shades;
+		for (let vertex = 0; vertex < indices.length; vertex += 1) {
+			const colorIndex = indices[vertex] ?? 0;
+			const shade = shades[vertex] ?? 1;
 			color
 				.set(this.theme.land[colorIndex % this.theme.land.length] ?? '#66725a')
 				.multiplyScalar(shade);
 			attribute.setXYZ(vertex, color.r, color.g, color.b);
+			const family = T.land[colorIndex % T.land.length] ?? T.land[0]!;
+			shadow.set(family.shadow).multiplyScalar(shade);
+			light.set(family.highlight).multiplyScalar(shade);
+			this.landGeometry?.getAttribute('shadeColor').setXYZ(vertex, shadow.r, shadow.g, shadow.b);
+			this.landGeometry?.getAttribute('lightColor').setXYZ(vertex, light.r, light.g, light.b);
+			for(const name of ['mineralA','mineralB','mineralC'] as const){color.set(family[name]).multiplyScalar(shade);this.landGeometry?.getAttribute(`${name}Color`).setXYZ(vertex,color.r,color.g,color.b);}
 		}
 		attribute.needsUpdate = true;
-		this.coastMaterial?.color.set(this.theme.coast);
+		for (const name of ['shadeColor', 'lightColor','mineralAColor','mineralBColor','mineralCColor']) {
+			const values = this.landGeometry?.getAttribute(name);
+			if (values) values.needsUpdate = true;
+		}
+		if (this.coastMaterial?.uniforms.lineColor) (this.coastMaterial.uniforms.lineColor.value as Color).set(this.theme.coast);
 		if (this.coastMaterial !== undefined) {
 			this.coastMaterial.needsUpdate = true;
 		}
@@ -582,6 +678,9 @@ export class SphereLayer {
 			this.appearance.surfaceMode !== 'hidden' &&
 			this.appearance.showContinents;
 		if (this.countryBorders !== undefined) this.countryBorders.visible = visible && this.appearance.showCountryBorders;
+		if (this.countryBorderShadow) this.countryBorderShadow.visible = visible && this.appearance.showCountryBorders;
+		if (this.coastShadow) this.coastShadow.visible = visible;
+		if(this.wallMesh){this.wallMesh.visible=visible;this.wallMesh.material.transparent=this.appearance.surfaceMode==='transparent';this.wallMesh.material.uniforms.wallOpacity!.value=this.appearance.surfaceMode==='transparent'?.3:1;this.wallMesh.material.depthWrite=this.appearance.surfaceMode!=='transparent';}
 		if (this.landMesh !== undefined && this.landMaterial !== undefined) {
 			this.landMesh.visible = visible;
 			this.landMaterial.transparent =
@@ -599,14 +698,12 @@ export class SphereLayer {
 			this.beachMaterial !== undefined
 		) {
 			this.beachMesh.visible = visible;
-			this.beachMaterial.transparent =
-				this.appearance.surfaceMode === 'transparent';
+			this.beachMaterial.transparent = this.appearance.surfaceMode === 'transparent';
 			if (this.beachMaterial.uniforms.beachOpacity !== undefined) {
 				this.beachMaterial.uniforms.beachOpacity.value =
-					this.appearance.surfaceMode === 'transparent' ? 0.52 : 1;
+					this.appearance.surfaceMode === 'transparent' ? 0.08 : 1;
 			}
-			this.beachMaterial.depthWrite =
-				this.appearance.surfaceMode !== 'transparent';
+			this.beachMaterial.depthWrite = this.appearance.surfaceMode !== 'transparent';
 			this.beachMaterial.needsUpdate = true;
 		}
 		if (
@@ -614,13 +711,19 @@ export class SphereLayer {
 			this.coastMaterial !== undefined
 		) {
 			this.coastLines.visible = visible;
-			this.coastMaterial.opacity =
-				this.appearance.surfaceMode === 'transparent' ? 0.5 : 0.9;
+			this.coastMaterial.uniforms.lineOpacity!.value =
+				this.appearance.surfaceMode === 'transparent' ? 0.4 : T.edges.coast.opacity;
 			this.coastMaterial.needsUpdate = true;
 		}
 	}
 
 	private removeLand(): void {
+		this.landOcclusion=undefined;
+		if(this.wallMesh){this.group.remove(this.wallMesh);this.wallMesh.geometry.dispose();this.wallMesh.material.dispose();this.wallMesh=undefined;}
+		for (const mesh of [this.coastShadow, this.countryBorderShadow]) {
+			if (mesh) { this.group.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
+		}
+		this.coastShadow = this.countryBorderShadow = undefined;
 		if (this.countryBorders !== undefined) {
 			this.group.remove(this.countryBorders);
 			this.countryBorders.geometry.dispose();
@@ -641,6 +744,7 @@ export class SphereLayer {
 		this.beachGeometry?.dispose();
 		this.beachMaterial?.dispose();
 		this.coastGeometry?.dispose();
+		this.coastLines?.geometry.dispose();
 		this.coastMaterial?.dispose();
 		this.landData = undefined;
 		this.landGeometry = undefined;
@@ -672,7 +776,7 @@ export function adaptiveLandDetail(nodeCount: number, edgeCount: number): number
 
 function createGridGeometry(radius: number): BufferGeometry {
 	const positions: number[] = [];
-	const segments = 96;
+	const segments = 256;
 	const addSegment = (
 		start: readonly [number, number, number],
 		end: readonly [number, number, number],

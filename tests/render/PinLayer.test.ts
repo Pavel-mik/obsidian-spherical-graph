@@ -1,6 +1,7 @@
 import {
 	Group,
 	InstancedMesh,
+	MeshBasicMaterial,
 	Matrix4,
 	Vector3,
 } from 'three';
@@ -113,6 +114,10 @@ describe('PinLayer', () => {
 			.toBeLessThan(1e-8);
 		expect(headPosition.length()).toBeGreaterThan(shaftPosition.length());
 		expect(headPosition.length()).toBeGreaterThan(10);
+		expect((heads.material as MeshBasicMaterial).color.getHexString()).toBe('a58aff');
+		expect((shafts.material as MeshBasicMaterial).color.getHexString()).toBe('f5fafc');
+		layer.updateTheme({...theme,node:'#ff866a',coast:'#ff866a'});
+		expect((heads.material as MeshBasicMaterial).color.getHexString()).toBe('a58aff');
 		layer.dispose();
 	});
 

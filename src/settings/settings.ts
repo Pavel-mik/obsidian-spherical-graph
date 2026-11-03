@@ -106,7 +106,7 @@ export const DEFAULT_SPHERICAL_GRAPH_SETTINGS: SphericalGraphSettings = {
 		sizeNodesByDegree: true,
 		showEdges: true,
 		showCountryBorders: true,
-		edgeOpacity: 0.28,
+		edgeOpacity: 0.24,
 		edgeZoomThresholdPercent: 50,
 		showLabels: true,
 		maxLabels: 80,

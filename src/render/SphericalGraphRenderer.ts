@@ -1,3 +1,4 @@
+import { LabelPlacement } from './LabelPlacement';
 import {
 	Group,
 	PerspectiveCamera,
@@ -13,6 +14,7 @@ import {
 	MIN_CAMERA_DISTANCE,
 } from '../constants';
 import { AppearanceSettings, SurfaceMode } from '../settings/settings';
+import { CARTOGRAPHY as T } from './cartography';
 import { EdgeLayer } from './EdgeLayer';
 import { LabelLayer } from './LabelLayer';
 import { NodeLayer } from './NodeLayer';
@@ -37,7 +39,7 @@ import {
 	renderNodeKind,
 	type RenderFilterState,
 } from './renderFilters';
-import { verticalFovForAspect } from './cameraFraming';
+import { availableSceneSize, focusDirectionWithContext, landContextForNode, verticalFovForAspect } from './cameraFraming';
 import {
 	AutoRotationPauseController,
 	automaticRotationAngle,
@@ -107,6 +109,7 @@ export class SphericalGraphRenderer {
 	private autoRotationActive = false;
 	private presentationMode = false;
 	private lastAutoRotationTimestamp: number | undefined;
+	private readonly labelPlacement = new LabelPlacement();
 	private width = 0;
 	private height = 0;
 	private pixelRatio = 0;
@@ -207,7 +210,9 @@ export class SphericalGraphRenderer {
 			this.appearance,
 			this.theme,
 			this.container,
-			Math.min(96, this.profile.maxLabels),
+			Math.min(T.performance.desktopLabelBudget, this.profile.maxLabels),
+			this.labelPlacement,
+			(camera,point)=>this.sphereLayer.isTerrainOccluded(camera,point),
 		);
 		this.atmosphereLayer = new AtmosphereLayer(this.graphGroup, {
 			heightPercent: this.appearance.atmosphereHeightPercent,
@@ -219,6 +224,8 @@ export class SphericalGraphRenderer {
 			this.container,
 			this.graphGroup,
 			this.appearance,
+			this.labelPlacement,
+			(camera,point)=>this.sphereLayer.isTerrainOccluded(camera,point),
 		);
 		this.pickingController = new PickingController(
 			this.canvas,
@@ -227,6 +234,7 @@ export class SphericalGraphRenderer {
 			this.tagLayer,
 			{
 				onHover: (item) => {
+					if (this.tagLayer.updateHoveredTag(item?.kind === 'tag' ? item.tag.id : undefined)) this.requestRender();
 					const node =
 						item?.kind === 'node'
 							? item.node
@@ -262,6 +270,8 @@ export class SphericalGraphRenderer {
 				touchPickRadiusPx: 10,
 				enableDoubleClick: !this.profile.isMobile,
 				getSurfaceMode: () => this.appearance.surfaceMode,
+				isTerrainOccluded:(camera,point)=>this.sphereLayer.isTerrainOccluded(camera,point),
+				hasNodeLabel:nodeId=>this.labelLayer.hasVisibleNodeLabel(nodeId),
 			},
 		);
 
@@ -451,6 +461,7 @@ export class SphericalGraphRenderer {
 
 	setSearchResults(paths: ReadonlySet<string>): void {
 		this.nodeLayer.updateSearch(paths);
+		this.labelLayer.updateSearch(paths);
 		this.edgeLayer.updateSearch(paths);
 		this.requestRender();
 	}
@@ -468,6 +479,10 @@ export class SphericalGraphRenderer {
 			nodeId,
 			new Vector3(),
 		);
+		const node=this.snapshot?.nodeById.get(nodeId);
+		if(targetPosition&&node&&this.snapshot){
+			targetPosition.copy(focusDirectionWithContext(targetPosition,landContextForNode(this.snapshot,node.index)));
+		}
 		return this.focusPosition(targetPosition);
 	}
 
@@ -674,15 +689,20 @@ export class SphericalGraphRenderer {
 		}
 	}
 
+	invalidateViewport(): void { this.resize(); this.requestRender(); }
+
 	private resize(): void {
 		if (this.disposed) {
 			return;
 		}
-		const width = Math.max(1, Math.floor(this.container.clientWidth));
-		const height = Math.max(1, Math.floor(this.container.clientHeight));
+		const inspector = this.container.querySelector<HTMLElement>('.spherical-graph-inspector');
+		const pane = inspector && !inspector.hidden ? inspector : undefined;
+		const sceneSize = availableSceneSize(Math.max(1, Math.floor(this.container.clientWidth)),
+			Math.max(1, Math.floor(this.container.clientHeight)), pane?.offsetWidth ?? 0, pane?.offsetHeight ?? 0);
+		const { width, height } = sceneSize;
 		const pixelRatio = Math.min(
 			this.ownerWindow.devicePixelRatio || 1,
-			2,
+			this.profile.pixelRatioCap,
 		);
 		if (
 			width === this.width &&
@@ -696,6 +716,8 @@ export class SphericalGraphRenderer {
 		this.pixelRatio = pixelRatio;
 		this.webglRenderer.setPixelRatio(pixelRatio);
 		this.webglRenderer.setSize(width, height, false);
+		this.canvas.style.width = width + 'px';
+		this.canvas.style.height = height + 'px';
 		this.camera.aspect = width / height;
 		this.camera.fov = verticalFovForAspect(this.camera.aspect);
 		this.camera.updateProjectionMatrix();
@@ -726,11 +748,16 @@ export class SphericalGraphRenderer {
 			this.advanceAutoRotation(timestamp);
 		const atmosphereContinues = this.advanceAtmosphere(timestamp);
 		this.graphGroup.updateMatrixWorld(true);
-		this.edgeLayer.render(this.camera);
-		this.tagLayer.render(this.camera, this.width, this.height);
+		const cityTransition = this.nodeLayer.render(this.camera, this.width, this.height, this.profile.deviceClass === 'phone', timestamp, this.ownerWindow.matchMedia('(prefers-reduced-motion: reduce)').matches);
+		this.sphereLayer.render(this.camera, this.width, this.height, this.profile.deviceClass === 'phone');
+		this.edgeLayer.render(this.camera, this.width, this.height);
+		this.labelPlacement.reset(this.width, this.height, this.appearance.maxLabels);
 		this.labelLayer.render(this.camera, this.width, this.height);
+		this.pickingController.syncHoverLabel();
+		this.tagLayer.render(this.camera, this.width, this.height);
 		this.webglRenderer.render(this.scene, this.camera);
 		if (
+			cityTransition ||
 			focusContinues ||
 			autoRotationContinues ||
 			atmosphereContinues
@@ -851,6 +878,7 @@ export class SphericalGraphRenderer {
 	private applySelection(): void {
 		this.nodeLayer.updateSelection(this.selection);
 		this.edgeLayer.updateSelection(this.selection.selectedNodeId);
+		this.edgeLayer.updateHover(this.selection.hoveredNodeId);
 		this.tagLayer.updateSelection(this.selection.selectedNodeId);
 		this.tagLayer.updateSelectedTag(this.selectedTagId);
 		this.labelLayer.updateSelection(this.selection);
@@ -916,7 +944,7 @@ export class SphericalGraphRenderer {
 		this.webglRenderer.setClearColor(
 			this.appearance.backgroundFollowsTheme
 				? this.theme.background
-				: '#07131f',
+				: T.colors.ui.void,
 			1,
 		);
 	}
@@ -930,35 +958,28 @@ export class SphericalGraphRenderer {
 			return value.length > 0 ? value : fallback;
 		};
 		return {
-			background: css('--sg-void', '#07131f'),
-			node: css('--sg-city', '#f1e4c4'),
-			nodeAttachment: css('--sg-attachment', '#b9a26c'),
-			nodeUnresolved: css('--sg-unresolved', '#7f8d91'),
-			nodeNeighbor: css('--sg-city-neighbor', '#fff2cf'),
-			nodeDirectoryPeer: css('--sg-city-directory-peer', '#82b7ad'),
-			nodeActive: css('--sg-active', '#7eb5c2'),
-			nodeHovered: css('--sg-selection', '#ff6b57'),
-			nodeSelected: css('--sg-selection', '#ff6b57'),
-			nodeRoute: css('--sg-route', '#f1bb55'),
-			nodeRouteStart: css('--sg-route-start', '#f1bb55'),
-			nodeRouteEnd: css('--sg-route-end', '#7eb5c2'),
-			edge: css('--sg-road', '#8da4ae'),
-			edgeSelected: css('--sg-selection', '#ff6b57'),
-			edgeRoute: css('--sg-route', '#f1bb55'),
-			graticule: css('--sg-graticule', '#516675'),
-			tag: css('--sg-tag', '#d49a43'),
-			tagSoft: css('--sg-tag-soft', '#ead2a0'),
-			tagEdge: css('--sg-tag-edge', '#a77937'),
-			sphere: css('--sg-ocean', '#0c2638'),
-			coast: css('--sg-coast', '#d4b572'),
-			land: [
-				css('--sg-land-1', '#66725a'),
-				css('--sg-land-2', '#a07a49'),
-				css('--sg-land-3', '#8d5947'),
-				css('--sg-land-4', '#536776'),
-				css('--sg-land-5', '#77756c'),
-				css('--sg-land-6', '#667f75'),
-			],
+			background: css('--sg-void', T.colors.ui.void),
+			node: css('--sg-city', T.colors.node.base),
+			nodeAttachment: css('--sg-attachment', T.colors.node.attachment),
+			nodeUnresolved: css('--sg-unresolved', T.colors.node.unresolved),
+			nodeNeighbor: css('--sg-city-neighbor', T.colors.node.neighbor),
+			nodeDirectoryPeer: css('--sg-city-directory-peer', T.colors.node.directoryPeer),
+			nodeActive: css('--sg-active', T.colors.node.active),
+			nodeHovered: css('--sg-hover', T.colors.node.hover),
+			nodeSelected: css('--sg-selection', T.colors.node.selected),
+			nodeRoute: css('--sg-route', T.colors.node.route),
+			nodeRouteStart: css('--sg-route-start', T.colors.node.routeStart),
+			nodeRouteEnd: css('--sg-route-end', T.colors.node.routeEnd),
+			edge: css('--sg-road', T.colors.edge.base),
+			edgeSelected: css('--sg-road-selected', T.colors.edge.selected),
+			edgeRoute: css('--sg-route', T.colors.edge.route),
+			graticule: css('--sg-graticule', T.colors.globe.graticule),
+			tag: css('--sg-tag', T.colors.satellite.base),
+			tagSoft: css('--sg-tag-soft', T.colors.satellite.light),
+			tagEdge: css('--sg-tag-edge', T.colors.edge.satellite),
+			sphere: css('--sg-ocean', T.colors.globe.ocean),
+			coast: css('--sg-coast', T.colors.globe.coast),
+			land: T.land.map((land, index) => css('--sg-land-' + (index + 1), land.base)),
 		};
 	}
 
@@ -971,7 +992,8 @@ export class SphericalGraphRenderer {
 	private profileAppearance(appearance: AppearanceSettings): AppearanceSettings {
 		return {
 			...appearance,
-			maxLabels: Math.min(appearance.maxLabels, this.profile.maxLabels),
+			maxLabels: Math.min(appearance.maxLabels, this.profile.maxLabels,
+				this.profile.deviceClass === 'phone' ? T.performance.phoneLabelBudget : this.profile.deviceClass === 'tablet' ? T.performance.tabletLabelBudget : T.performance.desktopLabelBudget),
 		};
 	}
 }

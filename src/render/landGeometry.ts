@@ -1,4 +1,7 @@
 import { buildCountryBorders } from './countryGeometry';
+import { softenCartographicStroke } from './cartographicStroke';
+import { countryMaterialForLand } from './countryTone';
+import type { TerrainTreeData } from './terrainOcclusion';
 import { IcosahedronGeometry, Vector3 } from 'three';
 import {
 	hashNumbers,
@@ -41,11 +44,27 @@ const MIN_RENDERED_ISLAND_SEPARATION = 0.11;
 const MIN_ISLAND_SEA_GAP = 0.012;
 
 export interface LandSurfaceData {
+	readonly occlusionTree?:TerrainTreeData;
+	readonly reliefPositions?: Float32Array;
+	readonly reliefNormals?: Float32Array;
+	readonly reliefElevations?: Float32Array;
+	readonly reliefBeachPositions?: Float32Array;
+	readonly coastalWallPositions?: Float32Array;
+	readonly reliefCoastPositions?: Float32Array;
+	readonly reliefBorderPositions?: Float32Array;
+	readonly reliefColorIndices?: Uint8Array;
+	readonly reliefShades?: Float32Array;
+	readonly reliefCountryTints?: Float32Array;
+	readonly reliefStrata?: Float32Array;
 	readonly positions: Float32Array;
 	readonly colorIndices: Uint8Array;
 	readonly shades: Float32Array;
+	readonly countryTones?: Float32Array;
+	readonly countryTints?: Float32Array;
 	readonly beachPositions: Float32Array;
 	readonly coastPositions: Float32Array;
+	/** Bounded subpixel smoothing for the drawn coast only; raw geometry stays available. */
+	readonly coastInkPositions?: Float32Array;
 	readonly countryBorderPositions?: Float32Array;
 	readonly triangleCount: number;
 	readonly beachTriangleCount: number;
@@ -714,6 +733,7 @@ export function buildLandSurfaceData(
 	detail = 48,
 	edges: readonly RenderEdge[] = [],
 	nodeDegrees?: ArrayLike<number>,
+	countryDisplayTerritory: RenderGeography['territory'] = geography.territory,
 ): LandSurfaceData {
 	if (
 		positions.length % 3 !== 0 ||
@@ -960,13 +980,20 @@ export function buildLandSurfaceData(
 	if (source !== rawGeometry) {
 		rawGeometry.dispose();
 	}
+	const countryMaterial=countryMaterialForLand(new Float32Array(landPositions),countryDisplayTerritory);
 	return {
 		positions: new Float32Array(landPositions),
 		colorIndices: new Uint8Array(colorIndices),
 		shades: new Float32Array(shades),
+		countryTones: countryMaterial.tones,
+		countryTints: countryMaterial.tints,
 		beachPositions: new Float32Array(beachPositions),
 		coastPositions: new Float32Array(coastPositions),
-		countryBorderPositions: buildCountryBorders(geography.territory, radius + 0.012, (point, parent) => classifyContinentOwner(point, continentModel) === parent),
+		coastInkPositions: softenCartographicStroke(new Float32Array(coastPositions), radius + COAST_SURFACE_OFFSET, positions, undefined, 0.001),
+		countryBorderPositions: softenCartographicStroke(
+			buildCountryBorders(countryDisplayTerritory, radius + 0.018, (point, parent) => classifyContinentOwner(point, continentModel) === parent),
+			radius + 0.018, positions, point => classifyContinentOwner(point, continentModel) !== SEA_OWNER,
+		),
 		triangleCount,
 		beachTriangleCount,
 		renderedIslandCount: renderedIslandNodeIndices.length,

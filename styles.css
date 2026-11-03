@@ -1825,37 +1825,37 @@
 
 /* Continental atlas visual system */
 .spherical-graph-view {
-	--sg-void: #07131f;
-	--sg-ocean: #0c2638;
-	--sg-panel: #0b1b28;
-	--sg-panel-raised: #102332;
-	--sg-panel-hover: #172e3d;
-	--sg-city: #f1e4c4;
-	--sg-city-neighbor: #fff2cf;
-	--sg-city-directory-peer: #82b7ad;
-	--sg-selection: #ff6b57;
-	--sg-route: #f1bb55;
-	--sg-route-start: #f1bb55;
-	--sg-route-end: #7eb5c2;
-	--sg-road: #8da4ae;
-	--sg-graticule: #516675;
-	--sg-tag: #b8c3c9;
-	--sg-tag-soft: #edf3f5;
-	--sg-tag-edge: #8b999f;
-	--sg-active: #7eb5c2;
-	--sg-attachment: #b9a26c;
-	--sg-unresolved: #7f8d91;
-	--sg-text: #edf0e8;
-	--sg-muted: #9aa9ad;
-	--sg-danger: #dd7565;
-	--sg-coast: #d4b572;
-	--sg-land-1: #66725a;
-	--sg-land-2: #a07a49;
-	--sg-land-3: #8d5947;
-	--sg-land-4: #536776;
-	--sg-land-5: #77756c;
-	--sg-land-6: #667f75;
-	--sg-line: rgba(129, 150, 159, 0.42);
+	--sg-void: #081D21;
+	--sg-ocean: #10343E;
+	--sg-panel: #10282D;
+	--sg-panel-raised: #17343A;
+	--sg-panel-hover: #21454B;
+	--sg-city: #F6DEAA;
+	--sg-city-neighbor: #FFF0C9;
+	--sg-city-directory-peer: #A8CBB3;
+	--sg-selection: #FF866A;
+	--sg-route: #F3C66B;
+	--sg-route-start: #A7D9B7;
+	--sg-route-end: #9FCAD9;
+	--sg-road: #E5CB8E;
+	--sg-graticule: #6F989C;
+	--sg-tag: #D9E2E7;
+	--sg-tag-soft: #F5FAFC;
+	--sg-tag-edge: #B7C8CE;
+	--sg-active: #9FD8CD;
+	--sg-attachment: #B9C8CF;
+	--sg-unresolved: #839A99;
+	--sg-text: #F4EBD8;
+	--sg-muted: #B2C4BE;
+	--sg-danger: #F49D90;
+	--sg-coast: #D9BB7C;
+	--sg-land-1: #C38B37;
+	--sg-land-2: #477D64;
+	--sg-land-3: #A56546;
+	--sg-land-4: #567D85;
+ --sg-land-5: #B09653;
+	--sg-land-6: #956369;
+	--sg-line: #35575D;
 	/* Compatibility aliases for earlier component rules. */
 	--sg-cyan: var(--sg-road);
 	--sg-cyan-soft: var(--sg-city);
@@ -1870,17 +1870,17 @@
 }
 
 .theme-light .spherical-graph-view {
-	--sg-void: #07131f;
-	--sg-panel: #0b1b28;
-	--sg-panel-raised: #102332;
-	--sg-muted: #a9b5b7;
+	--sg-void: #081D21;
+	--sg-panel: #10282D;
+	--sg-panel-raised: #17343A;
+	--sg-muted: #B2C4BE;
 }
 
 .spherical-graph-toolbar {
 	gap: 10px;
 	padding: 9px 12px;
 	border-bottom-color: rgba(129, 150, 159, 0.32);
-	background: #0a1925;
+	background: #10282D;
 	box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2);
 	color: var(--sg-text);
 	font-family: var(--font-interface), "Segoe UI", sans-serif;
@@ -1928,7 +1928,7 @@
 	padding: 14px;
 	border-color: rgba(129, 150, 159, 0.5);
 	border-radius: 5px;
-	background: #0b1b28;
+	background: #10282D;
 	box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
 	backdrop-filter: none;
 }
@@ -1951,13 +1951,13 @@
 .spherical-graph-filter-toggle {
 	border-color: rgba(129, 150, 159, 0.38);
 	border-radius: 3px;
-	background: #102332;
+	background: #17343A;
 	color: var(--sg-muted);
 }
 
 .spherical-graph-filter-toggle:hover {
 	border-color: rgba(212, 181, 114, 0.7);
-	background: #172e3d;
+	background: #21454B;
 	color: var(--sg-text);
 }
 
@@ -1999,7 +1999,7 @@
 .spherical-graph-search-input:hover,
 .spherical-graph-search-input:focus-visible {
 	border-color: var(--sg-coast);
-	background: #172e3d;
+	background: #21454B;
 	box-shadow: 0 0 0 2px rgba(212, 181, 114, 0.14);
 	color: var(--sg-text);
 }
@@ -2024,7 +2024,7 @@
 .spherical-graph-search-results {
 	border-color: rgba(129, 150, 159, 0.48);
 	border-radius: 4px;
-	background: #0b1b28;
+	background: #10282D;
 	box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
 	backdrop-filter: none;
 }
@@ -2037,7 +2037,7 @@
 
 .spherical-graph-search-result:hover,
 .spherical-graph-search-result[aria-selected="true"] {
-	background: #172e3d;
+	background: #21454B;
 	color: var(--sg-text);
 }
 
@@ -2061,7 +2061,7 @@
 	font-size: 11px;
 	font-weight: 560;
 	letter-spacing: 0;
-	text-shadow: 0 1px 2px #07131f;
+	text-shadow: 0 1px 2px #081D21;
 }
 
 .spherical-graph-label[data-selected="true"],
@@ -2106,7 +2106,7 @@
 	color: var(--sg-tag-soft);
 	font-family: var(--font-interface), "Segoe UI", sans-serif;
 	font-weight: 550;
-	text-shadow: 0 1px 2px #07131f;
+	text-shadow: 0 1px 2px #081D21;
 }
 
 .spherical-graph-tag-label[data-connected="true"],
@@ -2126,7 +2126,7 @@
 .spherical-graph-label[data-route-role="destination"] {
 	background: rgba(48, 42, 25, 0.92);
 	color: #f8dfab;
-	text-shadow: 0 1px 2px #07131f;
+	text-shadow: 0 1px 2px #081D21;
 }
 
 .spherical-graph-inspector {
@@ -2152,7 +2152,7 @@
 .spherical-graph-inspector-header:hover,
 .spherical-graph-inspector-link:hover,
 .spherical-graph-inspector-link:focus-visible {
-	background: #172e3d;
+	background: #21454B;
 	box-shadow: none;
 }
 
@@ -2168,7 +2168,7 @@
 
 .spherical-graph-status-rail {
 	border-top-color: rgba(129, 150, 159, 0.3);
-	background: #0a1925;
+	background: #10282D;
 	box-shadow: none;
 	color: var(--sg-muted);
 	font-family: var(--font-interface), "Segoe UI", sans-serif;
@@ -2225,7 +2225,7 @@
 .spherical-graph-renew-modal {
 	border-color: rgba(129, 150, 159, 0.5);
 	border-radius: 4px;
-	background: #0b1b28;
+	background: #10282D;
 	box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
 	color: var(--sg-text);
 	font-family: var(--font-interface), "Segoe UI", sans-serif;
@@ -2234,22 +2234,22 @@
 .spherical-graph-search-result[data-active="true"],
 .spherical-graph-search-result[aria-selected="true"] {
 	border-color: rgba(212, 181, 114, 0.6);
-	background: #172e3d;
+	background: #21454B;
 	color: var(--sg-text);
 }
 
 .modal.spherical-graph-renew-dialog {
-	--sg-panel: #0b1b28;
-	--sg-panel-raised: #102332;
+	--sg-panel: #10282D;
+	--sg-panel-raised: #17343A;
 	--sg-cyan: #d4b572;
-	--sg-cyan-soft: #edf0e8;
+	--sg-cyan-soft: #F4EBD8;
 	--sg-cyan-dim: #516675;
 	--sg-magenta: #ff6b57;
-	--sg-text: #edf0e8;
-	--sg-muted: #9aa9ad;
+	--sg-text: #F4EBD8;
+	--sg-muted: #B2C4BE;
 	border-color: rgba(129, 150, 159, 0.5);
 	border-radius: 4px;
-	background: #0b1b28;
+	background: #10282D;
 	box-shadow: 0 18px 64px rgba(0, 0, 0, 0.55);
 }
 
@@ -2611,3 +2611,302 @@
 	white-space: nowrap;
 	text-shadow: 0 1px 2px #33291f, 0 0 4px #33291f;
 }
+
+/* Živá kartografie — approved JSON tokens, scoped to the plugin view. */
+.spherical-graph-view,
+.theme-light .spherical-graph-view {
+	--sg-void: #081D21;
+	--sg-panel: #10282D;
+	--sg-panel-raised: #17343A;
+	--sg-panel-hover: #21454B;
+	--sg-city: #F6DEAA;
+	--sg-city-neighbor: #FFF0C9;
+	--sg-city-directory-peer: #A8CBB3;
+	--sg-selection: #FF866A;
+	--sg-hover: #FFF4D6;
+	--sg-route: #F3C66B;
+	--sg-route-start: #A7D9B7;
+	--sg-route-end: #9FCAD9;
+	--sg-road: #E5CB8E;
+	--sg-road-selected: #F5CE76;
+	--sg-graticule: #6F989C;
+	--sg-tag: #D9E2E7;
+	--sg-tag-soft: #F5FAFC;
+	--sg-tag-edge: #B7C8CE;
+	--sg-active: #9FD8CD;
+	--sg-attachment: #B9C8CF;
+	--sg-unresolved: #839A99;
+	--sg-text: #F4EBD8;
+	--sg-muted: #B2C4BE;
+	--sg-secondary: #BBC9C5;
+	--sg-danger: #F49D90;
+	--sg-coast: #D9BB7C;
+	--sg-ocean: #10343E;
+	--sg-line: #35575D;
+	--sg-focus: #A4DED2;
+	--sg-primary: #D9AE69;
+	--sg-on-primary: #152B2E;
+	--sg-line-strong: #56777C;
+	--sg-land-1: #C38B37;
+	--sg-land-2: #477D64;
+	--sg-land-3: #A56546;
+	--sg-land-4: #567D85;
+	--sg-land-5: #B09653;
+	--sg-land-6: #956369;
+	--sg-land-7: #B19755;
+	--sg-land-8: #5F855E;
+	--sg-control-height: 36px;
+	--sg-row-height: 32px;
+	--sg-control-radius: 6px;
+	font-size: 13px;
+	line-height: 1.4;
+	background: var(--sg-void);
+}
+
+/* Živá kartografie component skin, retaining the existing mobile safe areas. */
+.spherical-graph-toolbar, .spherical-graph-status-rail {
+	background: var(--sg-panel);
+	border-color: var(--sg-line);
+	box-shadow: none;
+}
+.spherical-graph-toolbar { min-height: 52px; gap: 8px; padding: 8px 12px; font-size: 13px; }
+.spherical-graph-view .spherical-graph-controls-summary,
+.spherical-graph-view button.spherical-graph-toolbar-button,
+.spherical-graph-view select.spherical-graph-surface-select,
+.spherical-graph-view input.spherical-graph-search-input,
+.spherical-graph-view .spherical-graph-search-mode {
+	min-height: var(--sg-control-height);
+	border: 1px solid var(--sg-line);
+	border-radius: 6px;
+	background: var(--sg-panel-raised);
+	color: var(--sg-text);
+	font-family: var(--font-interface), system-ui, sans-serif;
+	font-size: 13px;
+	font-weight: 400;
+	box-shadow: none;
+	transition: background-color 120ms ease, border-color 120ms ease;
+}
+.spherical-graph-view button:hover,
+.spherical-graph-view button.spherical-graph-toolbar-button:hover:not(:disabled),
+.spherical-graph-view select.spherical-graph-surface-select:hover:not(:disabled),
+.spherical-graph-view button.spherical-graph-inspector-link:hover,
+.spherical-graph-search-result:hover {
+	background: var(--sg-panel-hover); border-color: var(--sg-line-strong); box-shadow: none;
+	color: var(--sg-text);
+}
+.spherical-graph-view button.spherical-graph-toolbar-button:active:not(:disabled) {
+	background: #28555b; box-shadow: none; transform: none;
+}
+.spherical-graph-view .spherical-graph-controls-menu[open] .spherical-graph-controls-summary,
+.spherical-graph-view .spherical-graph-controls-summary:hover,
+.spherical-graph-view .spherical-graph-controls-summary:focus-visible {
+	background: var(--sg-panel-hover); border-color: var(--sg-line-strong); box-shadow: none;
+}
+.spherical-graph-view button:focus-visible, .spherical-graph-view input:focus-visible,
+.spherical-graph-view select:focus-visible, .spherical-graph-controls-summary:focus-visible {
+	outline: 2px solid var(--sg-focus); outline-offset: 2px; box-shadow: none;
+}
+.spherical-graph-view button:disabled { color: #6e8584; opacity: 1; background: var(--sg-panel-raised); }
+.spherical-graph-controls-panel, .spherical-graph-search-results {
+	width: min(320px, calc(100cqw - 24px));
+	border: 1px solid var(--sg-line);
+	border-radius: 8px;
+	background: var(--sg-panel);
+	padding: 12px;
+	gap: 16px;
+	box-shadow: 0 12px 32px rgba(0, 12, 16, 0.28);
+	backdrop-filter: none;
+}
+.spherical-graph-search-results { width: 100%; }
+.spherical-graph-controls-panel-title, .spherical-graph-controls-heading, .spherical-graph-inspector-section-label,
+.spherical-graph-inspector-eyebrow, .spherical-graph-inspector-list-label {
+	color: var(--sg-secondary); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none;
+}
+.spherical-graph-filter-toggle {
+	min-height: 36px; padding: 4px 8px; border: 0; background: transparent; color: var(--sg-text); font-size: 13px;
+}
+.spherical-graph-filter-toggle:hover { background: var(--sg-panel-hover); }
+.spherical-graph-filter-indicator {
+	position: relative; width: 30px; height: 18px; flex: 0 0 30px;
+	border: 1px solid var(--sg-line-strong); border-radius: 12px; background: var(--sg-panel-raised);
+}
+.spherical-graph-filter-indicator::after {
+	content: ""; position: absolute; left: 2px; top: 2px; width: 12px; height: 12px;
+	border: 0; border-radius: 50%; background: #92aaa8; transform: none; transition: left 120ms ease;
+}
+.spherical-graph-filter-checkbox:checked + .spherical-graph-filter-indicator { border-color: var(--sg-focus); background: #28555b; }
+.spherical-graph-filter-checkbox:checked + .spherical-graph-filter-indicator::after { left: 14px; background: var(--sg-text); transform: none; }
+.spherical-graph-filter-checkbox:focus-visible + .spherical-graph-filter-indicator { outline: 2px solid var(--sg-focus); outline-offset: 2px; box-shadow: none; }
+.spherical-graph-inspector {
+	width: 288px; max-width: calc(100% - 24px); border: 1px solid var(--sg-line); border-radius: 8px;
+	background: var(--sg-panel); box-shadow: 0 12px 32px rgba(0, 12, 16, 0.28); backdrop-filter: none;
+}
+.spherical-graph-inspector-content { padding: 20px; }
+.spherical-graph-inspector-section { gap: 12px; border-color: var(--sg-line); }
+.spherical-graph-inspector-title { margin: 0; font-size: 18px; line-height: 1.3; font-weight: 500; color: var(--sg-text); overflow-wrap: anywhere; }
+.spherical-graph-inspector-path, .spherical-graph-inspector-meta {
+	font-size: 12px; color: var(--sg-secondary); letter-spacing: 0; text-transform: none;
+}
+.spherical-graph-view button.spherical-graph-inspector-link {
+	min-height: var(--sg-row-height); font: 13px/1.4 var(--font-interface), system-ui, sans-serif;
+}
+.spherical-graph-view button.spherical-graph-inspector-link:hover::before,
+.spherical-graph-view button.spherical-graph-inspector-link:focus-visible::before { box-shadow: none; }
+.spherical-graph-inspector-primary, .spherical-graph-action-refresh {
+	min-height: 36px; border-radius: 6px; border-color: var(--sg-primary); background: var(--sg-primary);
+	color: var(--sg-on-primary); text-align: center; justify-content: center; font-weight: 500;
+}
+.spherical-graph-view .spherical-graph-inspector-primary:hover, .spherical-graph-view .spherical-graph-action-refresh:hover {
+	background: #e8bf7c; color: var(--sg-on-primary); border-color: #e8bf7c;
+}
+.spherical-graph-inspector-primary:active, .spherical-graph-action-refresh:active { background: #c99b54; }
+.spherical-graph-search-result { min-height: 40px; }
+.spherical-graph-search-result[aria-selected="true"] { background: #28555b; }
+.spherical-graph-status-rail { min-height: 32px; font-size: 12px; color: var(--sg-muted); }
+.spherical-graph-stage { background: var(--sg-void); }
+.spherical-graph-label {
+	font-size: 12px; font-weight: 400; border: 0; background: transparent; color: var(--sg-text);
+	text-shadow: 0 1px 2px #08252b, 0 0 2px #08252b; transition: opacity 180ms ease;
+}
+.spherical-graph-label[data-selected="true"], .spherical-graph-label[data-hovered="true"] {
+	border: 1px solid #d3c5a8; border-radius: 5px; background: #f2e7cf; padding: 6px 8px;
+	color: #153239; text-shadow: none; box-shadow: 0 4px 12px rgba(0, 12, 16, 0.20);
+}
+.spherical-graph-label[data-route="true"]:not([data-selected="true"]):not([data-hovered="true"]) { background: var(--sg-panel); color: var(--sg-route); border: 0; }
+.spherical-graph-continent-label {
+	font-family: Georgia, Cambria, serif; font-size: clamp(17px, 1.4cqw, 22px); font-variant: small-caps;
+	font-weight: 500; letter-spacing: 0.12em; color: var(--sg-text); text-shadow: 0 1px 2px #08252b, 0 0 2px #08252b;
+}
+.spherical-graph-country-label { font-size: 13px; color: var(--sg-text); }
+.spherical-graph-tag-label { font-size: 12px; font-weight: 400; background: var(--sg-panel); border-color: var(--sg-tag-edge); color: var(--sg-tag); }
+.spherical-graph-view input[type="range"] { accent-color: #91c8bd; }
+@container (max-width: 900px) { .spherical-graph-inspector { width: 256px; } }
+@container (max-width: 760px) {
+	.spherical-graph-inspector { top: auto; bottom: 12px; right: 12px; left: 12px; width: auto; max-height: 42%; }
+	.spherical-graph-inspector-content { padding: 16px; }
+}
+.spherical-graph-view[data-device="phone"], .spherical-graph-view[data-device="tablet"] {
+	--sg-control-height: 44px; --sg-row-height: 44px;
+}
+.spherical-graph-view[data-device="phone"] .spherical-graph-controls-panel,
+.spherical-graph-view[data-device="tablet"] .spherical-graph-controls-panel {
+	position: absolute; left: auto; right: max(12px, env(safe-area-inset-right));
+	width: min(320px, calc(100cqw - 24px));
+}
+.spherical-graph-view[data-device="tablet"] .spherical-graph-controls-menu { position: static; }
+.spherical-graph-view[data-device="phone"] .spherical-graph-inspector { max-height: 42%; }
+.spherical-graph-view[data-device="phone"] .spherical-graph-filter-toggle,
+.spherical-graph-view[data-device="tablet"] .spherical-graph-filter-toggle,
+.spherical-graph-view[data-device="phone"] .spherical-graph-inspector-link,
+.spherical-graph-view[data-device="tablet"] .spherical-graph-inspector-link { min-height: 44px; }
+.spherical-graph-view[data-device="phone"] input.spherical-graph-search-input,
+.spherical-graph-view[data-device="tablet"] input.spherical-graph-search-input { font-size: 16px; }
+@media (prefers-reduced-motion: reduce) {
+	.spherical-graph-view *, .spherical-graph-view *::after { transition-duration: 0s; }
+}
+
+.spherical-graph-tooltip {
+ max-width: 240px; padding: 6px 8px; border: 1px solid #d3c5a8; border-radius: 5px;
+ background: #f2e7cf; color: #153239; font: 12px/1.35 var(--font-interface), system-ui, sans-serif;
+ box-shadow: 0 4px 12px rgba(0,12,16,0.20); text-shadow: none;
+}
+.spherical-graph-status::before { background: #9ec8ac; }
+.spherical-graph-status[data-tone="pending"]::before { background: #edc478; }
+.spherical-graph-status[data-tone="error"]::before { background: #f49d90; }
+.spherical-graph-status-progress { height: 3px; accent-color: var(--sg-primary); }
+
+/* Match the older link/action selector specificity while using the new roles. */
+.spherical-graph-view button.spherical-graph-inspector-link.spherical-graph-inspector-primary,
+.spherical-graph-view button.spherical-graph-toolbar-button.spherical-graph-action-refresh {
+ min-height: var(--sg-control-height); border-radius: 6px; background: var(--sg-primary); border-color: var(--sg-primary); color: var(--sg-on-primary);
+ font-size: 13px; font-weight: 500;
+}
+.spherical-graph-view button.spherical-graph-inspector-link.spherical-graph-inspector-primary:hover,
+.spherical-graph-view button.spherical-graph-toolbar-button.spherical-graph-action-refresh:hover:not(:disabled) {
+ background: #e8bf7c; border-color: #e8bf7c; color: var(--sg-on-primary);
+}
+.spherical-graph-view button.spherical-graph-inspector-link.spherical-graph-inspector-primary:active,
+.spherical-graph-view button.spherical-graph-toolbar-button.spherical-graph-action-refresh:active:not(:disabled) { background: #c99b54; }
+.spherical-graph-view button.spherical-graph-toolbar-button:disabled {
+ background: var(--sg-panel-raised); border-color: var(--sg-line); color: #6e8584; box-shadow: none; opacity: 1;
+}
+.spherical-graph-view button.spherical-graph-inspector-pin {
+ background: var(--sg-panel-raised); border-color: var(--sg-line); color: var(--sg-secondary);
+}
+
+.spherical-graph-view .spherical-graph-label,
+.spherical-graph-view .spherical-graph-tag-label,
+.spherical-graph-view .spherical-graph-stage::after { animation: none; }
+
+.spherical-graph-view .spherical-graph-action-route[data-route-state] { animation: none; }
+.spherical-graph-label[data-active="true"]::after { content: " · Active"; color: inherit; }
+
+.spherical-graph-view .spherical-graph-filter-toggle { flex-direction: row-reverse; justify-content: space-between; gap: 8px; }
+.spherical-graph-controls-panel .spherical-graph-filter-grid { grid-template-columns: minmax(0, 1fr); }
+
+/* Iteration 3: quieter labels and a spacious inspector keep the map dominant. */
+.spherical-graph-continent-label {
+ font-size: clamp(15px, 1.25cqw, 19px); letter-spacing: .16em; font-weight: 400;
+ text-shadow: 0 1px 3px #08252b, 0 0 3px #08252b;
+}
+.spherical-graph-country-label { font: italic 13px/1.3 Georgia, Cambria, serif; color: #e9ddc4; }
+.spherical-graph-inspector-content { padding: 22px; }
+.spherical-graph-inspector-section { gap: 16px; }
+.spherical-graph-inspector-section + .spherical-graph-inspector-section { margin-top: 20px; padding-top: 20px; }
+.spherical-graph-inspector-list { display: grid; gap: 4px; }
+.spherical-graph-inspector-meta { margin: 8px 0 16px; }
+.spherical-graph-view button.spherical-graph-inspector-link { min-height: max(38px, var(--sg-row-height)); }
+.spherical-graph-view button.spherical-graph-inspector-link.spherical-graph-inspector-primary {
+ display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 12px;
+ border: 1px solid #56777c; border-radius: 6px; background: #17343a;
+ color: var(--sg-text); font-weight: 400; min-height: var(--sg-control-height);
+}
+.spherical-graph-view button.spherical-graph-inspector-link.spherical-graph-inspector-primary:hover {
+ background: #21454b; border-color: #a4ded2; color: var(--sg-text);
+}
+.spherical-graph-view button.spherical-graph-inspector-link.spherical-graph-inspector-primary:active {
+ background: #28555b; color: var(--sg-text);
+}
+.spherical-graph-view button.spherical-graph-inspector-link.spherical-graph-inspector-primary::before {
+ width: 12px; height: 12px; flex: 0 0 12px; border: 1px solid currentColor;
+ border-radius: 2px; background: transparent; transform: none; margin: 0;
+}
+.spherical-graph-view .spherical-graph-inspector-list button.spherical-graph-inspector-link[data-node-id]::before {
+ width: 7px; height: 7px; flex: 0 0 7px; border: 0; border-radius: 50%;
+ background: #f6deaa; transform: none; margin-inline-end: 12px; box-shadow: none;
+}
+
+.spherical-graph-view button.spherical-graph-inspector-link.spherical-graph-inspector-primary::before {
+ content: ""; width: 14px; height: 14px; flex: 0 0 14px; border: 0; border-radius: 0;
+ background: currentColor;
+ -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5'/%3E%3C/svg%3E") center / contain no-repeat;
+ mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+@container (max-width: 760px) { .spherical-graph-inspector-content { padding: 16px; } }
+
+/* Iteration 4: map labels get quiet local ink; inspector reveals details progressively. */
+.spherical-graph-continent-label, .spherical-graph-country-label {
+ padding: 3px 8px; background: radial-gradient(ellipse, rgba(5,25,28,.48), rgba(5,25,28,0) 72%);
+ text-shadow: 0 1px 2px #071e24, 0 0 4px #071e24;
+}
+.spherical-graph-inspector-actions { display:flex; align-items:center; gap:8px; margin: 4px 0 16px; }
+.spherical-graph-view .spherical-graph-inspector-actions button.spherical-graph-inspector-primary { width:auto; flex:1; }
+.spherical-graph-view .spherical-graph-inspector-actions button.spherical-graph-inspector-pin {
+ width:var(--sg-control-height); height:var(--sg-control-height); min-height:var(--sg-control-height);
+ flex:0 0 var(--sg-control-height); display:flex; align-items:center; justify-content:center; padding:8px; border-radius:6px;
+}
+.spherical-graph-inspector-actions .spherical-graph-inspector-pin .spherical-graph-inspector-link-name {
+ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap;
+}
+.spherical-graph-view button.spherical-graph-inspector-more {
+ min-height:var(--sg-control-height); width:100%; border:0; border-radius:6px; background:transparent;
+ color:var(--sg-secondary); box-shadow:none; font:13px/1.4 var(--font-interface),system-ui,sans-serif; text-align:start; padding:4px 8px;
+}
+.spherical-graph-view button.spherical-graph-inspector-more:hover { background:var(--sg-panel-hover);color:var(--sg-text); }
+
+.spherical-graph-view .spherical-graph-inspector-actions button.spherical-graph-inspector-pin::before {
+ content: ""; width:16px; height:16px; flex:0 0 16px; border:0; margin:0; transform:none; background:currentColor;
+ -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 3h6M10 3v6l-4 4v2h12v-2l-4-4V3M12 15v6'/%3E%3C/svg%3E") center/contain no-repeat;
+ mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 3h6M10 3v6l-4 4v2h12v-2l-4-4V3M12 15v6'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+.spherical-graph-view .spherical-graph-inspector-actions button.spherical-graph-inspector-pin[aria-pressed=true] { color:#a58aff;border-color:#a58aff; }

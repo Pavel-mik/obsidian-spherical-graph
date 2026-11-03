@@ -1,698 +1,234 @@
 import {
-	BufferAttribute,
-	BufferGeometry,
-	CircleGeometry,
-	Color,
-	DoubleSide,
-	DynamicDrawUsage,
-	Group,
-	InstancedMesh,
-	LineBasicMaterial,
-	LineSegments,
-	Matrix4,
-	MeshBasicMaterial,
-	Quaternion,
-	RingGeometry,
-	ShaderMaterial,
-	Vector3,
+ Color, DynamicDrawUsage, Group, InstancedBufferAttribute, InstancedMesh,
+ Matrix4, PerspectiveCamera, PlaneGeometry, Quaternion, ShaderMaterial, Sphere, Vector3,
 } from 'three';
-import {
-	NODE_SURFACE_LIFT,
-	SPHERE_RADIUS,
-} from '../constants';
-import {
-	nodeMarkerScale,
-	nodeMarkerScaleForGlobe,
-} from '../geometry/nodeMarkerMetrics';
+import { NODE_SURFACE_LIFT, SPHERE_RADIUS } from '../constants';
+import { nodeMarkerScaleForGlobe } from '../geometry/nodeMarkerMetrics';
 import { AppearanceSettings } from '../settings/settings';
+import { CARTOGRAPHY as T, cityState, pixelsPerWorldUnit, updateLineViewport } from './cartography';
+import { cityMaterial } from './cityMaterial';
+import { surfaceRadius } from './terrainSurface';
 import { isSearchMatch, SEARCH_HIGHLIGHT_COLOR } from './searchHighlight';
-import {
-	DEFAULT_RENDER_FILTERS,
-	isRenderNodeVisible,
-	renderNodeKind,
-	type RenderFilterState,
-} from './renderFilters';
-import {
-	PreparedRenderSnapshot,
-	RenderNode,
-	RenderRouteState,
-	RenderSelectionState,
-	RenderTheme,
-} from './renderTypes';
+import { DEFAULT_RENDER_FILTERS, isRenderNodeVisible, renderNodeKind, type RenderFilterState } from './renderFilters';
+import { PreparedRenderSnapshot, RenderNode, RenderRouteState, RenderSelectionState, RenderTheme } from './renderTypes';
 
-const NODE_DISC_SEGMENTS = 40;
-const NODE_NORMAL = new Vector3(0, 0, 1);
+type CityMesh = InstancedMesh<PlaneGeometry, ShaderMaterial>;
 
 export class NodeLayer {
-	private meshValue: InstancedMesh | undefined;
-	private glowMesh: InstancedMesh | undefined;
-	private highlightMesh: InstancedMesh | undefined;
-	private searchHighlightMesh: InstancedMesh | undefined;
-	private reticle: LineSegments | undefined;
-	private reticleMaterial: LineBasicMaterial | undefined;
-	private snapshot: PreparedRenderSnapshot | undefined;
-	private nodesByInstance: readonly RenderNode[] = [];
-	private appearance: AppearanceSettings;
-	private theme: RenderTheme;
-	private selection: RenderSelectionState = {};
-	private route: RenderRouteState | undefined;
-	private routeNodeIds = new Set<string>();
-	private searchPaths: ReadonlySet<string> = new Set();
-	private filters: RenderFilterState = DEFAULT_RENDER_FILTERS;
-	private readonly matrix = new Matrix4();
-	private readonly position = new Vector3();
-	private readonly scale = new Vector3(1, 1, 1);
-	private readonly rotation = new Quaternion();
-	private readonly color = new Color();
-	private readonly radial = new Vector3();
+ private meshValue: CityMesh | undefined;
+ private glowMesh: CityMesh | undefined;
+ private highlightMesh: CityMesh | undefined;
+ private searchHighlightMesh: CityMesh | undefined;
+ private snapshot: PreparedRenderSnapshot | undefined;
+ private nodesByInstance: readonly RenderNode[] = [];
+ private selection: RenderSelectionState = {};
+ private route: RenderRouteState | undefined;
+ private routeNodeIds = new Set<string>();
+ private searchPaths: ReadonlySet<string> = new Set();
+ private filters: RenderFilterState = DEFAULT_RENDER_FILTERS;
+ private pixelScale = 1;
+ private worldPerPixel = 0.05;
+ private phone = false;
+ private readonly matrix = new Matrix4();
+ private readonly position = new Vector3();
+ private readonly scale = new Vector3();
+ private readonly rotation = new Quaternion();
+ private readonly color = new Color();
+ private readonly normal = new Vector3(0, 0, 1);
+ private pickCamera: PerspectiveCamera | undefined;
+ private readonly viewPosition = new Vector3();
+ private readonly cameraDirection = new Vector3();
+ private cameraDistance = 32;
+ private proxyWorldPerPixel = 0.05;
+ private metrics = '';
+ private transitionPending = false;
+ private transitionStart: number | undefined;
+ private transitionDuration = T.motion.selectionMs;
 
-	constructor(
-		private readonly group: Group,
-		appearance: AppearanceSettings,
-		theme: RenderTheme,
-	) {
-		this.appearance = appearance;
-		this.theme = theme;
-	}
+ constructor(private readonly group: Group, private appearance: AppearanceSettings, private theme: RenderTheme) {}
+ get mesh(): InstancedMesh | undefined { return this.meshValue; }
 
-	get mesh(): InstancedMesh | undefined {
-		return this.meshValue;
-	}
+ setSnapshot(snapshot: PreparedRenderSnapshot): void {
+  this.removeMesh();
+  this.snapshot = snapshot;
+  this.nodesByInstance = [...snapshot.nodes].sort((a, b) => a.index - b.index);
+  this.meshValue = this.makeMesh('spherical-graph-nodes', 'core', 4);
+  this.glowMesh = this.makeMesh('spherical-graph-node-glow', 'halo', 2);
+  this.highlightMesh = this.makeMesh('spherical-graph-node-highlights', 'ring', 5);
+  this.searchHighlightMesh = this.makeMesh('spherical-graph-search-node-highlights', 'ring', 6);
+  this.updateInstances();
+ }
 
-	setSnapshot(snapshot: PreparedRenderSnapshot): void {
-		this.removeMesh();
-		this.snapshot = snapshot;
-		this.nodesByInstance = [...snapshot.nodes].sort(
-			(left, right) => left.index - right.index,
-		);
+ private makeMesh(name: string, mode: 'core' | 'halo' | 'ring', order: number): CityMesh {
+  const capacity = Math.max(1, this.nodesByInstance.length);
+  const geometry = new PlaneGeometry(2, 2);
+  geometry.setAttribute('previousStyle', new InstancedBufferAttribute(new Float32Array(capacity * 4), 4));
+  geometry.setAttribute('cityStyle', new InstancedBufferAttribute(new Float32Array(capacity * 4), 4));
+  const mesh = new InstancedMesh(geometry, cityMaterial(mode), capacity);
+  // Allocate even for an initially empty ring layer, so Three compiles the
+  // instanced-colour shader variant before the first selection or hover.
+  mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+  mesh.instanceColor.setUsage(DynamicDrawUsage);
+  mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+  mesh.boundingSphere = new Sphere(new Vector3(), SPHERE_RADIUS + NODE_SURFACE_LIFT + 2);
+  mesh.name = name; mesh.renderOrder = order; mesh.frustumCulled = false;
+  this.group.add(mesh);
+  return mesh;
+ }
 
-		const geometry = new CircleGeometry(1, NODE_DISC_SEGMENTS);
-		const mesh = new InstancedMesh(
-			geometry,
-			createNodeMaterial(false),
-			Math.max(1, this.nodesByInstance.length),
-		);
-		mesh.name = 'spherical-graph-nodes';
-		mesh.count = this.nodesByInstance.length;
-		mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-		this.meshValue = mesh;
-		this.group.add(mesh);
+ render(camera: PerspectiveCamera, width: number, height: number, phone = false, timestamp = 0, reducedMotion = false): boolean {
+  camera.updateMatrixWorld(); this.pickCamera = camera;
+  this.cameraDistance=camera.position.length();this.cameraDirection.copy(camera.position).normalize();
+  const ppu = pixelsPerWorldUnit(camera, height);
+  const scale = Math.max(0.70, Math.min(1.60, 2 * SPHERE_RADIUS * ppu / T.reference.globeDiameterCssPx));
+  const key = [width, height, ppu.toFixed(4), ...camera.quaternion.toArray().map(v => v.toFixed(4)), phone].join(':');
+  if (this.metrics !== key) {
+   this.metrics = key; this.pixelScale = scale; this.worldPerPixel = 1 / Math.max(ppu, 0.001); this.phone = phone;
+   this.updateInstances();
+  }
+  for (const mesh of this.meshes()) updateLineViewport(mesh.material, width, height);
+  if (this.transitionPending && this.transitionStart === undefined) this.transitionStart = timestamp;
+  const progress = reducedMotion || this.transitionStart === undefined ? 1 : Math.min(1, Math.max(0, (timestamp - this.transitionStart) / this.transitionDuration));
+  const eased = 1 - Math.pow(1 - progress, 3);
+  for (const mesh of [this.meshValue, this.glowMesh]) if (mesh) mesh.material.uniforms.transition!.value = eased;
+  this.transitionPending = progress < 1;
+  if (!this.transitionPending) this.transitionStart = undefined;
+  return this.transitionPending;
+ }
 
-		const glowMesh = new InstancedMesh(
-			new CircleGeometry(1, NODE_DISC_SEGMENTS),
-			createNodeMaterial(true),
-			Math.max(1, this.nodesByInstance.length),
-		);
-		glowMesh.name = 'spherical-graph-node-glow';
-		glowMesh.count = this.nodesByInstance.length;
-		glowMesh.instanceMatrix.setUsage(DynamicDrawUsage);
-		glowMesh.renderOrder = 2;
-		this.glowMesh = glowMesh;
-		this.group.add(glowMesh);
+ updateAppearance(appearance: AppearanceSettings): void { this.appearance = appearance; this.updateInstances(); }
+ updateFilters(filters: RenderFilterState): void { this.filters = { ...filters }; this.updateInstances(); }
+ updateTheme(theme: RenderTheme): void { this.theme = theme; this.updateInstances(); }
+ updateSelection(selection: RenderSelectionState): void {
+  if (selection.selectedNodeId === this.selection.selectedNodeId && selection.activeNodeId === this.selection.activeNodeId && selection.hoveredNodeId === this.selection.hoveredNodeId) return;
+  const hoverOnly = selection.selectedNodeId === this.selection.selectedNodeId && selection.activeNodeId === this.selection.activeNodeId;
+  this.animateChange(() => { this.selection = { ...selection }; }, hoverOnly ? T.motion.hoverMs : T.motion.selectionMs);
+ }
+ updateRoute(route: RenderRouteState | undefined): void {
+  this.route = route === undefined ? undefined : { ...route, nodeIds: [...route.nodeIds], edges: [...route.edges] };
+  this.animateChange(() => { this.routeNodeIds = new Set(route?.nodeIds ?? []); });
+ }
+ updateSearch(paths: ReadonlySet<string>): void { this.animateChange(() => { this.searchPaths = new Set(paths); }); }
+ nodeForInstance(instanceId: number): RenderNode | undefined {
+  const node = this.nodesByInstance[instanceId];
+  return node && isRenderNodeVisible(node, this.filters) ? node : undefined;
+ }
+ positionForNode(nodeId: string, target: Vector3): Vector3 | undefined {
+  const node = this.snapshot?.nodeById.get(nodeId);
+  if (!node || !this.snapshot || !isRenderNodeVisible(node, this.filters)) return undefined;
+  target.fromArray(this.snapshot.positions,node.index*3).normalize();return target.multiplyScalar(surfaceRadius(this.snapshot,this.appearance,[target.x,target.y,target.z],NODE_SURFACE_LIFT));
+ }
 
-		const highlightMesh = new InstancedMesh(
-			new RingGeometry(0.93, 1, NODE_DISC_SEGMENTS),
-			new MeshBasicMaterial({
-				transparent: true,
-				opacity: 0.72,
-				depthTest: true,
-				depthWrite: false,
-				side: DoubleSide,
-				toneMapped: false,
-			}),
-			Math.max(1, this.nodesByInstance.length * 2 + 4),
-		);
-		highlightMesh.name = 'spherical-graph-node-highlights';
-		highlightMesh.count = 0;
-		highlightMesh.renderOrder = 3;
-		this.highlightMesh = highlightMesh;
-		this.group.add(highlightMesh);
+ private animateChange(change: () => void, duration = T.motion.selectionMs): void {
+  const layers = [this.meshValue, this.glowMesh].filter((mesh): mesh is CityMesh => mesh !== undefined);
+  const before = layers.map(mesh => {
+   const target = mesh.geometry.getAttribute('cityStyle').array;
+   const previous = mesh.geometry.getAttribute('previousStyle').array;
+   const mix = Number(mesh.material.uniforms.transition!.value);
+   return Float32Array.from(target, (value, i) => (previous[i] ?? value) * (1 - mix) + value * mix);
+  });
+  change(); this.updateInstances();
+  layers.forEach((mesh,i) => {
+   const previous = mesh.geometry.getAttribute('previousStyle') as InstancedBufferAttribute;
+   previous.array.set(before[i] ?? []); previous.needsUpdate = true;
+   mesh.material.uniforms.transition!.value = 0;
+  });
+  this.transitionPending = layers.length > 0; this.transitionStart = undefined; this.transitionDuration = duration;
+ }
 
-		const searchHighlightMesh = new InstancedMesh(
-			new RingGeometry(0.93, 1, NODE_DISC_SEGMENTS),
-			new MeshBasicMaterial({
-				color: SEARCH_HIGHLIGHT_COLOR,
-				transparent: true,
-				opacity: 0.96,
-				depthTest: true,
-				depthWrite: false,
-				side: DoubleSide,
-				toneMapped: false,
-			}),
-			Math.max(1, this.nodesByInstance.length),
-		);
-		searchHighlightMesh.name = 'spherical-graph-search-node-highlights';
-		searchHighlightMesh.count = 0;
-		searchHighlightMesh.renderOrder = 5;
-		this.searchHighlightMesh = searchHighlightMesh;
-		this.group.add(searchHighlightMesh);
+ private write(mesh: CityMesh, index: number, radiusPx: number, color: string, second = 1, kind = 0, emphasis = 0): void {
+  // Actual proxy geometry stays in world space for ray casting. The shader
+  // expands the same committed centre in CSS pixels, without writing positions.
+  this.scale.setScalar(radiusPx * this.proxyWorldPerPixel);
+  this.matrix.compose(this.position, this.rotation, this.scale);
+  mesh.setMatrixAt(index, this.matrix);
+  mesh.setColorAt(index, this.color.set(color));
+  (mesh.geometry.getAttribute('cityStyle') as InstancedBufferAttribute).setXYZW(index, radiusPx, second, kind, emphasis);
+ }
 
-		const reticleMaterial = new LineBasicMaterial({
-			color: this.theme.nodeSelected,
-			depthTest: true,
-			depthWrite: false,
-			opacity: 0.72,
-			toneMapped: false,
-			transparent: true,
-		});
-		const reticle = new LineSegments(
-			createReticleGeometry(),
-			reticleMaterial,
-		);
-		reticle.name = 'spherical-graph-node-reticle';
-		reticle.renderOrder = 4;
-		reticle.visible = false;
-		this.reticle = reticle;
-		this.reticleMaterial = reticleMaterial;
-		this.group.add(reticle);
-		this.updateInstances();
-	}
+ private updateInstances(): void {
+  const snapshot = this.snapshot, core = this.meshValue, glow = this.glowMesh, rings = this.highlightMesh, searchRings = this.searchHighlightMesh;
+  if (!snapshot || !core || !glow || !rings || !searchRings) return;
+  const selected = snapshot.nodeById.get(this.selection.selectedNodeId ?? '');
+  const neighbors = selected ? snapshot.neighborsByIndex.get(selected.index) : undefined;
+  const region = selected ? snapshot.directoryRegionByNodeId.get(selected.id) : undefined;
+  let ringCount = 0, searchCount = 0;
+  for (let i = 0; i < this.nodesByInstance.length; i++) {
+   const node = this.nodesByInstance[i];
+   if (!node) continue;
+   const visible = isRenderNodeVisible(node, this.filters);
+   this.position.fromArray(snapshot.positions,node.index*3).normalize();this.position.multiplyScalar(surfaceRadius(snapshot,this.appearance,[this.position.x,this.position.y,this.position.z],NODE_SURFACE_LIFT));
+   if (this.pickCamera) {
+    this.rotation.copy(this.pickCamera.quaternion);
+    const depth = -this.viewPosition.copy(this.position).applyMatrix4(this.pickCamera.matrixWorldInverse).z;
+    this.proxyWorldPerPixel = this.worldPerPixel * Math.max(0.01, depth) / this.pickCamera.position.length();
+   } else {
+    this.rotation.setFromUnitVectors(this.normal, this.position.clone().normalize());
+    this.proxyWorldPerPixel = this.worldPerPixel;
+   }
+   const flags = {
+    selected: node.id === this.selection.selectedNodeId,
+    routeStart: node.id === this.route?.startNodeId, routeEnd: node.id === this.route?.endNodeId,
+    route: this.routeNodeIds.has(node.id), search: isSearchMatch(node, this.searchPaths),
+    active: node.id === this.selection.activeNodeId, neighbor: neighbors?.has(node.index) ?? false,
+    directoryPeer: region !== undefined && snapshot.directoryRegionByNodeId.get(node.id) === region,
+   };
+   const hovered = node.id === this.selection.hoveredNodeId;
+   const state = cityState(flags), style = T.node.states[state];
+   const hover = T.node.states.hovered;
+   const degree = this.appearance.sizeNodesByDegree ? Math.min(T.node.degreeGainCap, T.node.degreeGain * Math.log2(Math.max(0, node.degree) + 1)) : 0;
+   const size = T.node.baseDiameterPx * (1 + degree) * this.pixelScale * 100 / this.appearance.globeSize;
+   const diameter = visible ? Math.max(style.minDiameterPx, hovered ? hover.minDiameterPx : 0, size * Math.max(style.coreScale, hovered ? hover.coreScale : 0)) : 0;
+   const kind = renderNodeKind(node), kindIndex = kind === 'attachment' ? 1 : kind === 'unresolved' ? 2 : 0;
+   const base = kindIndex === 1 ? this.theme.nodeAttachment : kindIndex === 2 ? this.theme.nodeUnresolved : this.theme.node;
+   const color = flags.selected ? this.theme.nodeSelected : flags.routeStart ? this.theme.nodeRouteStart : flags.routeEnd ? this.theme.nodeRouteEnd
+    : flags.route ? this.theme.nodeRoute : flags.search ? SEARCH_HIGHLIGHT_COLOR : flags.active ? this.theme.nodeActive
+    : flags.neighbor ? this.theme.nodeNeighbor : flags.directoryPeer ? this.theme.nodeDirectoryPeer : base;
+   let limbOpacity=1;
+   if(this.pickCamera&&!hovered&&(state==='normal'||state==='directoryPeer')){
+    const facing=this.position.dot(this.cameraDirection)/(SPHERE_RADIUS+NODE_SURFACE_LIFT);
+    const t=Math.max(0,Math.min(1,(facing-SPHERE_RADIUS/this.cameraDistance-.015)/.25));
+    limbOpacity=.55+.45*t*t*(3-2*t);
+   }
+   this.write(core, i, diameter / 2, color, style.coreOpacity*limbOpacity, kindIndex, flags.selected ? 1 : 0);
+   const intensity = Math.max(style.haloPeakOpacity, hovered ? hover.haloPeakOpacity : 0);
+   const haloPx = Math.max(style.haloDiameterPx, hovered ? hover.haloDiameterPx : 0) * this.pixelScale;
+   const normalHalo = state === 'normal' || state === 'directoryPeer' || state === 'neighbor';
+   this.write(glow, i, visible && kindIndex === 0 ? haloPx / 2 : 0,
+    flags.search && state === 'search' ? T.colors.node.searchHalo : color,
+    this.phone ? normalHalo ? 0 : intensity * T.performance.phoneHighlightHaloOpacityMultiplier : intensity*limbOpacity);
+   const semanticRing = style.ringWidthPx > 0 && state !== 'search';
+   const ringWidth = semanticRing ? style.ringWidthPx : hovered ? hover.ringWidthPx : 0;
+   const gap = 'ringGapPx' in style ? style.ringGapPx : hover.ringGapPx;
+   let outer = diameter / 2;
+   if (visible && ringWidth > 0) {
+    outer += gap + ringWidth + (hovered ? 0.5 : 0);
+    this.write(rings, ringCount++, outer, semanticRing ? color : T.colors.node.hover, ringWidth,0,flags.selected?1:0);
+   }
+   if (visible && flags.search) {
+    outer += 2 + T.node.states.search.ringWidthPx;
+    this.write(searchRings, searchCount++, outer, SEARCH_HIGHLIGHT_COLOR, T.node.states.search.ringWidthPx, 1);
+   }
+  }
+  core.count = glow.count = this.nodesByInstance.length; rings.count = ringCount; searchRings.count = searchCount;
+  for (const mesh of this.meshes()) {
+   mesh.instanceMatrix.needsUpdate = true;
+   if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+   (mesh.geometry.getAttribute('cityStyle') as InstancedBufferAttribute).needsUpdate = true;
 
-	updateAppearance(appearance: AppearanceSettings): void {
-		this.appearance = appearance;
-		this.updateInstances();
-	}
+  }
+ }
 
-	updateFilters(filters: RenderFilterState): void {
-		this.filters = { ...filters };
-		this.updateInstances();
-	}
-
-	updateTheme(theme: RenderTheme): void {
-		this.theme = theme;
-		this.updateInstances();
-	}
-
-	updateSelection(selection: RenderSelectionState): void {
-		this.selection = { ...selection };
-		this.updateInstances();
-	}
-
-	updateRoute(route: RenderRouteState | undefined): void {
-		this.route =
-			route === undefined
-				? undefined
-				: {
-						...route,
-						nodeIds: [...route.nodeIds],
-						edges: [...route.edges],
-					};
-		this.routeNodeIds = new Set(route?.nodeIds ?? []);
-		this.updateInstances();
-	}
-
-	updateSearch(paths: ReadonlySet<string>): void {
-		this.searchPaths = new Set(paths);
-		this.updateInstances();
-	}
-
-	nodeForInstance(instanceId: number): RenderNode | undefined {
-		const node = this.nodesByInstance[instanceId];
-		return node !== undefined && isRenderNodeVisible(node, this.filters)
-			? node
-			: undefined;
-	}
-
-	positionForNode(nodeId: string, target: Vector3): Vector3 | undefined {
-		const snapshot = this.snapshot;
-		const node = snapshot?.nodeById.get(nodeId);
-		if (snapshot === undefined || node === undefined) {
-			return undefined;
-		}
-		if (!isRenderNodeVisible(node, this.filters)) {
-			return undefined;
-		}
-		const offset = node.index * 3;
-		const x = snapshot.positions[offset];
-		const y = snapshot.positions[offset + 1];
-		const z = snapshot.positions[offset + 2];
-		if (x === undefined || y === undefined || z === undefined) {
-			return undefined;
-		}
-		return target
-			.set(x, y, z)
-			.multiplyScalar(SPHERE_RADIUS + NODE_SURFACE_LIFT);
-	}
-
-	dispose(): void {
-		this.removeMesh();
-		this.snapshot = undefined;
-		this.nodesByInstance = [];
-		this.route = undefined;
-		this.routeNodeIds.clear();
-		this.searchPaths = new Set();
-	}
-
-	private updateInstances(): void {
-		const mesh = this.meshValue;
-		const glowMesh = this.glowMesh;
-		const snapshot = this.snapshot;
-		if (
-			mesh === undefined ||
-			glowMesh === undefined ||
-			snapshot === undefined
-		) {
-			return;
-		}
-
-		const selectedNode = this.selection.selectedNodeId
-			? snapshot.nodeById.get(this.selection.selectedNodeId)
-			: undefined;
-		const selectedNeighbors =
-			selectedNode === undefined
-				? undefined
-				: snapshot.neighborsByIndex.get(selectedNode.index);
-		const selectedRegion =
-			selectedNode === undefined
-				? undefined
-				: snapshot.directoryRegionByNodeId.get(selectedNode.id);
-		const directoryPeers =
-			selectedRegion === undefined
-				? undefined
-				: new Set(
-						snapshot.nodeIdsByDirectoryRegion.get(selectedRegion) ?? [],
-					);
-
-		for (
-			let instanceId = 0;
-			instanceId < this.nodesByInstance.length;
-			instanceId += 1
-		) {
-			const node = this.nodesByInstance[instanceId];
-			if (node === undefined) {
-				continue;
-			}
-			const offset = node.index * 3;
-			const x = snapshot.positions[offset];
-			const y = snapshot.positions[offset + 1];
-			const z = snapshot.positions[offset + 2];
-			if (x === undefined || y === undefined || z === undefined) {
-				continue;
-			}
-			if (!isRenderNodeVisible(node, this.filters)) {
-				this.matrix.makeScale(0, 0, 0);
-				mesh.setMatrixAt(instanceId, this.matrix);
-				glowMesh.setMatrixAt(instanceId, this.matrix);
-				continue;
-			}
-			this.radial.set(x, y, z).normalize();
-			this.position
-				.copy(this.radial)
-				.multiplyScalar(SPHERE_RADIUS + NODE_SURFACE_LIFT);
-			this.rotation.setFromUnitVectors(NODE_NORMAL, this.radial);
-
-			const isSelected = node.id === this.selection.selectedNodeId;
-			const isHovered = node.id === this.selection.hoveredNodeId;
-			const isActive = node.id === this.selection.activeNodeId;
-			const isRoute = this.routeNodeIds.has(node.id);
-			const isRouteStart = node.id === this.route?.startNodeId;
-			const isRouteEnd = node.id === this.route?.endNodeId;
-			const isNeighbor = selectedNeighbors?.has(node.index) ?? false;
-			const isDirectoryPeer =
-				node.id !== this.selection.selectedNodeId &&
-				(directoryPeers?.has(node.id) ?? false);
-			let scale = this.baseScaleForNode(node);
-			if (isSelected) {
-				scale *= 1.25;
-			} else if (isHovered) {
-				scale *= 1.45;
-			} else if (isRoute) {
-				scale *= 1.14;
-			} else if (isActive) {
-				scale *= 1.25;
-			} else if (isNeighbor) {
-				scale *= 1.12;
-			} else if (isDirectoryPeer) {
-				scale *= 1.06;
-			}
-
-			this.scale.setScalar(scale);
-			this.matrix.compose(this.position, this.rotation, this.scale);
-			mesh.setMatrixAt(instanceId, this.matrix);
-
-			const baseColor =
-				renderNodeKind(node) === 'attachment'
-					? this.theme.nodeAttachment
-					: renderNodeKind(node) === 'unresolved'
-						? this.theme.nodeUnresolved
-						: this.theme.node;
-			const color = isSelected
-				? this.theme.nodeSelected
-				: isHovered
-					? this.theme.nodeHovered
-					: isRouteStart
-						? this.theme.nodeRouteStart
-						: isRouteEnd
-							? this.theme.nodeRouteEnd
-					: isRoute
-						? this.theme.nodeRoute
-						: isSearchMatch(node, this.searchPaths)
-							? SEARCH_HIGHLIGHT_COLOR
-						: isActive
-							? this.theme.nodeActive
-							: isNeighbor
-								? this.theme.nodeNeighbor
-								: isDirectoryPeer
-									? this.theme.nodeDirectoryPeer
-								: baseColor;
-			mesh.setColorAt(instanceId, this.color.set(color));
-
-			this.scale.setScalar(
-				scale * (isSelected || isHovered || isRoute ? 1.75 : 1.95),
-			);
-			this.matrix.compose(this.position, this.rotation, this.scale);
-			glowMesh.setMatrixAt(instanceId, this.matrix);
-			glowMesh.setColorAt(instanceId, this.color.set(color));
-		}
-
-		updateInstancedMesh(mesh);
-		updateInstancedMesh(glowMesh);
-		this.updateHighlights(snapshot);
-	}
-
-	private updateHighlights(snapshot: PreparedRenderSnapshot): void {
-		const mesh = this.highlightMesh;
-		if (mesh === undefined) {
-			return;
-		}
-		let instanceId = 0;
-		let searchInstanceId = 0;
-		const addRing = (
-			nodeId: string | undefined,
-			scaleMultiplier: number,
-			color: string,
-			search = false,
-		): void => {
-			const target = search ? this.searchHighlightMesh : mesh;
-			const index = search ? searchInstanceId : instanceId;
-			if (nodeId === undefined || !target || index >= target.instanceMatrix.count) {
-				return;
-			}
-			const node = snapshot.nodeById.get(nodeId);
-			if (
-				node === undefined ||
-				!isRenderNodeVisible(node, this.filters)
-			) {
-				return;
-			}
-			const offset = node.index * 3;
-			const x = snapshot.positions[offset];
-			const y = snapshot.positions[offset + 1];
-			const z = snapshot.positions[offset + 2];
-			if (x === undefined || y === undefined || z === undefined) {
-				return;
-			}
-			this.radial.set(x, y, z).normalize();
-			const baseScale = this.baseScaleForNode(node);
-			this.position
-				.copy(this.radial)
-				.multiplyScalar(
-					SPHERE_RADIUS +
-						NODE_SURFACE_LIFT +
-						baseScale * 0.12,
-				);
-			this.rotation.setFromUnitVectors(NODE_NORMAL, this.radial);
-			this.scale.setScalar(baseScale * scaleMultiplier);
-			this.matrix.compose(this.position, this.rotation, this.scale);
-			target.setMatrixAt(index, this.matrix);
-			if (search) searchInstanceId += 1;
-			else {
-				target.setColorAt(index, this.color.set(color));
-				instanceId += 1;
-			}
-		};
-
-		for (const nodeId of this.route?.nodeIds ?? []) {
-			if (nodeId === this.route?.startNodeId) {
-				addRing(nodeId, 1.85, this.theme.nodeRouteStart);
-				addRing(nodeId, 2.25, this.theme.nodeRouteStart);
-			} else if (nodeId === this.route?.endNodeId) {
-				addRing(nodeId, 1.85, this.theme.nodeRouteEnd);
-				addRing(nodeId, 2.25, this.theme.nodeRouteEnd);
-			} else {
-				addRing(nodeId, 1.65, this.theme.nodeRoute);
-			}
-		}
-		const selectedRegion =
-			this.selection.selectedNodeId === undefined
-				? undefined
-				: snapshot.directoryRegionByNodeId.get(
-						this.selection.selectedNodeId,
-					);
-		for (
-			const nodeId of
-				(selectedRegion === undefined
-					? []
-					: snapshot.nodeIdsByDirectoryRegion.get(selectedRegion)) ?? []
-		) {
-			if (nodeId !== this.selection.selectedNodeId) {
-				addRing(nodeId, 1.55, this.theme.nodeDirectoryPeer);
-			}
-		}
-		if (
-			this.selection.activeNodeId !== this.selection.selectedNodeId &&
-			!this.routeNodeIds.has(this.selection.activeNodeId ?? '')
-		) {
-			addRing(
-				this.selection.activeNodeId,
-				2.2,
-				this.theme.nodeActive,
-			);
-		}
-		for (const node of snapshot.nodes) {
-			if (isSearchMatch(node, this.searchPaths)) {
-				addRing(node.id, 2.55, SEARCH_HIGHLIGHT_COLOR, true);
-			}
-		}
-		mesh.count = instanceId;
-		updateInstancedMesh(mesh);
-		if (this.searchHighlightMesh) {
-			this.searchHighlightMesh.count = searchInstanceId;
-			updateInstancedMesh(this.searchHighlightMesh);
-		}
-		this.updateReticle(snapshot);
-	}
-
-	private updateReticle(snapshot: PreparedRenderSnapshot): void {
-		const reticle = this.reticle;
-		const material = this.reticleMaterial;
-		const selectedNodeId = this.selection.selectedNodeId;
-		if (
-			reticle === undefined ||
-			material === undefined ||
-			selectedNodeId === undefined
-		) {
-			if (reticle !== undefined) {
-				reticle.visible = false;
-			}
-			return;
-		}
-		const node = snapshot.nodeById.get(selectedNodeId);
-		if (
-			node === undefined ||
-			!isRenderNodeVisible(node, this.filters)
-		) {
-			reticle.visible = false;
-			return;
-		}
-		const offset = node.index * 3;
-		const x = snapshot.positions[offset];
-		const y = snapshot.positions[offset + 1];
-		const z = snapshot.positions[offset + 2];
-		if (x === undefined || y === undefined || z === undefined) {
-			reticle.visible = false;
-			return;
-		}
-
-		const selectedScale = this.baseScaleForNode(node) * 1.25;
-		this.radial.set(x, y, z).normalize();
-		reticle.position
-			.copy(this.radial)
-			.multiplyScalar(
-				SPHERE_RADIUS +
-					NODE_SURFACE_LIFT +
-					selectedScale * 0.16,
-			);
-		reticle.quaternion.setFromUnitVectors(NODE_NORMAL, this.radial);
-		reticle.scale.setScalar(selectedScale * 1.6);
-		material.color.set(this.theme.nodeSelected);
-		reticle.visible = true;
-	}
-
-	private baseScaleForNode(node: RenderNode): number {
-		return nodeMarkerScale(
-			this.appearance.globeSize,
-			node.degree,
-			this.appearance.sizeNodesByDegree,
-		);
-	}
-
-	private removeMesh(): void {
-		disposeInstancedMesh(this.group, this.meshValue);
-		disposeInstancedMesh(this.group, this.glowMesh);
-		disposeInstancedMesh(this.group, this.highlightMesh);
-		disposeInstancedMesh(this.group, this.searchHighlightMesh);
-		this.meshValue = undefined;
-		this.glowMesh = undefined;
-		this.highlightMesh = undefined;
-		this.searchHighlightMesh = undefined;
-		if (this.reticle !== undefined) {
-			this.group.remove(this.reticle);
-			this.reticle.geometry.dispose();
-			this.reticleMaterial?.dispose();
-			this.reticle = undefined;
-			this.reticleMaterial = undefined;
-		}
-	}
+ private meshes(): CityMesh[] {
+  return [this.meshValue, this.glowMesh, this.highlightMesh, this.searchHighlightMesh].filter((mesh): mesh is CityMesh => mesh !== undefined);
+ }
+ private removeMesh(): void {
+  for (const mesh of this.meshes()) { this.group.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
+  this.meshValue = this.glowMesh = this.highlightMesh = this.searchHighlightMesh = undefined;
+ }
+ dispose(): void {
+  this.removeMesh(); this.snapshot = undefined; this.nodesByInstance = [];
+  this.route = undefined; this.routeNodeIds.clear(); this.searchPaths = new Set();
+ }
 }
-
 export { nodeMarkerScaleForGlobe };
-
-function createNodeMaterial(glow: boolean): ShaderMaterial {
-	return new ShaderMaterial({
-		depthTest: true,
-		depthWrite: !glow,
-		side: DoubleSide,
-		toneMapped: false,
-		transparent: glow,
-		vertexShader: `
-			varying vec3 vInstanceColor;
-			varying float vFacing;
-			varying vec2 vNodeUv;
-
-			void main() {
-				vec4 instancePosition = instanceMatrix * vec4(position, 1.0);
-				vec4 worldPosition = modelMatrix * instancePosition;
-				vec3 instanceNormal = normalize(mat3(instanceMatrix) * normal);
-				vec3 worldNormal = normalize(mat3(modelMatrix) * instanceNormal);
-				vec3 viewDirection = normalize(cameraPosition - worldPosition.xyz);
-				vFacing = abs(dot(worldNormal, viewDirection));
-				vInstanceColor = instanceColor;
-				vNodeUv = uv;
-				gl_Position = projectionMatrix * viewMatrix * worldPosition;
-			}
-		`,
-		fragmentShader: glow
-			? `
-				varying vec3 vInstanceColor;
-				varying float vFacing;
-				varying vec2 vNodeUv;
-
-				void main() {
-					float distanceFromCenter = length(vNodeUv - vec2(0.5)) * 2.0;
-					float radialFade = 1.0 - smoothstep(0.12, 1.0, distanceFromCenter);
-					float limbFade = mix(
-						0.08,
-						1.0,
-						smoothstep(0.04, 0.78, vFacing)
-					);
-					gl_FragColor = vec4(
-						vInstanceColor,
-						radialFade * limbFade * 0.055
-					);
-				}
-			`
-			: `
-				varying vec3 vInstanceColor;
-				varying float vFacing;
-
-				void main() {
-					float limbContrast = mix(
-						0.28,
-						1.0,
-						smoothstep(0.06, 0.82, vFacing)
-					);
-					gl_FragColor = vec4(
-						vInstanceColor * limbContrast,
-						1.0
-					);
-				}
-			`,
-	});
-}
-
-function updateInstancedMesh(mesh: InstancedMesh): void {
-	mesh.instanceMatrix.needsUpdate = true;
-	if (mesh.instanceColor !== null) {
-		mesh.instanceColor.needsUpdate = true;
-	}
-	mesh.computeBoundingSphere();
-}
-
-function disposeInstancedMesh(
-	group: Group,
-	mesh: InstancedMesh | undefined,
-): void {
-	if (mesh === undefined) {
-		return;
-	}
-	group.remove(mesh);
-	mesh.geometry.dispose();
-	const material = mesh.material;
-	if (Array.isArray(material)) {
-		for (const item of material) {
-			item.dispose();
-		}
-	} else {
-		material.dispose();
-	}
-}
-
-function createReticleGeometry(): BufferGeometry {
-	const half = 1;
-	const corner = 0.42;
-	const positions = new Float32Array([
-		-half,
-		-half,
-		0,
-		-half + corner,
-		-half,
-		0,
-		-half,
-		-half,
-		0,
-		-half,
-		-half + corner,
-		0,
-		half,
-		-half,
-		0,
-		half - corner,
-		-half,
-		0,
-		half,
-		-half,
-		0,
-		half,
-		-half + corner,
-		0,
-		-half,
-		half,
-		0,
-		-half + corner,
-		half,
-		0,
-		-half,
-		half,
-		0,
-		-half,
-		half - corner,
-		0,
-		half,
-		half,
-		0,
-		half - corner,
-		half,
-		0,
-		half,
-		half,
-		0,
-		half,
-		half - corner,
-		0,
-	]);
-	const geometry = new BufferGeometry();
-	geometry.setAttribute('position', new BufferAttribute(positions, 3));
-	geometry.computeBoundingSphere();
-	return geometry;
-}
