@@ -1,54 +1,39 @@
 # Continental atlas design
 
-The visual source of truth is
-[`continent-atlas-concept.png`](./continent-atlas-concept.png), generated at
-1536 × 1024. The implementation keeps every interactive control and label as
-native DOM/Three.js content; the concept image is not shipped as application
-UI.
+The current appearance is the sculpted **Živá kartografie** direction:
+[full specification](design/2026-11-01-concepts/ZIVA_KARTOGRAFIE_SPEC.md),
+[shared tokens](design/2026-11-01-concepts/ziva-kartografie.tokens.json), and
+[visual reference](design/2026-11-01-concepts/03-ziva-kartografie.png).
+The original continent-atlas-concept.png remains a historical design reference.
+All interactive UI is native DOM/Three.js content.
 
 ## Product composition
 
-- A full-height atlas canvas with the globe centered slightly left.
-- A compact top rail containing `Find a note…` and the `Map` menu.
-- A collapsible `Selection details` rail on the right.
-- A quiet status rail at the bottom.
-- The globe is the focal point: matte ocean, disjoint continents, visible sea
-  gaps, small islands, restrained graticule, city-like note markers, surface
-  roads, and tag satellites on an outer orbit.
+- Full-height atlas canvas with room reserved for the open inspector.
+- Compact search toolbar and Map controls menu.
+- Collapsible selection details and a quiet status rail.
+- True spherical geography, separate continents and sea gaps, small note
+  cities, geodesic roads, countries and tag satellites on the existing orbit.
 
-## Design tokens
+## Appearance
 
-| Role | Token | Value |
-| --- | --- | --- |
-| App background | `--sg-void` | `#07131f` |
-| Ocean | `--sg-ocean` | `#0c2638` |
-| Raised surface | `--sg-panel-raised` | `#102332` |
-| Primary text | `--sg-text` | `#edf0e8` |
-| Muted text | `--sg-muted` | `#9aa9ad` |
-| Border / graticule | `--sg-line` | `#516675` |
-| City marker | `--sg-city` | `#f1e4c4` |
-| Selection | `--sg-selection` | `#ff6b57` |
-| Route | `--sg-route` | `#f1bb55` |
-| Tags | `--sg-tag` | `#d49a43` |
-| Coastline | `--sg-coast` | `#d4b572` |
-| Land 1 | `--sg-land-1` | `#66725a` |
-| Land 2 | `--sg-land-2` | `#a07a49` |
-| Land 3 | `--sg-land-3` | `#8d5947` |
-| Land 4 | `--sg-land-4` | `#536776` |
-| Land 5 | `--sg-land-5` | `#77756c` |
-| Land 6 | `--sg-land-6` | `#667f75` |
+The approved JSON defines the exact colors, CSS-pixel widths, local halo
+intensities, UI spacing, typography and state priorities. The globe has matte
+petrol water and earthy ochre, jade, terracotta, slate, sage and rose land,
+with two additional land families available. Continent color indexes remain
+stable. The relief is procedural optical shading, with no terrain displacement
+or changes to the ownership raster.
 
-No gradients, neon colors, glow effects, holographic treatments, clipped
-corners, or decorative grid overlays are part of this system.
+Ordinary cities use warm ivory, selection coral, routes amber, Search wine,
+and tag satellites silver. Hover retains semantic center colors. Search
+membership remains an independent outer ring; there are at most two state
+rings on a city. Each road draws a single semantic core, ordered route,
+selection, Search, hover, ordinary.
 
-## Typography and chrome
-
-- UI: Obsidian's interface font, 12–14 px, medium weight, normal tracking.
-- Map labels: a restrained serif stack in small caps with wider tracking.
-- Controls: 34 px high, 4 px radius, 1 px low-contrast border.
-- Panels are rails with separators, not nested card stacks.
-- Proper SVG/Lucide icons are supplied by Obsidian's `setIcon` helper where an
-  icon improves recognition.
+Use the native interface font for UI, and restrained serif cartographic
+labels. Controls are 36px high on desktop, 44px on touch, with 6px corners.
+Panels use 8px corners and quiet separators. Local alpha halos are permitted;
+global bloom, neon chrome, decorative grids and continuous pulsing are not.
 
 ## Geography rules
 
@@ -85,6 +70,11 @@ corners, or decorative grid overlays are part of this system.
   deterministic sub-cell boundary displacement. Coastlines gain coves,
   headlands, relief, and an irregular beach band without changing territory
   topology or drawing a beach ring around every city.
+- Legacy snapshots without country ownership may derive a display-only
+  subdivision from real directory paths and frozen city positions. This cached
+  overlay is clipped to the original land and sent to the decorative worker
+  separately. It never changes the saved continent raster, land support, coast,
+  city positions or layout lifecycle. Persisted country rasters take precedence.
 - Mixed surface triangles are clipped at the coast rather than admitted by
   their centroid. This preserves a smooth irregular outline independent of the
   icosphere triangulation.
@@ -103,6 +93,12 @@ select a city or tag → inspect Selection details → optionally run Refresh or
 Renew.`
 
 ## Allowed first-viewport copy
+
+The approved iteration 5 appearance adds radial display-only terrain height.
+Stored city directions on S², continent/country ownership and layout lifecycle
+remain unchanged. Derived physical geometry is documented in specification
+section 29 and the shared TerrainSurface. Node/road/pin/label/satellite anchors
+follow that height; ordinary UI actions never invoke a layout solve.
 
 - `Find a note…`
 - `Map`

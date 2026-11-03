@@ -1,6 +1,9 @@
+import { cityLabelAnchor, LabelPlacement } from './LabelPlacement';
 import { countryLabels } from './countryGeometry';
+import { countryTerritoryForDisplay } from './countryPresentation';
 import { Camera, Group, Vector3 } from 'three';
 import { SPHERE_RADIUS } from '../constants';
+import { surfaceRadius } from './terrainSurface';
 import { AppearanceSettings } from '../settings/settings';
 import {
 	DEFAULT_RENDER_FILTERS,
@@ -34,11 +37,14 @@ export class LabelLayer {
 	private readonly worldPosition = new Vector3();
 	private readonly projectedPosition = new Vector3();
 	private interactionActive = false;
+	private searchPaths: ReadonlySet<string> = new Set();
 
 	constructor(
 		container: HTMLElement,
 		private readonly graphGroup: Group,
 		appearance: AppearanceSettings,
+		private readonly placement = new LabelPlacement(),
+		private readonly terrainOccluded?: (camera:Vector3,point:Vector3)=>boolean,
 	) {
 		this.appearance = appearance;
 		this.root = container.createDiv();
@@ -49,7 +55,7 @@ export class LabelLayer {
 
 	setSnapshot(snapshot: PreparedRenderSnapshot): void {
 		this.snapshot = snapshot;
-		this.countries = countryLabels(snapshot.geography.territory);
+		this.countries = countryLabels(countryTerritoryForDisplay(snapshot));
 		this.rankedNodes = [...snapshot.nodes].sort(
 			(left, right) =>
 				right.degree - left.degree ||
@@ -86,9 +92,10 @@ export class LabelLayer {
 
 	render(camera: Camera, width: number, height: number): void {
 		this.resizePool();
-		this.renderContinents(camera, width, height);
+
 		if (this.interactionActive) {
 			this.hideNodeLabels();
+			this.renderContinents(camera, width, height);
 			return;
 		}
 		const snapshot = this.snapshot;
@@ -100,11 +107,11 @@ export class LabelLayer {
 			snapshot === undefined ||
 			!this.appearance.showLabels ||
 			this.appearance.maxLabels === 0 ||
-			zoomVisuals.opacity <= 0.01 ||
 			width <= 0 ||
 			height <= 0
 		) {
 			this.hideNodeLabels();
+			this.renderContinents(camera, width, height);
 			return;
 		}
 
@@ -120,6 +127,12 @@ export class LabelLayer {
 			if (!isRenderNodeVisible(node, this.filters)) {
 				continue;
 			}
+			const endpoint = routeRoleForNode(this.route, node.id) !== undefined;
+			const selected = node.id === this.selection.selectedNodeId;
+			const hovered = node.id === this.selection.hoveredNodeId;
+			const search = this.searchPaths.has(node.path);
+			const important = selected || hovered || endpoint || search;
+			if (!important && zoomVisuals.opacity <= 0.01) continue;
 			const offset = node.index * 3;
 			const x = snapshot.positions[offset];
 			const y = snapshot.positions[offset + 1];
@@ -130,7 +143,7 @@ export class LabelLayer {
 
 			this.worldPosition
 				.set(x, y, z)
-				.multiplyScalar(SPHERE_RADIUS)
+				.multiplyScalar(surfaceRadius(snapshot,this.appearance,[x,y,z],0.08))
 				.applyMatrix4(this.graphGroup.matrixWorld);
 			if (
 				this.appearance.surfaceMode === 'solid' &&
@@ -140,6 +153,7 @@ export class LabelLayer {
 				continue;
 			}
 
+			if(this.appearance.surfaceMode==='solid'&&this.terrainOccluded?.(camera.position,this.worldPosition))continue;
 			this.projectedPosition.copy(this.worldPosition).project(camera);
 			if (
 				this.projectedPosition.z < -1 ||
@@ -155,7 +169,7 @@ export class LabelLayer {
 				break;
 			}
 			const screenX = (this.projectedPosition.x * 0.5 + 0.5) * width;
-			const screenY = (-this.projectedPosition.y * 0.5 + 0.5) * height;
+			const screenY = (-this.projectedPosition.y * 0.5 + 0.5) * height - 24;
 			const routeRole = routeRoleForNode(this.route, node.id);
 			element.textContent =
 				routeRole === 'start'
@@ -163,7 +177,7 @@ export class LabelLayer {
 					: routeRole === 'destination'
 						? `Dest · ${node.basename}`
 						: node.basename;
-			element.title = node.path;
+			element.removeAttribute('title');
 			element.dataset.nodeId = node.id;
 			element.dataset.selected = String(
 				node.id === this.selection.selectedNodeId,
@@ -185,8 +199,12 @@ export class LabelLayer {
 			} else {
 				element.dataset.routeRole = routeRole;
 			}
-			element.style.opacity = zoomVisuals.opacity.toFixed(3);
-			element.style.transform = `translate(${screenX.toFixed(1)}px, ${screenY.toFixed(1)}px) translate(-50%, -50%) scale(${zoomVisuals.scale.toFixed(3)})`;
+			const labelWidth = Math.min(240, ((element.textContent?.length ?? 0) + (node.id === this.selection.activeNodeId ? 9 : 0)) * 7 + 16);
+			const anchor = cityLabelAnchor(screenX, screenY+24, labelWidth, width, height, selected || hovered);
+			if (!this.placement.place(anchor.x, anchor.y, labelWidth, selected || hovered ? 30 : 20,
+				selected || hovered ? 100 : endpoint ? 90 : search ? 80 : 40, element)) continue;
+			element.style.opacity = important ? '1' : zoomVisuals.opacity.toFixed(3);
+			element.style.transform = `translate(${anchor.x.toFixed(1)}px, ${anchor.y.toFixed(1)}px) translate(-50%, -50%) scale(1)`;
 			element.hidden = false;
 			visibleIndex += 1;
 		}
@@ -197,6 +215,11 @@ export class LabelLayer {
 				element.hidden = true;
 			}
 		}
+		this.renderContinents(camera, width, height);
+	}
+
+	hasVisibleNodeLabel(nodeId:string):boolean {
+		return this.pool.some(element=>!element.hidden&&element.dataset.nodeId===nodeId);
 	}
 
 	dispose(): void {
@@ -206,6 +229,10 @@ export class LabelLayer {
 		this.snapshot = undefined;
 		this.rankedNodes = [];
 		this.candidates = [];
+	}
+
+	updateSearch(paths: ReadonlySet<string>): void {
+		this.searchPaths = new Set(paths); this.rebuildCandidates();
 	}
 
 	private rebuildCandidates(): void {
@@ -227,8 +254,8 @@ export class LabelLayer {
 		};
 
 		offer(
-			this.selection.activeNodeId
-				? snapshot.nodeById.get(this.selection.activeNodeId)
+			this.selection.selectedNodeId
+				? snapshot.nodeById.get(this.selection.selectedNodeId)
 				: undefined,
 		);
 		offer(
@@ -250,6 +277,7 @@ export class LabelLayer {
 				? snapshot.nodeById.get(this.route.endNodeId)
 				: undefined,
 		);
+		for (const node of snapshot.nodes) if (this.searchPaths.has(node.path)) offer(node);
 		for (const routeNodeId of this.route?.nodeIds ?? []) {
 			offer(snapshot.nodeById.get(routeNodeId));
 		}
@@ -337,7 +365,7 @@ export class LabelLayer {
 		const zoomPercent = cameraZoomInPercent(camera.position.length());
 		const labels = [
 			...snapshot.geography.continents.map((continent) => ({ ...continent, country: false })),
-			...(this.appearance.showCountryBorders && zoomPercent >= 60 && !this.interactionActive
+			...(this.appearance.showCountryBorders && zoomPercent >= 45 && !this.interactionActive
 				? this.countries.map((country) => ({ ...country, id: country.key, country: true })) : []),
 		];
 		const occupied: Array<{ x: number; y: number }> = [];
@@ -348,15 +376,16 @@ export class LabelLayer {
 			}
 			this.worldPosition
 				.set(continent.center[0] ?? 0, continent.center[1] ?? 0, continent.center[2] ?? 0)
-				.multiplyScalar(SPHERE_RADIUS + 0.05)
+				.multiplyScalar(surfaceRadius(snapshot,this.appearance,continent.center,0.06))
 				.applyMatrix4(this.graphGroup.matrixWorld);
 			const facing = this.worldPosition
 				.clone()
 				.normalize()
 				.dot(cameraDirection);
-			if (facing <= 0.12) {
+			if (this.appearance.surfaceMode === 'solid' && this.worldPosition.dot(camera.position) <= SPHERE_RADIUS * SPHERE_RADIUS) {
 				continue;
 			}
+			if(this.appearance.surfaceMode==='solid'&&this.terrainOccluded?.(camera.position,this.worldPosition))continue;
 			this.projectedPosition.copy(this.worldPosition).project(camera);
 			if (
 				this.projectedPosition.z < -1 ||
@@ -368,11 +397,14 @@ export class LabelLayer {
 			}
 			const screenX = (this.projectedPosition.x * 0.5 + 0.5) * width;
 			const screenY = (-this.projectedPosition.y * 0.5 + 0.5) * height;
-			const opacity = Math.min(0.78, Math.max(0, (facing - 0.12) / 0.5));
+			const opacity = Math.min(continent.country ? 0.85 : 0.92, Math.max(0, (facing - 0.12) / 0.5));
 			const zoom = cameraZoomInPercent(camera.position.length()) / 100;
 			if (continent.country && occupied.some((point) => Math.abs(point.x - screenX) < 95 && Math.abs(point.y - screenY) < 25)) continue;
 			occupied.push({ x: screenX, y: screenY });
 			element.className = continent.country ? 'spherical-graph-country-label' : 'spherical-graph-continent-label';
+			if (!this.appearance.showLabels) continue;
+			const labelWidth = Math.min(width - 24, continent.label.length * (continent.country ? 7 : 10) + 16);
+			if (!this.placement.place(screenX, screenY, labelWidth, continent.country ? 20 : 28, continent.country ? 50 : 60, element)) continue;
 			element.textContent = continent.label;
 			element.dataset.continentId = continent.id;
 			element.style.opacity = opacity.toFixed(3);

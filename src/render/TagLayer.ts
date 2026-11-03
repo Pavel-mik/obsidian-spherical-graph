@@ -1,12 +1,16 @@
+import { inheritTagVisibility } from './tagLinkStyle';
+import { LabelPlacement } from './LabelPlacement';
 import {
-	BufferAttribute,
 	BufferGeometry,
 	Camera,
 	Color,
 	DynamicDrawUsage,
 	Group,
 	InstancedMesh,
-	LineSegments,
+	Mesh,
+	InstancedBufferAttribute,
+	PlaneGeometry,
+	PerspectiveCamera,
 	Matrix4,
 	OctahedronGeometry,
 	ShaderMaterial,
@@ -27,6 +31,10 @@ import {
 	RenderTag,
 	RenderTheme,
 } from './renderTypes';
+import { CARTOGRAPHY as T, pixelsPerWorldUnit, updateLineViewport } from './cartography';
+import { screenSpaceLine } from './screenSpaceLine';
+import { cityMaterial } from './cityMaterial';
+import { surfaceRadius } from './terrainSurface';
 import { labelZoomVisuals } from './labelVisibility';
 import {
 	computeTagOrbitDirections,
@@ -40,8 +48,8 @@ const TAG_MARKER_SCALE_FACTOR = 0.78;
 const TAG_DEPTH_MINIMUM_VISIBILITY = 0.34;
 const TAG_DEPTH_FADE_START = -0.22;
 const TAG_DEPTH_FADE_END = 0.86;
-const DARK_SCENE_SATELLITE_SILVER = '#d9e2e7';
-const DARK_SCENE_LINK_SILVER = '#b7c4cb';
+const DARK_SCENE_SATELLITE_SILVER = T.colors.satellite.base;
+const DARK_SCENE_LINK_SILVER = T.colors.edge.satellite;
 const LIGHT_SCENE_SATELLITE_SILVER = '#5f6c74';
 const LIGHT_SCENE_LINK_SILVER = '#78868e';
 export const TAG_CAMERA_CLEARANCE_DOT = 0.82;
@@ -49,12 +57,17 @@ export const TAG_CAMERA_CLEARANCE_DOT = 0.82;
 export class TagLayer {
 	private markerMesh: InstancedMesh | undefined;
 	private markerMaterial: ShaderMaterial | undefined;
-	private linkLines: LineSegments | undefined;
+	private linkLines: Mesh<BufferGeometry, ShaderMaterial> | undefined;
+	private linkHalo: Mesh<BufferGeometry, ShaderMaterial> | undefined;
 	private linkMaterial: ShaderMaterial | undefined;
 	private snapshot: PreparedRenderSnapshot | undefined;
 	private appearance: AppearanceSettings;
 	private selectedNodeId: string | undefined;
 	private selectedTagId: string | undefined;
+	private hoveredTagId: string | undefined;
+	private haloMesh: InstancedMesh<PlaneGeometry, ShaderMaterial> | undefined;
+	private ringMesh: InstancedMesh<PlaneGeometry, ShaderMaterial> | undefined;
+	private pixelWorldScale = 1;
 	private route: RenderRouteState | undefined;
 	private visible = true;
 	private readonly directions = new Map<string, Vec3>();
@@ -76,6 +89,8 @@ export class TagLayer {
 		theme: RenderTheme,
 		container?: HTMLElement,
 		private readonly maxVisibleLabels = MAX_VISIBLE_TAG_LABELS,
+		private readonly placement = new LabelPlacement(),
+		private readonly terrainOccluded?: (camera:Vector3,point:Vector3)=>boolean,
 	) {
 		this.appearance = appearance;
 		this.applySilverTheme(theme);
@@ -106,7 +121,7 @@ export class TagLayer {
 	updateAppearance(appearance: AppearanceSettings): void {
 		const orbitHeightChanged =
 			appearance.tagOrbitHeightPercent !==
-			this.appearance.tagOrbitHeightPercent;
+			this.appearance.tagOrbitHeightPercent||appearance.showContinents!==this.appearance.showContinents||appearance.surfaceMode!==this.appearance.surfaceMode;
 		this.appearance = appearance;
 		this.updateMarkerMatrices();
 		if (orbitHeightChanged) {
@@ -117,14 +132,17 @@ export class TagLayer {
 
 	updateTheme(theme: RenderTheme): void {
 		this.applySilverTheme(theme);
+		this.updateMarkerMatrices();
 	}
 
 	updateSelection(selectedNodeId: string | undefined): void {
+		if (this.selectedNodeId === selectedNodeId) return;
 		this.selectedNodeId = selectedNodeId;
 		this.rebuildLinks();
 	}
 
 	updateSelectedTag(selectedTagId: string | undefined): void {
+		if (this.selectedTagId === selectedTagId) return;
 		this.selectedTagId = selectedTagId;
 		this.updateMarkerMatrices();
 		this.rebuildLinks();
@@ -137,9 +155,12 @@ export class TagLayer {
 		this.visible = visible;
 		if (this.markerMesh !== undefined) {
 			this.markerMesh.visible = visible;
+			if (this.haloMesh) this.haloMesh.visible = visible;
+			if (this.ringMesh) this.ringMesh.visible = visible;
 		}
 		if (this.linkLines !== undefined) {
 			this.linkLines.visible = visible;
+			if (this.linkHalo) this.linkHalo.visible = visible;
 		}
 		if (this.labelRoot !== undefined) {
 			this.labelRoot.hidden = !visible;
@@ -185,7 +206,7 @@ export class TagLayer {
 			.set(direction[0], direction[1], direction[2])
 			.multiplyScalar(tagOrbitRadiusForAppearance(this.appearance))
 			.applyMatrix4(this.group.matrixWorld);
-		if (isPointOccludedByGlobe(camera.position, this.worldPosition)) {
+		if (isPointOccludedByGlobe(camera.position, this.worldPosition)||this.terrainOccluded?.(camera.position,this.worldPosition)) {
 			return false;
 		}
 		if (!this.appearance.tagViewProtectionEnabled) {
@@ -215,6 +236,17 @@ export class TagLayer {
 	}
 
 	render(camera: Camera, width: number, height: number): void {
+		if (camera instanceof PerspectiveCamera) {
+			const nextScale = T.satellite.normalDiameterPx / (2 * Math.max(0.001, pixelsPerWorldUnit(camera, height)) * tagMarkerScaleForGlobe(DEFAULT_GLOBE_SIZE));
+			if (Math.abs(nextScale - this.pixelWorldScale) > 0.0001) {
+				this.pixelWorldScale = nextScale; this.updateMarkerMatrices();
+			}
+		}
+		for (const mesh of [this.linkLines, this.linkHalo, this.haloMesh, this.ringMesh]) {
+			if (mesh) updateLineViewport(mesh.material, width, height);
+		}
+		const accentIndex = this.snapshot?.tags.findIndex(tag => tag.id === (this.selectedTagId ?? this.hoveredTagId)) ?? -1;
+		for (const mesh of [this.haloMesh, this.ringMesh]) if (mesh) mesh.visible = this.visible && accentIndex >= 0 && this.isTagPickable(accentIndex, camera);
 		const zoomVisuals = labelZoomVisuals(
 			camera.position.length(),
 			this.appearance.labelZoomThresholdPercent,
@@ -259,7 +291,7 @@ export class TagLayer {
 				isPointOccludedByGlobe(
 					camera.position,
 					this.worldPosition,
-				)
+				)||this.terrainOccluded?.(camera.position,this.worldPosition)
 			) {
 				continue;
 			}
@@ -308,6 +340,8 @@ export class TagLayer {
 				zoomVisuals.opacity * perspectiveVisibility
 			).toFixed(3);
 			element.style.transform = `translate(${screenX.toFixed(1)}px, ${screenY.toFixed(1)}px) translate(-50%, -50%) scale(${zoomVisuals.scale.toFixed(3)})`;
+			if (!this.placement.place(screenX, screenY, Math.min(240, tag.label.length * 7 + 16), 22,
+				tag.id === this.selectedTagId ? 100 : this.linkedTagIds.has(tag.id) ? 75 : 20, element)) continue;
 			element.hidden = false;
 			visibleIndex += 1;
 		}
@@ -352,9 +386,23 @@ export class TagLayer {
 		mesh.renderOrder = 6;
 		mesh.frustumCulled = false;
 		mesh.visible = this.visible;
+		for (const accent of [this.haloMesh, this.ringMesh]) {
+			if (accent) accent.visible = this.visible;
+		}
 		this.markerMaterial = material;
 		this.markerMesh = mesh;
 		this.group.add(mesh);
+		for (const mode of ['halo', 'ring'] as const) {
+			const geometry = new PlaneGeometry(2, 2);
+			geometry.setAttribute('cityStyle', new InstancedBufferAttribute(new Float32Array(4), 4));
+			geometry.setAttribute('previousStyle', new InstancedBufferAttribute(new Float32Array(4), 4));
+			const accent = new InstancedMesh(geometry, cityMaterial(mode), 1);
+			accent.name = 'spherical-graph-tag-' + mode;
+			accent.frustumCulled = false; accent.renderOrder = 7; accent.count = 0;
+			this.group.add(accent);
+			if (mode === 'halo') this.haloMesh = accent;
+			else this.ringMesh = accent;
+		}
 		this.updateMarkerMatrices();
 	}
 
@@ -364,9 +412,9 @@ export class TagLayer {
 		if (mesh === undefined || snapshot === undefined) {
 			return;
 		}
-		const baseScale = tagMarkerScaleForGlobe(
-			this.appearance.globeSize,
-		);
+		const baseScale = tagMarkerScaleForGlobe(this.appearance.globeSize) * this.pixelWorldScale;
+		if (this.haloMesh) this.haloMesh.count = 0;
+		if (this.ringMesh) this.ringMesh.count = 0;
 		const orbitRadius = tagOrbitRadiusForAppearance(this.appearance);
 		for (let index = 0; index < snapshot.tags.length; index += 1) {
 			const tag = snapshot.tags[index];
@@ -380,19 +428,37 @@ export class TagLayer {
 				.multiplyScalar(orbitRadius);
 			const scale =
 				tag?.id === this.selectedTagId
-					? baseScale * 1.45
-					: baseScale;
+					? baseScale * T.satellite.selectedDiameterPx / T.satellite.normalDiameterPx
+					: this.linkedTagIds.has(tag?.id ?? '') ? baseScale * T.satellite.relatedDiameterPx / T.satellite.normalDiameterPx : baseScale;
 			this.matrix.makeScale(scale, scale, scale);
 			this.matrix.setPosition(this.position);
 			mesh.setMatrixAt(index, this.matrix);
+			const selected = tag?.id === this.selectedTagId, hovered = tag?.id === this.hoveredTagId;
+			mesh.setColorAt(index, new Color(selected || hovered ? T.colors.satellite.selected : this.linkedTagIds.has(tag?.id ?? '') ? T.colors.satellite.related : this.markerColor));
+			if (selected || hovered) {
+				for (const accent of [this.haloMesh, this.ringMesh]) {
+					if (!accent || (accent === this.ringMesh && !selected)) continue;
+					accent.count = 1; accent.visible = this.visible;
+					accent.setMatrixAt(0, this.matrix);
+					accent.setColorAt(0, new Color(T.colors.satellite.ring));
+					(accent.geometry.getAttribute('cityStyle') as InstancedBufferAttribute).setXYZW(0,
+						accent === this.haloMesh ? T.satellite.haloDiameterPx / 2 : T.satellite.selectedDiameterPx / 2 + 4,
+						accent === this.haloMesh ? T.satellite.haloPeakOpacity : T.satellite.selectedRingWidthPx, 0, 0);
+					accent.instanceMatrix.needsUpdate = true;
+					if (accent.instanceColor) accent.instanceColor.needsUpdate = true;
+					(accent.geometry.getAttribute('cityStyle') as InstancedBufferAttribute).needsUpdate = true;
+				}
+			}
 		}
 		mesh.instanceMatrix.needsUpdate = true;
+		if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 		mesh.computeBoundingSphere();
 	}
 
 	private rebuildLinks(): void {
 		this.removeLinks();
 		this.linkedTagIds.clear();
+		this.updateMarkerMatrices();
 		const snapshot = this.snapshot;
 		if (snapshot === undefined) {
 			return;
@@ -452,7 +518,9 @@ export class TagLayer {
 					node.id,
 					tag.id,
 					orbitRadius,
+					surfaceRadius(snapshot,this.appearance,[x,y,z],TAG_LINK_START_RADIUS-SPHERE_RADIUS),
 				);
+				for(let i=1;i<points.length-1;i++){const p=points[i]!,r=Math.hypot(...p),n:Vec3=[p[0]/r,p[1]/r,p[2]/r],floor=surfaceRadius(snapshot,this.appearance,n,.04);if(r<floor)points[i]=n.map(v=>v*floor) as unknown as Vec3;}
 				for (let index = 0; index < points.length - 1; index += 1) {
 					const point = points[index];
 					const next = points[index + 1];
@@ -466,24 +534,25 @@ export class TagLayer {
 		if (positions.length === 0) {
 			return;
 		}
-		const geometry = new BufferGeometry();
-		geometry.setAttribute(
-			'position',
-			new BufferAttribute(new Float32Array(positions), 3),
-		);
-		geometry.computeBoundingSphere();
-		const material = createTagLinkMaterial(
-			this.linkColor,
-			orbitRadius,
-			this.appearance.tagViewProtectionEnabled,
-		);
-		const lines = new LineSegments(geometry, material);
+		const legacy = createTagLinkMaterial(this.linkColor, orbitRadius, this.appearance.tagViewProtectionEnabled);
+		const style = this.selectedTagId === undefined ? T.edges.satelliteContext : T.edges.satelliteSelected;
+		const lines = screenSpaceLine(positions, { color: this.selectedTagId === undefined ? T.colors.edge.satellite : T.colors.edge.satelliteSelected, widthPx: style.widthPx, opacity: style.opacity });
+		const material = lines.material;
+		inheritTagVisibility(material, legacy);
+		if (this.selectedTagId !== undefined) {
+			const halo = screenSpaceLine(positions, { color: T.colors.edge.satelliteSelected, widthPx: style.haloWidthPx, opacity: style.haloPeakOpacity, halo: true });
+			inheritTagVisibility(halo.material, legacy);
+			halo.name = 'spherical-graph-tag-link-halo'; halo.renderOrder = 4; halo.visible = this.visible;
+			this.linkHalo = halo; this.group.add(halo);
+		}
+		legacy.dispose();
 		lines.name = 'spherical-graph-tag-links';
 		lines.renderOrder = 5;
 		lines.visible = this.visible;
 		this.linkMaterial = material;
 		this.linkLines = lines;
 		this.group.add(lines);
+		this.updateMarkerMatrices();
 	}
 
 	private resizeLabelPool(): void {
@@ -558,7 +627,16 @@ export class TagLayer {
 		);
 	}
 
+	updateHoveredTag(tagId: string | undefined): boolean {
+		if (this.hoveredTagId === tagId) return false;
+		this.hoveredTagId = tagId; this.updateMarkerMatrices(); return true;
+	}
+
 	private removeMarkers(): void {
+		for (const accent of [this.haloMesh, this.ringMesh]) {
+			if (accent) { this.group.remove(accent); accent.geometry.dispose(); accent.material.dispose(); }
+		}
+		this.haloMesh = this.ringMesh = undefined;
 		const mesh = this.markerMesh;
 		if (mesh === undefined) {
 			return;
@@ -571,6 +649,7 @@ export class TagLayer {
 	}
 
 	private removeLinks(): void {
+		if (this.linkHalo) { this.group.remove(this.linkHalo); this.linkHalo.geometry.dispose(); this.linkHalo.material.dispose(); this.linkHalo = undefined; }
 		const lines = this.linkLines;
 		if (lines === undefined) {
 			return;
@@ -654,6 +733,7 @@ function createTagMaterial(
 			varying float vPerspectiveVisibility;
 			varying vec3 vViewNormal;
 			varying vec3 vViewDirection;
+			varying vec3 vTagColor;
 
 			bool tagOccludedByGlobe(vec3 tagCenter) {
 				vec3 ray = tagCenter - cameraPosition;
@@ -711,6 +791,7 @@ function createTagMaterial(
 					normalMatrix * mat3(instanceMatrix) * normal
 				);
 				vViewDirection = -viewPosition.xyz;
+				vTagColor = instanceColor;
 				gl_Position = projectionMatrix * viewPosition;
 			}
 		`,
@@ -720,6 +801,7 @@ function createTagMaterial(
 			varying float vPerspectiveVisibility;
 			varying vec3 vViewNormal;
 			varying vec3 vViewDirection;
+			varying vec3 vTagColor;
 
 			void main() {
 				if (vTagVisibility < 0.025) {
@@ -737,8 +819,8 @@ function createTagMaterial(
 				);
 				float fresnel = pow(max(0.0, 1.0 - facing), 2.4);
 				vec3 polishedSilver =
-					tagColor * (0.44 + diffuse * 0.48) +
-					vec3(0.86, 0.92, 0.96) * specular * 0.84 +
+					vTagColor * (0.68 + diffuse * 0.30) +
+					vec3(0.86, 0.92, 0.96) * specular * 0.06 +
 					vec3(0.10, 0.14, 0.17) * fresnel;
 				gl_FragColor = vec4(
 					polishedSilver * vPerspectiveVisibility,

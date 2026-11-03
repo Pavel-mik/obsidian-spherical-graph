@@ -2,7 +2,7 @@ import {
 	Color,
 	Group,
 	InstancedMesh,
-	LineSegments,
+	Mesh,
 	Matrix4,
 	OctahedronGeometry,
 	ShaderMaterial,
@@ -182,13 +182,13 @@ describe('TagLayer', () => {
 		const selectedLinks = group.getObjectByName(
 			'spherical-graph-tag-links',
 		);
-		expect(selectedLinks).toBeInstanceOf(LineSegments);
-		const selectedVertexCount = (selectedLinks as LineSegments)
+		expect(selectedLinks).toBeInstanceOf(Mesh);
+		const selectedVertexCount = (selectedLinks as Mesh)
 			.geometry.getAttribute('position').count;
-		const selectedMaterial = (selectedLinks as LineSegments)
+		const selectedMaterial = (selectedLinks as Mesh)
 			.material as ShaderMaterial;
 		expect(selectedMaterial.fragmentShader).toContain(
-			'polishedSilver',
+			'lineOpacity',
 		);
 		expect(selectedMaterial.vertexShader).toContain(
 			'vPerspectiveVisibility',
@@ -203,7 +203,7 @@ describe('TagLayer', () => {
 			(
 				selectedMaterial.uniforms.tagEdgeColor?.value as Color
 			).getHexString(),
-		).toBe('b7c4cb');
+		).toBe('b7c8ce');
 
 		layer.updateRoute({
 			startNodeId: 'A',
@@ -215,7 +215,7 @@ describe('TagLayer', () => {
 			'spherical-graph-tag-links',
 		);
 		expect(
-			(routeLinks as LineSegments).geometry.getAttribute('position').count,
+			(routeLinks as Mesh).geometry.getAttribute('position').count,
 		).toBeGreaterThan(selectedVertexCount);
 		layer.updateSelection(undefined);
 		layer.updateRoute(undefined);
@@ -226,7 +226,7 @@ describe('TagLayer', () => {
 		layer.updateSelectedTag('#shared');
 		expect(
 			group.getObjectByName('spherical-graph-tag-links'),
-		).toBeInstanceOf(LineSegments);
+		).toBeInstanceOf(Mesh);
 		layer.setVisible(false);
 		expect(
 			layer.positionForTag('#a', new Vector3()),

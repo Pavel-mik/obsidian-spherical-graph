@@ -1,7 +1,8 @@
 import {
 	Group,
-	LineDashedMaterial,
-	LineSegments,
+	Color,
+	Vector2,
+	Vector3,
 	Mesh,
 	MeshBasicMaterial,
 	ShaderMaterial,
@@ -18,6 +19,7 @@ import {
 	type RenderTheme,
 } from '../../src/render/renderTypes';
 import { DEFAULT_SETTINGS } from '../../src/settings/settings';
+import { createIntrinsicSphericalGrid } from '../../src/geography/sphericalGrid';
 
 const theme: RenderTheme = {
 	background: '#101319',
@@ -44,7 +46,7 @@ const theme: RenderTheme = {
 	land: ['#66725a', '#a07a49'],
 };
 
-function setSingleContinentSnapshot(layer: SphereLayer): void {
+function setSingleContinentSnapshot(layer: SphereLayer, withTerritory=false): void {
 	layer.setSnapshot(
 		prepareRenderSnapshot({
 			snapshotId: 'procedural-atlas:test',
@@ -61,6 +63,7 @@ function setSingleContinentSnapshot(layer: SphereLayer): void {
 			edges: [],
 			positions: new Float32Array([1, 0, 0]),
 			geography: {
+				territory:withTerritory?{subdivision:2,folderKeys:['Land'],ownerByCell:Int32Array.from(createIntrinsicSphericalGrid(2).vertices,p=>p[0]>.1?0:-1)}:undefined,
 				continents: [
 					{
 						id: 'land',
@@ -78,6 +81,26 @@ function setSingleContinentSnapshot(layer: SphereLayer): void {
 }
 
 describe('SphereLayer graticule', () => {
+	it('uses real displaced geometry for terrain occlusion and honors surface toggles',()=>{
+	 const group=new Group(),layer=new SphereLayer(group,DEFAULT_SETTINGS.appearance,theme,undefined,.25);setSingleContinentSnapshot(layer,true);
+	 const land=group.getObjectByName('spherical-graph-continents') as Mesh;
+	 const positions=land.geometry.getAttribute('position');let max=0;
+	 for(let i=0;i<positions.count;i++)max=Math.max(max,Math.hypot(positions.getX(i),positions.getY(i),positions.getZ(i)));
+	 expect(max).toBeGreaterThan(10.04);expect(max).toBeLessThan(10.23);
+	 const camera=new Vector3(32,0,0);expect(layer.isTerrainOccluded(camera,new Vector3(10.005,0,0))).toBe(true);
+	 expect(layer.isTerrainOccluded(camera,new Vector3(10.4,0,0))).toBe(false);
+	 layer.update({...DEFAULT_SETTINGS.appearance,showContinents:false},theme);expect(layer.isTerrainOccluded(camera,new Vector3(10.005,0,0))).toBe(false);
+	 layer.dispose();expect(group.children).toHaveLength(0);
+	});
+	it('keeps the backdrop separate from hidden land and releases the added coast lighting',()=>{
+		const group=new Group(),layer=new SphereLayer(group,DEFAULT_SETTINGS.appearance,theme);
+		setSingleContinentSnapshot(layer);
+		expect(group.getObjectByName('spherical-graph-coast-shadow')?.visible).toBe(true);
+		layer.update({...DEFAULT_SETTINGS.appearance,showContinents:false,surfaceMode:'hidden'},theme);
+		expect(group.getObjectByName('spherical-graph-coast-shadow')?.visible).toBe(false);
+		expect(group.getObjectByName('spherical-graph-backdrop')?.visible).toBe(true);
+		layer.dispose();expect(group.children).toHaveLength(0);
+	});
 	it('reduces continent detail as vault rendering load grows', () => {
 		expect(adaptiveLandDetail(100, 200)).toBe(48);
 		expect(adaptiveLandDetail(1_000, 2_000)).toBe(32);
@@ -94,19 +117,19 @@ describe('SphereLayer graticule', () => {
 		const grid = group.getObjectByName(
 			'spherical-graph-surface-grid',
 		);
-		expect(grid).toBeInstanceOf(LineSegments);
-		const material = (grid as LineSegments).material;
-		expect(material).toBeInstanceOf(LineDashedMaterial);
-		expect((material as LineDashedMaterial).color.getHexString()).toBe(
+		expect(grid).toBeInstanceOf(Mesh);
+		const material = (grid as Mesh).material;
+		expect(material).toBeInstanceOf(ShaderMaterial);
+		expect(((material as ShaderMaterial).uniforms.lineColor!.value as Color).getHexString()).toBe(
 			'284650',
 		);
-		expect((material as LineDashedMaterial).color.getHexString()).not.toBe(
+		expect(((material as ShaderMaterial).uniforms.lineColor!.value as Color).getHexString()).not.toBe(
 			'21e6ff',
 		);
-		expect((material as LineDashedMaterial).dashSize).toBeGreaterThan(0);
-		expect((material as LineDashedMaterial).gapSize).toBeGreaterThan(0);
+		expect(((material as ShaderMaterial).uniforms.dash!.value as Vector2).x).toBeGreaterThan(0);
+		expect(((material as ShaderMaterial).uniforms.dash!.value as Vector2).y).toBeGreaterThan(0);
 		expect(
-			(grid as LineSegments).geometry.getAttribute('lineDistance'),
+			(grid as Mesh).geometry.getAttribute('lineDistance'),
 		).toBeDefined();
 		layer.dispose();
 	});
@@ -126,7 +149,7 @@ describe('SphereLayer graticule', () => {
 		expect(ocean).toBeInstanceOf(Mesh);
 		expect(land).toBeInstanceOf(Mesh);
 		expect(beach).toBeInstanceOf(Mesh);
-		expect(coast).toBeInstanceOf(LineSegments);
+		expect(coast).toBeInstanceOf(Mesh);
 		expect((ocean as Mesh).material).toBeInstanceOf(ShaderMaterial);
 		expect((land as Mesh).material).toBeInstanceOf(ShaderMaterial);
 		expect((beach as Mesh).material).toBeInstanceOf(ShaderMaterial);
@@ -186,8 +209,8 @@ describe('SphereLayer surface occlusion', () => {
 		expect(landMaterial.transparent).toBe(false);
 		expect(landMaterial.depthWrite).toBe(true);
 		expect(landMaterial.uniforms.landOpacity?.value).toBe(1);
-		expect(beachMaterial.transparent).toBe(false);
 		expect(beachMaterial.depthWrite).toBe(true);
+		expect(beachMaterial.transparent).toBe(false);
 		expect(beachMaterial.uniforms.beachOpacity?.value).toBe(1);
 		layer.dispose();
 	});
@@ -232,7 +255,7 @@ describe('SphereLayer surface occlusion', () => {
 		expect(landMaterial.uniforms.landOpacity?.value).toBe(0.58);
 		expect(beachMaterial.transparent).toBe(true);
 		expect(beachMaterial.depthWrite).toBe(false);
-		expect(beachMaterial.uniforms.beachOpacity?.value).toBe(0.52);
+		expect(beachMaterial.uniforms.beachOpacity?.value).toBe(0.08);
 		layer.dispose();
 	});
 

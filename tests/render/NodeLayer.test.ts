@@ -1,9 +1,10 @@
 import {
-	CircleGeometry,
+	PlaneGeometry,
 	Color,
 	Group,
 	InstancedMesh,
-	LineSegments,
+	Matrix4,
+	PerspectiveCamera,
 	ShaderMaterial,
 	Vector3,
 } from 'three';
@@ -42,285 +43,133 @@ const theme: RenderTheme = {
 	land: ['#66725a', '#a07a49'],
 };
 
-describe('NodeLayer instance colors', () => {
-	it('highlights every matching note independently of selection and route without moving nodes', () => {
-		const group = new Group();
-		const layer = new NodeLayer(group, DEFAULT_SETTINGS.appearance, theme);
-		const nodes = Array.from({ length: 35 }, (_, index) => ({
-			index, id: `id-${index}`, path: `${index}.md`, basename: 'Same name', degree: 1, weightedDegree: 1,
-		}));
-		const positions = new Float32Array(nodes.flatMap((_, index) => [Math.cos(index), Math.sin(index), 0]));
-		const original = positions.slice();
-		layer.setSnapshot(prepareRenderSnapshot({ snapshotId: 'search', nodes, edges: [], positions }));
-		layer.updateSearch(new Set(nodes.map((node) => node.path)));
-		const rings = group.getObjectByName('spherical-graph-search-node-highlights') as InstancedMesh;
-		const routeRings = group.getObjectByName('spherical-graph-node-highlights') as InstancedMesh;
-		const color = new Color();
-		layer.mesh?.getColorAt(2, color);
-		expect(color.getHexString()).toBe(new Color(SEARCH_HIGHLIGHT_COLOR).getHexString());
-		expect(rings.count).toBe(35);
-		layer.updateSelection({ selectedNodeId: 'id-0' });
-		layer.updateRoute({ nodeIds: ['id-0', 'id-1'], startNodeId: 'id-0', endNodeId: 'id-1', edges: [] });
-		expect(rings.count).toBe(35);
-		expect(routeRings.count).toBe(4);
-		layer.mesh?.getColorAt(0, color);
-		expect(color.getHexString()).toBe(new Color(theme.nodeSelected).getHexString());
-		layer.mesh?.getColorAt(1, color);
-		expect(color.getHexString()).toBe(new Color(theme.nodeRouteEnd).getHexString());
-		layer.updateSearch(new Set());
-		layer.mesh?.getColorAt(2, color);
-		expect(color.getHexString()).toBe(new Color(theme.node).getHexString());
-		expect(rings.count).toBe(0);
-		expect(routeRings.count).toBe(4);
-		expect(group.getObjectByName('spherical-graph-node-reticle')?.visible).toBe(true);
-		expect(positions).toEqual(original);
-		layer.dispose();
-		expect(group.children).toHaveLength(0);
+function fixture(count = 3) {
+	return prepareRenderSnapshot({ snapshotId: 'cities', nodes: Array.from({length: count}, (_, index) => ({
+		index, id: 'id-' + index, path: index + '.md', basename: 'City ' + index, degree: 1, weightedDegree: 1,
+	})), edges: [{source:0,target:1,weight:1}], positions: new Float32Array(Array.from({length: count}, (_, i) => [Math.cos(i), Math.sin(i), 0]).flat()) });
+}
+function named(group: Group, name: string): InstancedMesh { return group.getObjectByName(name) as InstancedMesh; }
+
+describe('Živá kartografie cities', () => {
+	it('keeps overview cities readable with the saved 155 percent globe scale', () => {
+		const group=new Group(),snapshot=fixture(),original=snapshot.positions.slice();
+		const layer=new NodeLayer(group,{...DEFAULT_SETTINGS.appearance,globeSize:155},theme);
+		const camera=new PerspectiveCamera(45);camera.position.set(0,0,32);
+		layer.setSnapshot(snapshot);layer.render(camera,1000,500);
+		const style=layer.mesh!.geometry.getAttribute('cityStyle');
+		for(let i=0;i<snapshot.nodes.length;i++) expect(style.getX(i)*2).toBeGreaterThanOrEqual(6.5);
+		expect(style.getY(0)).toBeLessThan(1);expect(style.getY(0)).toBeGreaterThan(0);
+		layer.updateSelection({selectedNodeId:'id-0'});layer.render(camera,1000,500,false,100,true);
+		expect(style.getX(0)*2).toBeGreaterThanOrEqual(17);
+		expect(style.getW(0)).toBe(1);expect(style.getW(1)).toBe(0);
+		expect(style.getY(0)).toBe(1);
+		expect(snapshot.positions).toEqual(original);layer.dispose();
 	});
-
-	it('matches paths after snapshot reordering and respects hidden notes and non-note nodes', () => {
-		const group = new Group();
-		const layer = new NodeLayer(group, DEFAULT_SETTINGS.appearance, theme);
-		layer.updateSearch(new Set(['A.md', 'B.md', 'image.png']));
-		layer.setSnapshot(prepareRenderSnapshot({ snapshotId: 'reordered', nodes: [
-			{ index: 1, id: 'a', path: 'A.md', basename: 'A', degree: 0, weightedDegree: 0, isOrphan: true },
-			{ index: 0, id: 'b', path: 'B.md', basename: 'B', degree: 1, weightedDegree: 1 },
-			{ index: 2, id: 'image', path: 'image.png', basename: 'image', degree: 1, weightedDegree: 1, kind: 'attachment' },
-		], edges: [], positions: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]) }));
-		layer.updateFilters({ showAttachments: true, showTags: false, showOrphans: false, existingFilesOnly: true });
-		expect((group.getObjectByName('spherical-graph-search-node-highlights') as InstancedMesh).count).toBe(1);
-		layer.dispose();
-	});
-
-	it('uses smooth tangent discs with a view-angle contrast shader', () => {
-		const group = new Group();
-		const layer = new NodeLayer(
-			group,
-			DEFAULT_SETTINGS.appearance,
-			theme,
-		);
-		layer.setSnapshot(
-			prepareRenderSnapshot({
-				snapshotId: 'snapshot',
-				nodes: [
-					{
-						index: 0,
-						id: 'A.md',
-						path: 'A.md',
-						basename: 'A',
-						degree: 1,
-						weightedDegree: 1,
-					},
-				],
-				edges: [],
-				positions: new Float32Array([1, 0, 0]),
-			}),
-		);
-
-		const mesh = layer.mesh;
-		expect(mesh).toBeDefined();
-		expect(mesh?.geometry).toBeInstanceOf(CircleGeometry);
-		expect(mesh?.material).toBeInstanceOf(ShaderMaterial);
-		expect(
-			(mesh?.material as ShaderMaterial).fragmentShader,
-		).toContain('limbContrast');
-		expect(mesh?.geometry.getAttribute('color')).toBeUndefined();
-		expect(mesh?.instanceColor).not.toBeNull();
-		expect(
-			[...(mesh?.instanceColor?.array ?? [])].some(
-				(component) => component > 0,
-			),
-		).toBe(true);
-
-		layer.dispose();
-	});
-
-	it('anchors the selection reticle to the selected node in the 3D layer', () => {
-		const group = new Group();
-		const layer = new NodeLayer(
-			group,
-			DEFAULT_SETTINGS.appearance,
-			theme,
-		);
-		layer.setSnapshot(
-			prepareRenderSnapshot({
-				snapshotId: 'snapshot',
-				nodes: [
-					{
-						index: 0,
-						id: 'A.md',
-						path: 'A.md',
-						basename: 'A',
-						degree: 1,
-						weightedDegree: 1,
-					},
-				],
-				edges: [],
-				positions: new Float32Array([1, 0, 0]),
-			}),
-		);
-
-		layer.updateSelection({ selectedNodeId: 'A.md' });
-		const reticle = group.getObjectByName(
-			'spherical-graph-node-reticle',
-		);
-		const nodeDirection = layer
-			.positionForNode('A.md', new Vector3())
-			?.normalize();
-		if (nodeDirection === undefined) {
-			throw new Error('The selected node position was not available.');
+	it('allocates shader colours before empty highlight layers are first compiled', () => {
+		const group = new Group(), layer = new NodeLayer(group, DEFAULT_SETTINGS.appearance, theme);
+		layer.setSnapshot(fixture());
+		const rings = named(group, 'spherical-graph-node-highlights');
+		const search = named(group, 'spherical-graph-search-node-highlights');
+		expect(rings.count).toBe(0); expect(search.count).toBe(0);
+		for (const mesh of group.children as InstancedMesh[]) {
+			expect(mesh.instanceColor?.count).toBe(3);
 		}
-
-		expect(reticle).toBeInstanceOf(LineSegments);
-		expect(reticle?.visible).toBe(true);
-		expect(reticle?.position.clone().normalize().distanceTo(nodeDirection))
-			.toBeLessThan(1e-8);
-
-		layer.updateSelection({});
-		expect(reticle?.visible).toBe(false);
+		const colors = rings.instanceColor;
+		layer.updateSelection({ selectedNodeId: 'id-0' });
+		expect(rings.count).toBe(1); expect(rings.instanceColor).toBe(colors);
 		layer.dispose();
 	});
-
-	it('scales both the node marker and selection reticle with Globe size', () => {
-		const group = new Group();
-		const layer = new NodeLayer(
-			group,
-			DEFAULT_SETTINGS.appearance,
-			theme,
-		);
-		layer.setSnapshot(
-			prepareRenderSnapshot({
-				snapshotId: 'snapshot',
-				nodes: [
-					{
-						index: 0,
-						id: 'A.md',
-						path: 'A.md',
-						basename: 'A',
-						degree: 1,
-						weightedDegree: 1,
-					},
-				],
-				edges: [],
-				positions: new Float32Array([1, 0, 0]),
-			}),
-		);
-		layer.updateSelection({ selectedNodeId: 'A.md' });
-		const reticle = group.getObjectByName(
-			'spherical-graph-node-reticle',
-		);
-		const initialReticleScale = reticle?.scale.x ?? 0;
-
-		layer.updateAppearance({
-			...DEFAULT_SETTINGS.appearance,
-			globeSize: DEFAULT_SETTINGS.appearance.globeSize * 2,
-		});
-
-		expect(reticle?.scale.x).toBeCloseTo(initialReticleScale / 2, 8);
+	it('finishes a local glow transition and stops requesting frames, including reduced motion', () => {
+		const group=new Group(),layer=new NodeLayer(group,DEFAULT_SETTINGS.appearance,theme),camera=new PerspectiveCamera(45);
+		camera.position.set(0,0,32);layer.setSnapshot(fixture());layer.render(camera,1000,800);
+		layer.updateSelection({selectedNodeId:'id-0'});
+		expect(layer.render(camera,1000,800,false,100)).toBe(true);
+		expect(layer.render(camera,1000,800,false,280)).toBe(false);
+		expect(layer.render(camera,1000,800,false,1000)).toBe(false);
+		layer.updateSelection({selectedNodeId:'id-1'});
+		expect(layer.render(camera,1000,800,false,1100,true)).toBe(false);
 		layer.dispose();
 	});
-
-	it('uses separate start and destination colors with double endpoint rings', () => {
-		const group = new Group();
-		const layer = new NodeLayer(
-			group,
-			DEFAULT_SETTINGS.appearance,
-			theme,
-		);
-		layer.setSnapshot(
-			prepareRenderSnapshot({
-				snapshotId: 'snapshot',
-				nodes: [
-					{
-						index: 0,
-						id: 'A',
-						path: 'A.md',
-						basename: 'A',
-						degree: 1,
-						weightedDegree: 1,
-					},
-					{
-						index: 1,
-						id: 'B',
-						path: 'B.md',
-						basename: 'B',
-						degree: 1,
-						weightedDegree: 1,
-					},
-				],
-				edges: [{ source: 0, target: 1, weight: 1 }],
-				positions: new Float32Array([1, 0, 0, 0, 1, 0]),
-			}),
-		);
-		layer.updateRoute({
-			startNodeId: 'A',
-			endNodeId: 'B',
-			nodeIds: ['A', 'B'],
-			edges: [{ source: 0, target: 1 }],
-		});
-
-		const startColor = new Color();
-		const endColor = new Color();
-		layer.mesh?.getColorAt(0, startColor);
-		layer.mesh?.getColorAt(1, endColor);
-		expect(startColor.getHexString()).toBe('c8ff3d');
-		expect(endColor.getHexString()).toBe('ffb547');
-		const highlights = group.getObjectByName(
-			'spherical-graph-node-highlights',
-		);
-		expect(highlights).toBeInstanceOf(InstancedMesh);
-		expect((highlights as InstancedMesh).count).toBe(4);
+	it('composes search, selection and endpoints without changing a committed buffer', () => {
+		const group = new Group(), layer = new NodeLayer(group, DEFAULT_SETTINGS.appearance, theme), snapshot = fixture(35);
+		const original = snapshot.positions.slice();
+		layer.setSnapshot(snapshot);
+		layer.updateSearch(new Set(snapshot.nodes.map(n => n.path)));
+		layer.updateRoute({startNodeId:'id-0',endNodeId:'id-1',nodeIds:['id-0','id-1'],edges:[]});
+		layer.updateSelection({selectedNodeId:'id-0', hoveredNodeId:'id-1'});
+		expect(named(group,'spherical-graph-search-node-highlights').count).toBe(35);
+		expect(named(group,'spherical-graph-node-highlights').count).toBe(2);
+		const color = new Color();
+		layer.mesh?.getColorAt(0,color); expect(color.getHexString()).toBe(new Color(theme.nodeSelected).getHexString());
+		layer.mesh?.getColorAt(1,color); expect(color.getHexString()).toBe(new Color(theme.nodeRouteEnd).getHexString());
+		layer.mesh?.getColorAt(2,color); expect(color.getHexString()).toBe(new Color(SEARCH_HIGHLIGHT_COLOR).getHexString());
+		layer.updateSearch(new Set());
+		expect(named(group,'spherical-graph-search-node-highlights').count).toBe(0);
+		layer.mesh?.getColorAt(2,color); expect(color.getHexString()).toBe(new Color(theme.node).getHexString());
+		expect(snapshot.positions).toEqual(original);
+		layer.dispose(); expect(group.children).toHaveLength(0);
+	});
+	it('keeps hover from erasing route and search colors', () => {
+		const group = new Group(), layer = new NodeLayer(group, DEFAULT_SETTINGS.appearance, theme);
+		layer.setSnapshot(fixture()); layer.updateSearch(new Set(['1.md']));
+		layer.updateSelection({hoveredNodeId:'id-1'});
+		const color = new Color(); layer.mesh?.getColorAt(1,color);
+		expect(color.getHexString()).toBe(new Color(SEARCH_HIGHLIGHT_COLOR).getHexString());
+		expect(named(group,'spherical-graph-search-node-highlights').count).toBe(1);
 		layer.dispose();
 	});
-
-	it('hides auxiliary node instances without changing their stored position', () => {
-		const group = new Group();
-		const layer = new NodeLayer(
-			group,
-			DEFAULT_SETTINGS.appearance,
-			theme,
-		);
-		layer.setSnapshot(
-			prepareRenderSnapshot({
-				snapshotId: 'filters',
-				nodes: [
-					{
-						index: 0,
-						id: 'A.md',
-						path: 'A.md',
-						basename: 'A',
-						degree: 1,
-						weightedDegree: 1,
-						kind: 'note',
-					},
-					{
-						index: 1,
-						id: 'map.png',
-						path: 'map.png',
-						basename: 'map',
-						degree: 1,
-						weightedDegree: 1,
-						kind: 'attachment',
-					},
-				],
-				edges: [{ source: 0, target: 1, weight: 1 }],
-				positions: new Float32Array([1, 0, 0, 0, 1, 0]),
-			}),
-		);
-
+	it('uses batched anti-aliased screen-size markers and depth-tested local halos', () => {
+		const group = new Group(), layer = new NodeLayer(group, DEFAULT_SETTINGS.appearance, theme);
+		layer.setSnapshot(fixture()); const mesh = layer.mesh!;
+		expect(mesh.geometry).toBeInstanceOf(PlaneGeometry); expect(mesh.material).toBeInstanceOf(ShaderMaterial);
+		expect((mesh.material as ShaderMaterial).depthTest).toBe(true);
+		const halo = named(group,'spherical-graph-node-glow');
+		expect((halo.material as ShaderMaterial).depthWrite).toBe(false);
+		expect(halo.geometry.getAttribute('cityStyle').getY(0)).toBeCloseTo(0.17);
+		layer.dispose();
+	});
+	it('anchors a single primary ring and an independent search ring to the same city', () => {
+		const group = new Group(), layer = new NodeLayer(group, DEFAULT_SETTINGS.appearance, theme);
+		layer.setSnapshot(fixture()); layer.updateSelection({selectedNodeId:'id-0',activeNodeId:'id-0',hoveredNodeId:'id-0'});
+		layer.updateSearch(new Set(['0.md']));
+		const rings = named(group,'spherical-graph-node-highlights'), search = named(group,'spherical-graph-search-node-highlights');
+		expect(rings.count).toBe(1); expect(search.count).toBe(1);
+		const a=new Matrix4(), b=new Matrix4(); rings.getMatrixAt(0,a); search.getMatrixAt(0,b);
+		expect(new Vector3().setFromMatrixPosition(a)).toEqual(new Vector3().setFromMatrixPosition(b));
+		expect(search.geometry.getAttribute('cityStyle').getX(0)).toBeGreaterThan(rings.geometry.getAttribute('cityStyle').getX(0));
+		layer.updateSelection({}); expect(rings.count).toBe(0); layer.dispose();
+	});
+	it('respects Globe size while preserving legible minima and the intrinsic position', () => {
+		const group = new Group(), layer = new NodeLayer(group, DEFAULT_SETTINGS.appearance, theme), snapshot=fixture();
+		layer.setSnapshot(snapshot);
+		const style=layer.mesh!.geometry.getAttribute('cityStyle'), original=style.getX(0);
+		layer.updateAppearance({...DEFAULT_SETTINGS.appearance,globeSize:200});
+		expect(style.getX(0)).toBeLessThan(original); expect(style.getX(0)).toBeGreaterThanOrEqual(3.25);
+		expect(layer.positionForNode('id-0',new Vector3())?.normalize().x).toBeCloseTo(1);
+		layer.dispose();
+	});
+	it('uses CSS pixels independent of framebuffer density and disables normal glow on phones', () => {
+		const group=new Group(), layer=new NodeLayer(group,DEFAULT_SETTINGS.appearance,theme), camera=new PerspectiveCamera(45);
+		camera.position.set(0,0,32); layer.setSnapshot(fixture()); layer.render(camera,1000,800,true);
+		expect(named(group,'spherical-graph-node-glow').geometry.getAttribute('cityStyle').getY(0)).toBe(0);
+		layer.updateSelection({selectedNodeId:'id-0'}); layer.render(camera,1000,800,true);
+		expect(named(group,'spherical-graph-node-glow').geometry.getAttribute('cityStyle').getY(0)).toBeCloseTo(0.45);
+		const viewport=(layer.mesh!.material as ShaderMaterial).uniforms.viewport!.value as {x:number;y:number};
+		expect(viewport).toMatchObject({x:1000,y:800}); layer.dispose();
+	});
+	it('filters auxiliary nodes and search membership by kind and path after reordering', () => {
+		const group=new Group(),layer=new NodeLayer(group,DEFAULT_SETTINGS.appearance,theme);
+		const snapshot=prepareRenderSnapshot({snapshotId:'filter',nodes:[
+			{index:1,id:'image',path:'image.png',basename:'image',kind:'attachment',degree:1,weightedDegree:1},
+			{index:0,id:'note',path:'note.md',basename:'Note',degree:1,weightedDegree:1},
+		],edges:[],positions:new Float32Array([1,0,0,0,1,0])});
+		layer.setSnapshot(snapshot);layer.updateSearch(new Set(['note.md','image.png']));
 		expect(layer.nodeForInstance(1)).toBeUndefined();
-		expect(layer.positionForNode('map.png', new Vector3()))
-			.toBeUndefined();
-		layer.updateFilters({
-			showTags: true,
-			showAttachments: true,
-			existingFilesOnly: true,
-			showOrphans: true,
-		});
-		expect(layer.nodeForInstance(1)?.id).toBe('map.png');
-		expect(
-			layer.positionForNode('map.png', new Vector3())?.normalize().y,
-		).toBeCloseTo(1, 8);
+		expect(named(group,'spherical-graph-search-node-highlights').count).toBe(1);
+		layer.updateFilters({showTags:true,showAttachments:true,showOrphans:true,existingFilesOnly:true});
+		expect(layer.nodeForInstance(1)?.id).toBe('image');
+		expect(layer.mesh!.geometry.getAttribute('cityStyle').getZ(1)).toBe(1);
+		expect(named(group,'spherical-graph-search-node-highlights').count).toBe(1);
 		layer.dispose();
 	});
 });

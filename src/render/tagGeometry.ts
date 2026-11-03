@@ -190,13 +190,14 @@ export function sampleTagSpiral(
 	nodeId?: string,
 	tagId?: string,
 	orbitRadius = DEFAULT_TAG_ORBIT_RADIUS,
+	startRadius = TAG_LINK_START_RADIUS,
 ): Vec3[] {
 	if (!Number.isSafeInteger(segments) || segments < 1) {
 		throw new RangeError('segments must be a positive integer.');
 	}
 	if (
 		!Number.isFinite(orbitRadius) ||
-		orbitRadius <= TAG_LINK_START_RADIUS
+		!Number.isFinite(startRadius) || startRadius<SPHERE_RADIUS || orbitRadius <= startRadius
 	) {
 		throw new RangeError(
 			'orbitRadius must be above the tag-link start radius.',
@@ -206,8 +207,8 @@ export function sampleTagSpiral(
 	for (let segment = 0; segment <= segments; segment += 1) {
 		const amount = segment / segments;
 		const radius =
-			TAG_LINK_START_RADIUS +
-			(orbitRadius - TAG_LINK_START_RADIUS) * amount;
+			startRadius +
+			(orbitRadius - startRadius) * amount;
 		points.push(
 			scaleVec3(
 				slerp(

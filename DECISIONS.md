@@ -191,3 +191,142 @@
   button then offers Show search results to explicitly resume following.
 
 - Country terrain uses monotone geodesic growth around each actual allocated continent seed. The previous tangent-plane radius decreased beyond the horizon and a seed displaced by separation could draw a thin neck back toward its old preferred center; both behaviors are incompatible with readable country areas.
+
+
+## Živá kartografie rendering
+
+- The approved design JSON is bundled at build time and supplies scene roles.
+  CSS carries the corresponding scoped DOM roles; a contract test guards drift.
+- Relief changes normals and light only. Territory raster, geometry ownership,
+  committed position buffers and layout/solver parameters are not migrated.
+- Roads and borders use depth-tested clip-space ribbons in CSS pixels. City
+  cores/halos use batched screen-space markers; world-space picking proxies
+  follow the same centers, camera orientation and scale.
+- Node center priority is selection, route endpoints, route, Search, active,
+  neighbor, directory, kind. Hover affects the ring/light without replacing
+  semantic center colors. Search has an independent outer ring. Roads use
+  exclusive priority to prevent multiple competing cores.
+- Local transitions finish in 120–180ms; reduced motion settles immediately.
+  No continuous animation loop is added for light, and no bloom pass is needed.
+- Keep existing Search visibility at wide zoom and all saved filters/orbit
+  heights. Do not silently overwrite persisted edge opacity; only the default
+  for fresh settings becomes 0.24.
+- Inspector framing reserves the actual rail/sheet size using viewport/FOV,
+  without rotating the camera or moving the committed map.
+- Hover tooltips use the canvas owner window's timer and cancel on leave/dispose.
+- The design remains a fixed dark cartographic skin within the plugin view;
+  application-level themes and unrelated panes are untouched.
+- Allocate city instance colours before the initial shader compilation, including
+  initially empty highlight layers; native WebGL QA caught the missing attribute
+  variant before first selection. Keep the regression test alongside state tests.
+- Touch controls and menu sizes use view-relative container units. Native DOM QA
+  covers 360/600/900/1440px, with phone/tablet CSS profiles, while physical-device
+  GPU and DPR comparison remain separately identified validation limits.
+- Screenshot iteration 2 restores pixel coverage outside nominal ribbons and
+  city discs. Previous inward-only antialiasing consumed most subpixel ink.
+  Increase city minima, road widths and coast/border contrast in token revision 2.
+- The reviewed legacy map has no persisted country raster. Derive a cached,
+  display-only subdivision from actual directory paths and frozen city seeds.
+  Pass it separately to the decorative land worker for borders only; never feed
+  it into land support, committed ownership, persistence, or the layout solver.
+  Existing persisted countries remain authoritative. Tests compare original
+  land, beach and coastline buffers byte-for-byte with/without this overlay.
+- Use broad hypsometric/terraced fields and directional normals instead of the
+  previous high-frequency pitted terrain. Shared state priorities and saved
+  appearance preferences retain their meaning.
+- Point-by-point iteration 3 models cut terrace walls/lips and short static
+  camera-relative ledge shadows. Two extra height samples fade in with detail;
+  phone detail never enables them. A static backdrop adds depth without bloom
+  or an idle animation loop. All geographic and position buffers stay physical.
+- Selected cities have a larger lit bead, hotspot and coral local halo; labels
+  choose a side or above/below position so the marker remains the focal point.
+  Selected roads become gold; wine Search membership and priority stay intact.
+- Round geographic ink in a bounded angular envelope, preserve junctions and
+  veto corners near cities or outside the original land. Keep the raw coast
+  buffer; export a separate smoothed coast-ink buffer from the decorative worker.
+  Dark geographic underlays draw before document roads and share their toggles
+  and lifecycle. The smoothing does not migrate stored country ownership.
+- The user asked for all visual findings, while the earlier saved-layout
+  requirement remains in force: macro coast shapes, islands and city placement
+  are retained. We do not invent decorative land to match the illustration.
+
+- Iteration 4 separates continuous macro slopes, cut terraces and bounded fine
+  material relief. Directional face lighting replaces uniform bright outlines.
+  Country tint is a read-only geometry attribute sampled from the authoritative
+  saved country raster (or the existing legacy display overlay), not new ownership.
+- Ordinary road context receives a positive per-segment opacity factor based on
+  locality, length and degree. No edge or segment is dropped, persisted opacity
+  is retained, and selection/hover/Search/route ribbons remain full strength.
+- A filled 17px coral city and 42px halo lead selection. Only its primary ring
+  is reduced to 40%; wine Search keeps its independent ring/soft halo. Ordinary
+  limb beads fade to 40%, while semantic highlights stay visible.
+- Explicit Find/Focus uses the saved territory area centroid, not the mean of
+  coastal city positions. The camera target shift is capped at 0.24 rad; regular
+  select/hover does not move the camera and no committed coordinate is written.
+- Progressive inspector disclosure previews four neighbors and can reveal all.
+  The Open/Pin action row retains native accessible labels and pin semantics.
+  Country labels receive local feathered contrast instead of broad overlays.
+- Native iteration 4 QA checks all 567 visible edge records, satellite shaders,
+  layer toggles, 360/600/900/1440px DOM widths and exact geography preservation.
+  Actual screenshots and the remaining gap to the artistic concept are recorded
+  in docs/design/2026-11-01-concepts/ITERATION_4_REVIEW.md.
+
+- Iteration 5 implements the user's explicit approval for true low-relief display
+  geometry. Intrinsic positions and saved territory remain authoritative; no
+  solver runs for these changes. Raw land/beach/coast buffers remain available.
+  The decorative worker returns separate raised positions, normals, elevations,
+  coastal skirts and elevated geographic strokes.
+- A shared TerrainSurface derives height from the same land support and seed as
+  the frozen map, with stable ridges/terraces and calm city neighborhoods. The
+  sampler is cached per prepared snapshot with a bounded 65,536-entry height
+  cache. Cities, pins, labels, roads and satellite starts share it. Surface and
+  continent toggles also update these anchors; tag orbit height is retained.
+- Material hue varies independently of elevation and illumination, with three
+  mineral accents per continental family. Country tones blend related hues.
+  All geographic physical materials share an upper-left camera-space key.
+  Static optical ocean detail and true-coast shallows replace a smooth fill.
+- A cheap depth-tested screen-space HorizonGlow supplies the soft external
+  atmosphere independently of the existing cloud shell. It adds no idle loop.
+- Roads use deterministic, reversible intrinsic bends with an unrelated-city
+  veto, and clearance checks between samples. All highlight layers reuse the
+  same paths and retain their existing priorities and zoom behavior.
+- Picking and DOM label visibility test the actual raised land/skirt geometry.
+  Height and normal/cavity shading do not claim real-time global cast shadows.
+- Persistent pin heads are violet with ivory shafts and larger physical heads;
+  city colour/selection never recolours a pin. Existing pin identities remain.
+
+- Iteration 6 uses broad domain-warped terrain with 16 finer strata, narrow
+  risers and mostly flat plateaus. Refine source triangles conformingly, then
+  cut at strata entry/exit levels. Plateau normals and riser face normals are
+  separate. Coarse meshes use one globally consistent cut stride to avoid cracks.
+- Preserve all raw buffers and committed geography. Additional material arrays
+  follow the new derived vertex count and are transferred with the inline worker.
+  The same height sampler still anchors cities, pins, labels and all connections.
+- Build a packed triangle BVH in the land worker. Native QA found that brute-force
+  occlusion was too slow on the denser mesh. The index uses exact front-face
+  intersections, matches Three.js segment raycasts in tests, and is released with
+  the land geometry. It adds no dependency or persisted layout data.
+- Give countries stable directory-key RGB hue multipliers with similar luminance,
+  rather than only selecting a lighter/darker mineral. Saved/display country
+  rasters remain authoritative and unchanged.
+- Suppress a node tooltip when its map label is visible, including a pending
+  timer after late label placement. If map labels are disabled/clipped, retain
+  a basename-only tooltip. Remove path titles from city labels. Tag tooltips,
+  selection, keyboard opening and touch picking keep their existing behavior.
+
+
+- Iteration 7 follows the eight concept-comparison findings. Keep 16 real strata,
+  the height bound and shared anchoring; add stationary mid-frequency erosion
+  rather than more geometric bands or layout changes. Refined land is built
+  in the worker and uses the existing packed BVH.
+- Separate terrace light and narrow directional foot shadows from contour ink.
+  Restrict olive patches and enrich copper/ochre families so coherent country
+  RGB multipliers remain readable without introducing unrelated saturated colours.
+- Country border ink keeps its warm brightness independent of the terrain key.
+  Narrow the true-coast shallow field and make the sand apron opaque in Solid
+  mode. Transparent/Hidden behavior and saved geographic boundaries are preserved.
+- Give the atmospheric silhouette a continuous dim baseline plus an upper-left
+  highlight. Use broad elongated optical bathymetry, with expensive samples
+  disabled on the phone profile. No animation, network, texture asset or dependency.
+- Increase ordinary city minima/halo and limb visibility; attenuate long/hub
+  context roads while retaining every relationship and all explicit highlights.

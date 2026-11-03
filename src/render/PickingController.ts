@@ -1,4 +1,5 @@
-import { Camera, Raycaster, Vector2 } from 'three';
+import { CARTOGRAPHY as T } from './cartography';
+import { Camera, Raycaster, Vector2, type Vector3 } from 'three';
 import { NodeLayer } from './NodeLayer';
 import { RenderNode, RenderTag } from './renderTypes';
 import { TagLayer } from './TagLayer';
@@ -13,6 +14,8 @@ export interface PickingOptions {
 	touchPickRadiusPx?: number;
 	enableDoubleClick?: boolean;
 	getSurfaceMode?: () => SurfaceMode;
+	isTerrainOccluded?: (camera:Vector3,point:Vector3)=>boolean;
+	hasNodeLabel?: (nodeId:string)=>boolean;
 }
 
 export interface PickingCallbacks {
@@ -38,6 +41,10 @@ export class PickingController {
 	private readonly tooltip: HTMLElement;
 	private pointerStart: PointerStart | undefined;
 	private selectedNode: RenderNode | undefined;
+	private tooltipKey: string | undefined;
+	private tooltipNodeId: string | undefined;
+	private tooltipTimer: number | undefined;
+	private readonly ownerWindow: Window;
 	private disposed = false;
 	private readonly activePointers = new Set<number>();
 	private multiTouchGesture = false;
@@ -50,13 +57,14 @@ export class PickingController {
 		private readonly callbacks: PickingCallbacks,
 		private readonly options: PickingOptions = {},
 	) {
+		this.ownerWindow = canvas.ownerDocument.defaultView ?? window;
 		const parent = canvas.parentElement;
 		if (parent === null) {
 			throw new Error('The graph canvas must be attached before picking is enabled.');
 		}
 		this.tooltip = parent.createDiv();
 		this.tooltip.className = 'spherical-graph-tooltip';
-		this.tooltip.hidden = true;
+		this.hideTooltip();
 		this.tooltip.setAttribute('role', 'tooltip');
 
 		canvas.addEventListener('pointerdown', this.onPointerDown);
@@ -84,6 +92,7 @@ export class PickingController {
 		this.canvas.removeEventListener('pointerleave', this.onPointerLeave);
 		this.canvas.removeEventListener('dblclick', this.onDoubleClick);
 		this.canvas.removeEventListener('keydown', this.onKeyDown);
+		this.hideTooltip();
 		this.tooltip.remove();
 		this.pointerStart = undefined;
 	}
@@ -125,7 +134,7 @@ export class PickingController {
 
 		if (event.pointerType === 'touch' || this.options.enableHover === false) {
 			this.callbacks.onHover(undefined);
-			this.tooltip.hidden = true;
+			this.hideTooltip();
 			return;
 		}
 
@@ -182,7 +191,7 @@ export class PickingController {
 
 	private readonly onPointerLeave = (): void => {
 		this.callbacks.onHover(undefined);
-		this.tooltip.hidden = true;
+		this.hideTooltip();
 	};
 
 	private readonly onDoubleClick = (event: MouseEvent): void => {
@@ -235,7 +244,7 @@ export class PickingController {
 				hit.instanceId !== undefined &&
 				this.nodeLayer.nodeForInstance(hit.instanceId) !== undefined &&
 				((this.options.getSurfaceMode?.() ?? 'solid') !== 'solid' ||
-					!isPointOccludedByGlobe(this.raycaster.ray.origin, hit.point)),
+					(!isPointOccludedByGlobe(this.raycaster.ray.origin, hit.point)&&!this.options.isTerrainOccluded?.(this.raycaster.ray.origin,hit.point))),
 			);
 			const node =
 				intersection?.instanceId === undefined
@@ -303,28 +312,52 @@ export class PickingController {
 		return undefined;
 	}
 
+	/** Reconcile after the map's label placement, including late frames/toggles. */
+	syncHoverLabel():void {
+		if(this.tooltipNodeId&&this.options.hasNodeLabel?.(this.tooltipNodeId))this.hideTooltip();
+	}
+
 	private updateTooltip(
 		item: PickedGraphItem | undefined,
 		clientX: number,
 		clientY: number,
 	): void {
-		if (item === undefined) {
-			this.tooltip.hidden = true;
+		if (item === undefined || (item.kind==='node'&&this.options.hasNodeLabel?.(item.node.id))) {
+			this.hideTooltip();
 			return;
 		}
 		const parentRectangle =
 			this.tooltip.parentElement?.getBoundingClientRect();
-		const left = clientX - (parentRectangle?.left ?? 0) + 12;
-		const top = clientY - (parentRectangle?.top ?? 0) + 12;
+		const bounds = parentRectangle ?? this.canvas.getBoundingClientRect();
+		const x = clientX - bounds.left, y = clientY - bounds.top;
+		const tooltipWidth = this.tooltip.offsetWidth || Math.min(240, bounds.width - 16);
+		const tooltipHeight = this.tooltip.offsetHeight || 44;
+		const left = Math.max(8, Math.min(bounds.width - tooltipWidth - 8, x + 12));
+		const top = Math.max(8, Math.min(bounds.height - tooltipHeight - 8, y + 12));
 		this.tooltip.textContent =
 			item.kind === 'node'
-				? `${item.node.basename}\n${item.node.path}`
+				? item.node.basename
 				: `${item.tag.label}\n${item.tag.nodeIndices.length} ${
 						item.tag.nodeIndices.length === 1
 							? 'note'
 							: 'notes'
 					}`;
 		this.tooltip.style.transform = `translate(${left.toFixed(1)}px, ${top.toFixed(1)}px)`;
-		this.tooltip.hidden = false;
+		const key = item.kind === 'node' ? 'node:' + item.node.id : 'tag:' + item.tag.id;
+		if (this.tooltipKey !== key) {
+			this.hideTooltip(); this.tooltipKey = key;
+			this.tooltipNodeId=item.kind==='node'?item.node.id:undefined;
+			this.tooltipTimer = this.ownerWindow.setTimeout(() => {
+				this.tooltipTimer = undefined;
+				if(this.tooltipNodeId&&this.options.hasNodeLabel?.(this.tooltipNodeId)){this.hideTooltip();return;}
+				if (!this.disposed && this.tooltipKey === key) this.tooltip.hidden = false;
+			}, T.motion.tooltipDelayMs);
+		}
+	}
+
+	private hideTooltip(): void {
+		if (this.tooltipTimer !== undefined) this.ownerWindow.clearTimeout(this.tooltipTimer);
+		this.tooltipTimer = undefined; this.tooltipKey = undefined;this.tooltipNodeId=undefined;
+		this.tooltip.hidden = true;
 	}
 }

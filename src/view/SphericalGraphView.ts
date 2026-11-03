@@ -377,6 +377,7 @@ export class SphericalGraphView extends ItemView {
 			);
 		}
 		this.detailsPanel = new SelectionDetailsPanel(this.stage, {
+			onPresentationChange: () => this.renderer?.invalidateViewport(),
 			onOpen: (node, openInNewLeaf) => {
 				this.invoke(() =>
 					this.options.callbacks.onOpenFile(node, openInNewLeaf),

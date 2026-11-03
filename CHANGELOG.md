@@ -6,6 +6,37 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-03
+
+### Changed
+
+- Living Cartography: sculpted mineral terrain, irregular layered relief,
+  richer continent colours, subtle country tints, gold coastlines and clearer
+  country borders above a petrol ocean with optical bathymetry.
+- Shared upper-left lighting and a soft atmospheric rim give the globe more
+  depth. Cities have readable screen-size cores, local halos and filled coral
+  selection; long context roads are quieter while explicit highlights remain.
+- Gently curved surface roads and all cities, labels, pins and satellite links
+  follow the same decorative terrain. Persistent pins have contrasting violet
+  heads. Detailed terrain and its spatial index are built in the inline worker.
+- Refreshed toolbar, map controls, selection details and responsive presentation,
+  plus new screenshots from the fictional Atlas of ideas demo vault.
+
+### Fixed
+
+- Show a single node hover label with its name only. When map labels are
+  disabled or unavailable, keep one basename-only fallback tooltip.
+- Give legacy saved maps display-only country boundaries and tints without
+  moving notes, regenerating geography or migrating their saved layout.
+
+### Upgrade notes
+
+- Existing maps, settings, pins, filters, Search and Route Finder are preserved.
+  No Refresh or Renew is required to apply the visual update.
+- The new terrain was checked on desktop and with automated mobile-profile
+  checks. Very large vaults and physical mobile-device performance were not
+  newly benchmarked for this release.
+
 ## [1.10.1] - 2026-10-28
 
 ### Fixed
