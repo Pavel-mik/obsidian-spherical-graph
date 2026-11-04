@@ -145,6 +145,7 @@ describe('TagLayer', () => {
 			DEFAULT_TAG_ORBIT_RADIUS,
 			6,
 		);
+		expect(focusPosition?.length()).toBeCloseTo(17.5, 6);
 		expect(
 			layer.positionForTag('#missing', new Vector3()),
 		).toBeUndefined();

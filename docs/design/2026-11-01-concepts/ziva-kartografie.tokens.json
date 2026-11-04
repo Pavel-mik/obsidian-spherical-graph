@@ -363,7 +363,7 @@
     "haloDiameterPx": 18,
     "haloPeakOpacity": 0.1,
     "selectedRingWidthPx": 1,
-    "orbitHeightPercent": 33.333333333333336,
+    "orbitHeightPercent": 75,
     "orbitHeightPolicy": "Zachovat uloženou uživatelskou hodnotu; výchozí hodnota odpovídá 100/3 procent poloměru.",
     "idleLinks": false,
     "idleSpin": false

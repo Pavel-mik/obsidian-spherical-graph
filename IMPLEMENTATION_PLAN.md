@@ -135,3 +135,12 @@
 - [x] 7. Strengthen upper-left key light and the continuous atmospheric rim.
 - [x] 8. Add broad directional ocean structure, clearer cities and calmer context roads.
 - [x] Verify saved layout/settings/pins, functions, full gate and native snapshots against the concept.
+
+
+## Tablet controls and common tag height – 1.11.1
+
+- [x] Diagnose the tablet controls containing block and anchor it to the map.
+- [x] Set the shared default satellite height to 75% of the globe radius.
+- [x] Verify open/close, scrolling and touch controls at tablet/phone sizes.
+- [x] Run the local release gate and production dependency audit.
+- Release publication and Community scan results are reported with the delivery.

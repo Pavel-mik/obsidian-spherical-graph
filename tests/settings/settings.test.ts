@@ -98,7 +98,7 @@ describe('parseSphericalGraphSettings', () => {
 
 		expect(appearance.labelZoomThresholdPercent).toBe(80);
 		expect(appearance.edgeZoomThresholdPercent).toBe(50);
-		expect(appearance.tagOrbitHeightPercent).toBe(100 / 3);
+		expect(appearance.tagOrbitHeightPercent).toBe(75);
 		expect(appearance.showAtmosphere).toBe(true);
 		expect(appearance.showCountryBorders).toBe(true);
 		expect(parseSphericalGraphSettings({ appearance: { showCountryBorders: false } }).appearance.showCountryBorders).toBe(false);

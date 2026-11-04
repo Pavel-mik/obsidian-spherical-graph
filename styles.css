@@ -2793,6 +2793,8 @@
 	position: absolute; left: auto; right: max(12px, env(safe-area-inset-right));
 	width: min(320px, calc(100cqw - 24px));
 }
+/* Both ancestors must be static so the inset panel fills the map, not the toolbar. */
+.spherical-graph-view[data-device="tablet"] .spherical-graph-toolbar,
 .spherical-graph-view[data-device="tablet"] .spherical-graph-controls-menu { position: static; }
 .spherical-graph-view[data-device="phone"] .spherical-graph-inspector { max-height: 42%; }
 .spherical-graph-view[data-device="phone"] .spherical-graph-filter-toggle,
