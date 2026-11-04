@@ -11,11 +11,10 @@ export const EDGE_SURFACE_LIFT = 0.04;
 export const DEFAULT_GLOBE_SIZE = 100;
 export const BASE_NODE_MARKER_SIZE = 0.11;
 /**
- * The satellite shell sits one third of a globe radius above the surface.
- * Keep this as an expression instead of a rounded decimal so derived radii
- * retain the exact 4 / 3 relationship.
+ * Shared by desktop, tablet and phone: the shell sits 75% of a globe radius
+ * above the surface, at 1.75 times the radius from the centre.
  */
-export const DEFAULT_TAG_ORBIT_HEIGHT_PERCENT = 100 / 3;
+export const DEFAULT_TAG_ORBIT_HEIGHT_PERCENT = 75;
 export const MIN_TAG_ORBIT_HEIGHT_PERCENT = 5;
 export const MAX_TAG_ORBIT_HEIGHT_PERCENT = 100;
 export const DEFAULT_TAG_ORBIT_RADIUS =

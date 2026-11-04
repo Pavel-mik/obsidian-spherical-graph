@@ -1,5 +1,24 @@
 # Validation
 
+## Tablet Map controls and satellite height (1.11.1)
+
+- Date: 2026-11-04. Reproduced the 1.11.0 tablet regression in isolated desktop
+  Obsidian 1.14.4 with tablet CSS attributes: the panel's containing block was
+  the toolbar, leaving a 25.33px panel at 1024x768. With the fix it is anchored
+  to the map and measures 562.05px high on the same viewport.
+- Verified tablet 1024x768 and 768x1024, phone 390x844 and 844x390, and desktop
+  1366x900. Each opened within the view, scrolled to Sphere surface, retained a
+  reachable close button, toggled Edges twice and closed correctly. All three
+  underlying device CSS profiles were exercised; no physical tablet was used.
+- The demo's intrinsic positions and appearance settings were unchanged after
+  the temporary checks. No page errors or failed GPU programs were observed.
+- Shared defaults and real tag geometry: 75% above the surface, radius 17.5
+  for R=10. Regression tests cover desktop/tablet/phone profile application and
+  preservation of explicit saved heights, including the former 100/3 default.
+- `RELEASE_TAG=1.11.1 npm run check`, `VITEST_MAX_WORKERS=2`: PASS, 437 tests
+  in 73 files, lint, types, production build and release validation.
+  `npm audit --omit=dev`: zero vulnerabilities. `git diff --check`: PASS.
+
 ## Living Cartography (1.11.0)
 
 - Date: 2026-11-03. `RELEASE_TAG=1.11.0 npm run check` with

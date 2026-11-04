@@ -6,6 +6,23 @@ import {
 } from '../../src/constants';
 import { atmosphereRadiusForHeight } from '../../src/render/AtmosphereLayer';
 import { RENDERER_CAMERA_NEAR_PLANE, SphericalGraphRenderer } from '../../src/render/SphericalGraphRenderer';
+import { parseSphericalGraphSettings, type AppearanceSettings } from '../../src/settings/settings';
+import { tagOrbitRadiusForAppearance } from '../../src/render/TagLayer';
+
+describe('shared satellite height across device profiles', () => {
+	it.each(['desktop', 'tablet', 'phone'])('keeps the default and saved heights on %s', (deviceClass) => {
+		const renderer = Object.create(SphericalGraphRenderer.prototype) as {
+			profileAppearance(appearance: AppearanceSettings): AppearanceSettings;
+		};
+		Reflect.set(renderer, 'profile', { deviceClass, maxLabels: 80 });
+		for (const value of [undefined, 100 / 3, 45]) {
+			const settings = parseSphericalGraphSettings({ appearance: { tagOrbitHeightPercent: value } });
+			const appearance = renderer.profileAppearance(settings.appearance);
+			expect(appearance.tagOrbitHeightPercent).toBe(value ?? 75);
+			expect(tagOrbitRadiusForAppearance(appearance)).toBeCloseTo(10 * (1 + (value ?? 75) / 100));
+		}
+	});
+});
 
 interface RotationHarness {
 	advanceAutoRotation(timestamp: number): boolean;

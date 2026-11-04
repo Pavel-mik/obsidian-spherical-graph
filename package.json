@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-spherical-graph",
-	"version": "1.11.0",
+	"version": "1.11.1",
 	"description": "Explore your vault as a sculpted globe: folders become continents, subfolders become countries, and notes become cities. Follow native Search and trace routes between ideas.",
 	"private": true,
 	"main": "main.js",

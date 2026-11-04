@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-11-04
+
+### Fixed
+
+- Keep the tablet Map controls panel anchored to the full map instead of the
+  short toolbar, so it opens at a usable height and scrolls to every control.
+
+### Changed
+
+- Default tag/satellite height is now 75% of the globe radius on desktop,
+  tablet and phone. Explicit saved heights remain unchanged.
+
 ## [1.11.0] - 2026-11-03
 
 ### Changed

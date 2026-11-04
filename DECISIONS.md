@@ -330,3 +330,11 @@
   disabled on the phone profile. No animation, network, texture asset or dependency.
 - Increase ordinary city minima/halo and limb visibility; attenuate long/hub
   context roads while retaining every relationship and all explicit highlights.
+
+
+- 1.11.1 fixes the tablet menu's containing block: the final mobile skin uses
+  an absolute inset panel, so both its details wrapper and tablet toolbar must
+  be static. This preserves the existing safe-area/bottom-navigation clearances.
+- The common tag-height default is 75% R above the surface (orbit radius 1.75R).
+  All device profiles inherit it; parsing still preserves explicit saved values
+  and legacy scene-unit conversion. No layout or preference migration is run.

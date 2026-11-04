@@ -319,7 +319,8 @@ Manual or automatic rotation changes only the camera and never a node position.
   markers and the coral selection frame smaller without moving the layout.
   Initialize and Renew automatically choose this value from the vault's note
   count; Refresh preserves the current value
-- tag-orbit height as a percentage of the globe radius (one third by default),
+- tag-orbit height as a percentage of the globe radius (75% by default on
+  desktop, tablet and phone; existing saved heights are preserved),
   plus an optional camera-axis protection guard, disabled by default
 - edge opacity and an independent zoom-in visibility threshold (50% by
   default)
