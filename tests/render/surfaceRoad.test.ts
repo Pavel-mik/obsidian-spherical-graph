@@ -6,10 +6,10 @@ import { DEFAULT_SETTINGS } from '../../src/settings/settings';
 
 describe('intrinsic bent roads',()=>{
 
- it('uses the spatial city guard in the real road layer',()=>{
+ it.each(['atlas','living'] as const)('keeps bent roads clear of other cities in %s',mapStyle=>{
   const midpoint=curvedRoadDirections([1,0,0],[0,1,0],12,'a','b')[6]!;
   const snapshot=prepareRenderSnapshot({snapshotId:'guard',nodes:['a','b','c'].map((id,index)=>({id,index,path:id+'.md',basename:id,degree:1,weightedDegree:1})),edges:[{source:0,target:1,weight:1}],positions:new Float32Array([1,0,0,0,1,0,...midpoint])});
-  const points=sampleSurfaceRoad(snapshot,snapshot.edges[0]!,12,DEFAULT_SETTINGS.appearance);
+  const points=sampleSurfaceRoad(snapshot,snapshot.edges[0]!,12,{...DEFAULT_SETTINGS.appearance,mapStyle});
   expect(points).toHaveLength(13);expect(points[6]![2]).toBeCloseTo(0,12);
  });
  it('keeps endpoints and surface directions, with identical reverse paths',()=>{

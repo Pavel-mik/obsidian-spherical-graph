@@ -17,8 +17,9 @@ function harness(z: number) {
 		for (const timer of timers) if (!timer.cancelled && timer.due<=time) { timer.cancelled=true; timer.run(); }
 	};
 	const tooltip = { setAttribute: vi.fn(), remove: vi.fn(), style: {}, hidden: true,textContent:'' };
+	let overlay = false;
 	const canvas = {
-		ownerDocument: { defaultView: ownerWindow },
+		ownerDocument: { defaultView: ownerWindow, elementFromPoint: (): unknown => overlay ? tooltip : canvas },
 		parentElement: { createDiv: () => tooltip },
 		addEventListener: (name: string, handler: (event: unknown) => void) => handlers.set(name, handler),
 		removeEventListener: vi.fn(),
@@ -47,6 +48,13 @@ function harness(z: number) {
 	const event = { button: 0, pointerId: 1, pointerType: 'mouse', clientX: 100, clientY: 100 };
 	return {
 		onSelect, onOpen, onHover, tooltip, advance,
+		setOverlay: (value: boolean) => { overlay = value; },
+		touchPointer: (type: string, pointerId = 1, x = 100) => handlers.get(type)?.({ ...event, pointerType: 'touch', pointerId, clientX: x }),
+		endTouch: () => {
+			const preventDefault = vi.fn();
+			handlers.get('touchend')?.({ changedTouches: [{ clientX: 100, clientY: 100 }], cancelable: true, preventDefault });
+			return preventDefault;
+		},
 		setNodeLabelVisible:(value:boolean)=>{nodeLabelVisible=value;},syncLabels:()=>picking.syncHoverLabel(),
 		move: () => handlers.get('pointermove')?.(event),
 		leave: () => handlers.get('pointerleave')?.(event),
@@ -59,6 +67,34 @@ function harness(z: number) {
 }
 
 describe('PickingController globe occlusion', () => {
+	it('consumes the browser click only when a handled tap has put a panel under the finger', () => {
+		const h = harness(SPHERE_RADIUS + NODE_SURFACE_LIFT);
+		h.touchPointer('pointerdown');
+		h.touchPointer('pointerup');
+		expect(h.onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'node' }));
+		h.setOverlay(true);
+		expect(h.endTouch()).toHaveBeenCalledOnce();
+		expect(h.endTouch()).not.toHaveBeenCalled();
+
+		h.setOverlay(false);
+		h.touchPointer('pointerdown');
+		h.touchPointer('pointerup');
+		expect(h.endTouch()).not.toHaveBeenCalled();
+
+		h.setOverlay(true);
+		h.touchPointer('pointerdown');
+		h.touchPointer('pointermove', 1, 132);
+		h.touchPointer('pointerup', 1, 132);
+		expect(h.endTouch()).not.toHaveBeenCalled();
+
+		h.touchPointer('pointerdown');
+		h.touchPointer('pointerdown', 2);
+		h.touchPointer('pointerup', 2);
+		h.touchPointer('pointerup');
+		expect(h.endTouch()).not.toHaveBeenCalled();
+		h.dispose();
+	});
+
 	it('uses the map label alone when it already identifies the hovered city',()=>{
 	 const h=harness(SPHERE_RADIUS+NODE_SURFACE_LIFT);h.setNodeLabelVisible(true);h.move();h.advance(1000);
 	 expect(h.onHover).toHaveBeenLastCalledWith(expect.objectContaining({kind:'node'}));expect(h.tooltip.hidden).toBe(true);h.dispose();

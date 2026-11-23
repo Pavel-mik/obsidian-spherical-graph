@@ -5,6 +5,8 @@ import {
 	InstancedMesh,
 	Matrix4,
 	PerspectiveCamera,
+	Raycaster,
+	Vector2,
 	ShaderMaterial,
 	Vector3,
 } from 'three';
@@ -51,6 +53,22 @@ function fixture(count = 3) {
 function named(group: Group, name: string): InstancedMesh { return group.getObjectByName(name) as InstancedMesh; }
 
 describe('Živá kartografie cities', () => {
+	it.each(['atlas','living'] as const)('keeps instance buffers stable on orbit and picks the new facing marker in %s', mapStyle => {
+		const group = new Group(), layer = new NodeLayer(group,{...DEFAULT_SETTINGS.appearance,mapStyle},theme);
+		const snapshot = prepareRenderSnapshot({snapshotId:'orbit', nodes: ['front','side','back'].map((id,index)=>({id,index,path:id+'.md',basename:id,degree:1,weightedDegree:1})),
+			edges:[],positions:new Float32Array([0,0,1,1,0,0,0,0,-1])});
+		const camera = new PerspectiveCamera(45,1,0.25,100);
+		camera.position.set(0,0,32); camera.lookAt(0,0,0); layer.setSnapshot(snapshot);layer.render(camera,800,800);
+		const mesh=layer.mesh!, version=mesh.instanceMatrix.version;
+		const pick=()=>{const ray=new Raycaster();ray.setFromCamera(new Vector2(),camera);return ray.intersectObject(mesh).map(hit=>layer.nodeForInstance(hit.instanceId!)!.id);};
+		expect(pick()).toEqual(['front','back']);
+		camera.position.set(32,0,0);camera.lookAt(0,0,0);layer.render(camera,800,800);
+		expect(mesh.instanceMatrix.version).toBe(version);
+		expect(pick()[0]).toBe('side');
+		camera.position.x = 18; layer.render(camera,800,800);
+		expect(mesh.instanceMatrix.version).toBe(version); expect(pick()[0]).toBe('side');
+		layer.dispose();
+	});
 	it('keeps overview cities readable with the saved 155 percent globe scale', () => {
 		const group=new Group(),snapshot=fixture(),original=snapshot.positions.slice();
 		const layer=new NodeLayer(group,{...DEFAULT_SETTINGS.appearance,globeSize:155},theme);
@@ -58,12 +76,20 @@ describe('Živá kartografie cities', () => {
 		layer.setSnapshot(snapshot);layer.render(camera,1000,500);
 		const style=layer.mesh!.geometry.getAttribute('cityStyle');
 		for(let i=0;i<snapshot.nodes.length;i++) expect(style.getX(i)*2).toBeGreaterThanOrEqual(6.5);
-		expect(style.getY(0)).toBeLessThan(1);expect(style.getY(0)).toBeGreaterThan(0);
+		expect(layer.mesh!.geometry.getAttribute('limbFade').getX(0)).toBe(1);expect(style.getY(0)).toBeGreaterThan(0);
 		layer.updateSelection({selectedNodeId:'id-0'});layer.render(camera,1000,500,false,100,true);
 		expect(style.getX(0)*2).toBeGreaterThanOrEqual(17);
 		expect(style.getW(0)).toBe(1);expect(style.getW(1)).toBe(0);
 		expect(style.getY(0)).toBe(1);
 		expect(snapshot.positions).toEqual(original);layer.dispose();
+	});
+	it('drops in-flight instance ranges when a smaller snapshot replaces the graph', () => {
+		const group = new Group(), layer = new NodeLayer(group,DEFAULT_SETTINGS.appearance,theme);
+		layer.setSnapshot(fixture(60)); layer.updateSelection({hoveredNodeId:'id-59'});
+		layer.setSnapshot(fixture(2)); layer.updateSelection({hoveredNodeId:'id-0'});
+		const previous = layer.mesh!.geometry.getAttribute('previousStyle') as import('three').InstancedBufferAttribute;
+		expect(previous.updateRanges.every(range=>range.start + range.count <= previous.array.length)).toBe(true);
+		layer.dispose();
 	});
 	it('allocates shader colours before empty highlight layers are first compiled', () => {
 		const group = new Group(), layer = new NodeLayer(group, DEFAULT_SETTINGS.appearance, theme);

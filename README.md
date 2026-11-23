@@ -6,7 +6,8 @@
 
 Turn your Obsidian vault into a world you can navigate. Folders become
 continents, subfolders become countries, notes become cities, and links become
-roads. Explore your ideas on a matte, sculpted cartographic globe.
+roads. Start with the lightweight atlas or switch to sculpted terrain in
+Living cartography.
 
 ![A vault mapped as continents and countries on an interactive globe](docs/screenshots/spherical-graph-globe.png)
 
@@ -21,7 +22,11 @@ roads. Explore your ideas on a matte, sculpted cartographic globe.
 - **Local and private.** No account, cloud service, telemetry, or changes to
   your note contents.
 
-## A living atlas of your notes
+## Map styles
+
+**Efficient atlas** is the default on desktop, tablet and phone. It uses a flat, shaded globe with coloured territories, coastlines, country borders and fine curved links. For sculpted terrain and atmospheric effects, select **Map controls → Globe → Map style → Living cartography**. Both styles share the same positions, camera and pins.
+
+## Living cartography
 
 Layered mineral terrain, softly lit coastlines, and a pale atmospheric rim
 bring depth to the globe. Countries share their continent's palette with
@@ -98,7 +103,7 @@ hidden. The compact search toolbar leaves more room for the globe.
 
 ![Map controls with independent Edges and Country borders switches](docs/screenshots/spherical-graph-filters.png)
 
-*Screenshots use a fictional 150-note demo vault in desktop Obsidian. The
+*Screenshots show Living cartography in a fictional 150-note desktop vault. The
 same saved map is shown throughout; only the view and display options change.
 Captured directly in the plugin, without compositing or generated artwork.*
 
@@ -373,7 +378,9 @@ restores the synchronized positions, continents, camera, and pins as one map.
 Partial settings, cache, or pin writes first preserve newer fields already
 delivered by Sync.
 
-To stay below the 5 MB per-file ceiling of the Standard Sync plan, persistence
+New maps store full-precision positions and weighted links in a losslessly compressed block. Each note path is stored once in the layout. Existing maps can be opened immediately. To convert, update the plugin on each device, then choose **Save map → Convert and save** once. The plugin verifies the converted map before writing. Earlier versions can only read the old format.
+
+The limit is measured on the complete, indented UTF-8 file. To stay below the 5 MB per-file ceiling of the Standard Sync plan, persistence
 uses a 4.5 MB safety budget. At the budget boundary it discards only the
 rebuildable graph cache; committed positions, continent ownership, camera,
 settings, and pins remain authoritative. If those canonical fields alone

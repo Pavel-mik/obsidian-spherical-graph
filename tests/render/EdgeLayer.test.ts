@@ -42,10 +42,12 @@ describe('adaptiveSegmentCount', () => {
 		layer.setSnapshot(prepareRenderSnapshot({snapshotId:'hover',nodes:['A','B'].map((id,index)=>({
 			id,index,path:id+'.md',basename:id,degree:1,weightedDegree:1,
 		})),edges:[{source:0,target:1,weight:1}],positions:new Float32Array([1,0,0,0,1,0])}));
+		const base = (group.getObjectByName('spherical-graph-edges') as Mesh).geometry;
 		layer.updateHover('A');
 		const hover=group.getObjectByName('spherical-graph-hover-edge-ribbon') as Mesh;
 		expect(hover).toBeInstanceOf(Mesh);
-		expect((group.getObjectByName('spherical-graph-edges') as Mesh).geometry.getAttribute('position').count).toBe(0);
+		expect((group.getObjectByName('spherical-graph-edges') as Mesh).geometry).toBe(base);
+		expect([...base.getAttribute('strokeOpacity').array].every(v => v === 0)).toBe(true);
 		const camera=new PerspectiveCamera();camera.position.set(0,0,12);
 		layer.render(camera,1000,800);expect(hover.visible).toBe(true);
 		layer.updateAppearance({...DEFAULT_SETTINGS.appearance,showEdges:false});

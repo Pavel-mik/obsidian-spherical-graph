@@ -10,6 +10,10 @@ The notices below do not replace the license text distributed by each project.
 - License: MIT
 - Use: bundled WebGL renderer, scene graph, raycasting, and ArcballControls.
 
+## fflate
+
+The storage worker uses fflate 0.8.2 from the Three.js distribution to compress and decompress saved maps. [MIT license and copyright](https://github.com/101arrowz/fflate/blob/v0.8.2/LICENSE)
+
 ## Obsidian API type definitions
 
 - Project: <https://github.com/obsidianmd/obsidian-api>

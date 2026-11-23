@@ -71,6 +71,8 @@ export class TagLayer {
 	private route: RenderRouteState | undefined;
 	private visible = true;
 	private readonly directions = new Map<string, Vec3>();
+	private labelOrder?: readonly RenderTag[];
+	private readonly tagIndices = new Map<string,number>();
 	private readonly linkedTagIds = new Set<string>();
 	private readonly matrix = new Matrix4();
 	private readonly position = new Vector3();
@@ -106,6 +108,8 @@ export class TagLayer {
 		this.removeMarkers();
 		this.removeLinks();
 		this.snapshot = snapshot;
+		this.tagIndices.clear();
+		snapshot.tags.forEach((tag,i) => this.tagIndices.set(tag.id,i));
 		this.directions.clear();
 		for (const [tagId, direction] of computeTagOrbitDirections(
 			snapshot.tags,
@@ -120,7 +124,7 @@ export class TagLayer {
 
 	updateAppearance(appearance: AppearanceSettings): void {
 		const orbitHeightChanged =
-			appearance.tagOrbitHeightPercent !==
+			appearance.mapStyle !== this.appearance.mapStyle || appearance.tagOrbitHeightPercent !==
 			this.appearance.tagOrbitHeightPercent||appearance.showContinents!==this.appearance.showContinents||appearance.surfaceMode!==this.appearance.surfaceMode;
 		this.appearance = appearance;
 		this.updateMarkerMatrices();
@@ -245,7 +249,7 @@ export class TagLayer {
 		for (const mesh of [this.linkLines, this.linkHalo, this.haloMesh, this.ringMesh]) {
 			if (mesh) updateLineViewport(mesh.material, width, height);
 		}
-		const accentIndex = this.snapshot?.tags.findIndex(tag => tag.id === (this.selectedTagId ?? this.hoveredTagId)) ?? -1;
+		const accentIndex = this.tagIndices.get(this.selectedTagId ?? this.hoveredTagId ?? '') ?? -1;
 		for (const mesh of [this.haloMesh, this.ringMesh]) if (mesh) mesh.visible = this.visible && accentIndex >= 0 && this.isTagPickable(accentIndex, camera);
 		const zoomVisuals = labelZoomVisuals(
 			camera.position.length(),
@@ -266,8 +270,9 @@ export class TagLayer {
 		}
 		this.cameraDirection.copy(camera.position).normalize();
 		const orbitRadius = tagOrbitRadiusForAppearance(this.appearance);
-		const candidates = [...this.snapshot.tags].sort(
+		const candidates = this.labelOrder ??= [...this.snapshot.tags].sort(
 			(left, right) =>
+				Number(right.id === this.selectedTagId) - Number(left.id === this.selectedTagId) ||
 				Number(this.linkedTagIds.has(right.id)) -
 					Number(this.linkedTagIds.has(left.id)) ||
 				right.nodeIndices.length - left.nodeIndices.length ||
@@ -275,7 +280,9 @@ export class TagLayer {
 		);
 
 		let visibleIndex = 0;
-		for (const tag of candidates) {
+		const budget = Math.min(candidates.length, Math.max(96,this.labelPool.length * 12));
+		for (let candidate=0; candidate<budget; candidate++) {
+			const tag=candidates[candidate]!;
 			if (visibleIndex >= this.labelPool.length) {
 				break;
 			}
@@ -364,6 +371,7 @@ export class TagLayer {
 		this.labelRoot?.remove();
 		this.snapshot = undefined;
 		this.directions.clear();
+		this.labelOrder = undefined;
 		this.linkedTagIds.clear();
 	}
 
@@ -457,6 +465,7 @@ export class TagLayer {
 
 	private rebuildLinks(): void {
 		this.removeLinks();
+		this.labelOrder = undefined;
 		this.linkedTagIds.clear();
 		this.updateMarkerMatrices();
 		const snapshot = this.snapshot;

@@ -48,6 +48,7 @@ export class PickingController {
 	private disposed = false;
 	private readonly activePointers = new Set<number>();
 	private multiTouchGesture = false;
+	private handledTouchTap = false;
 
 	constructor(
 		private readonly canvas: HTMLCanvasElement,
@@ -71,6 +72,7 @@ export class PickingController {
 		canvas.addEventListener('pointermove', this.onPointerMove);
 		canvas.addEventListener('pointerup', this.onPointerUp);
 		canvas.addEventListener('pointercancel', this.onPointerCancel);
+		canvas.addEventListener('touchend', this.onTouchEnd, { passive: false });
 		canvas.addEventListener('pointerleave', this.onPointerLeave);
 		canvas.addEventListener('dblclick', this.onDoubleClick);
 		canvas.addEventListener('keydown', this.onKeyDown);
@@ -89,6 +91,7 @@ export class PickingController {
 		this.canvas.removeEventListener('pointermove', this.onPointerMove);
 		this.canvas.removeEventListener('pointerup', this.onPointerUp);
 		this.canvas.removeEventListener('pointercancel', this.onPointerCancel);
+		this.canvas.removeEventListener('touchend', this.onTouchEnd);
 		this.canvas.removeEventListener('pointerleave', this.onPointerLeave);
 		this.canvas.removeEventListener('dblclick', this.onDoubleClick);
 		this.canvas.removeEventListener('keydown', this.onKeyDown);
@@ -101,6 +104,7 @@ export class PickingController {
 		if (event.button !== 0) {
 			return;
 		}
+		this.handledTouchTap = false;
 		this.activePointers.add(event.pointerId);
 		if (this.activePointers.size > 1) {
 			this.multiTouchGesture = true;
@@ -161,6 +165,7 @@ export class PickingController {
 			return;
 		}
 
+		this.handledTouchTap = event.pointerType === 'touch';
 		const item =
 			event.pointerType === 'touch'
 				? this.pickWithTolerance(
@@ -181,7 +186,19 @@ export class PickingController {
 		this.callbacks.onSelect(item);
 	};
 
+	private readonly onTouchEnd = (event: TouchEvent): void => {
+		const handled = this.handledTouchTap;
+		this.handledTouchTap = false;
+		const touch = event.changedTouches[0];
+		if (!handled || !event.cancelable || !touch) return;
+
+		// Opening the inspector can put a button under the finger before the browser synthesizes a click.
+		const target = this.canvas.ownerDocument.elementFromPoint(touch.clientX, touch.clientY);
+		if (target && target !== this.canvas) event.preventDefault();
+	};
+
 	private readonly onPointerCancel = (event: PointerEvent): void => {
+		this.handledTouchTap = false;
 		this.activePointers.delete(event.pointerId);
 		if (this.activePointers.size === 0) {
 			this.multiTouchGesture = false;

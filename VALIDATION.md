@@ -1,5 +1,26 @@
 # Validation
 
+## Efficient atlas and compact storage on a 5,000-note vault
+
+Local development build tested on 2026-11-23 against release 1.11.1 at `41fd18f`. An isolated Obsidian 1.14.4 desktop instance indexed 5,000 generated Markdown files with 25,000 distinct weighted links, six continents and 18 countries. All three runs used the same saved layout and camera, a 980 × 601 CSS-pixel canvas and Intel UHD Graphics through D3D11.
+
+| Native desktop measurement | Original 1.11.1 | Efficient atlas | Living cartography |
+| --- | ---: | ---: | ---: |
+| Average submitted frames/s during 10 s of rotation | 38.9 | 51.2 | 39.6 |
+| Frame interval, median | 24.2 ms | 18.4 ms | 24.1 ms |
+| Frame interval, 95th percentile | 36.2 ms | 29.6 ms | 34.0 ms |
+| Highlight update on hover, 95th percentile | 619.1 ms | 3.9 ms | 2.5 ms |
+| Opening a closed map with the vault already indexed | 57.411 s | 0.828 s | — |
+| Draw calls in the observed frame | 19 | 8 | 19 |
+
+The rotation run counted intervals between Three.js frame submissions after a 1.5 s warm-up. The hover measurement timed 12 calls to the node-highlight handler after two warm-up calls. Living cartography was selected on the open map. Its startup time was not measured independently. A second 10 s run rotated the atlas through native mouse events and yielded 56.3 frames/s with a 25.5 ms 95th-percentile interval. The atlas missed the proposed desktop target of 16.7 ms at the 95th percentile.
+
+On the same fixture, the full legacy document occupied 9,047,258 UTF-8 bytes on disk and the converted `data.json` occupied 499,106 bytes, a 94.48% reduction including the tag cache. Cancelling the conversion preserved the legacy file byte for byte. Native reload and a separate decoder matched all 5,000 coordinate triples at full precision, all weights and directions, country and continent ownership, tag membership, snapshot identity, saved camera and pins. The existing settings gained the atlas default. A simulated incoming Sync revision during compression, a failed write and a corrupt checksum are covered by the automated gate.
+
+Mouse and emulated high-DPI touch checks covered selection, a near-limb hit and a tap that opens the inspector under the finger. The second intentional tap on the newly exposed tag selected the tag. Additional checks exercised a 24-neighbour hub, routes, search highlighting, tag visibility, pinning and restoration of the base link opacity after hover. At emulated display DPR 2 the atlas used a drawing-buffer DPR of 1. Both styles produced matching topology hashes and no runtime or shader errors in the comparison. Across two complete returns from Living cartography, the renderer consistently fell from 20 registered WebGL geometries and 14 programs to 11 geometries and eight programs in the atlas.
+
+`npm run check` with `VITEST_MAX_WORKERS=2` passed linting, type checking, 447 tests across 73 files, production bundling and release validation. Physical phone and tablet frame rates, cold mobile startup and transfer through the hosted Obsidian Sync service were outside this desktop run.
+
 ## Tablet Map controls and satellite height (1.11.1)
 
 - Date: 2026-11-04. Reproduced the 1.11.0 tablet regression in isolated desktop

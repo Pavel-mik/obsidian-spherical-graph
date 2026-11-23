@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-23
+
+### Changed
+
+- Efficient atlas is the default on desktop, tablet and phone. It draws the
+  saved continents, countries and links with a lighter globe. Choose
+  **Map controls → Globe → Map style → Living cartography** for sculpted
+  terrain and an animated atmosphere. Both styles use the same map.
+- Rotation, node picking and link highlighting reuse geometry in both styles.
+  In a desktop test with 5,000 notes and 25,000 links, opening the indexed
+  map took 0.83 seconds in Efficient atlas, down from 57.4 seconds in 1.11.1.
+- New maps use lossless compression. The complete saved file for the same
+  test vault shrank from 9,047,258 to 499,106 bytes, including tag metadata.
+
+### Fixed
+
+- Tapping a note keeps it selected when the inspector opens under the finger.
+
+### Upgrade notes
+
+- Existing maps open in place. To convert a map shared through Sync, update
+  Spherical Graph on every device first. Then choose **Map controls → Saved
+  map → Save map → Convert and save** once. Conversion verifies positions,
+  weighted links and territories before writing. Older plugin versions can
+  only read the earlier format.
+
 ## [1.11.1] - 2026-11-04
 
 ### Fixed
@@ -723,7 +749,10 @@ All notable changes to this project are documented here. The format follows
 - No telemetry, advertisements, runtime network calls, account requirement,
   remote code loading, external-file access, or note-content writes.
 
-[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.10.1...HEAD
+[Unreleased]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.12.0...HEAD
+[1.12.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.11.1...1.12.0
+[1.11.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.11.0...1.11.1
+[1.11.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.10.1...1.11.0
 [1.10.1]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.10.0...1.10.1
 [1.10.0]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.5...1.10.0
 [1.9.5]: https://github.com/Pavel-mik/obsidian-spherical-graph/compare/1.9.4...1.9.5

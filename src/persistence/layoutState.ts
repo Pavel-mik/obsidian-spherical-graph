@@ -272,6 +272,8 @@ export function validateAndNormalizePosition(
 	if (!Number.isFinite(norm) || norm <= Number.EPSILON) {
 		return undefined;
 	}
+	// A previously normalized direction must survive repeated loads bit for bit.
+	if (Math.abs(norm - 1) <= 4 * Number.EPSILON) return tuple;
 	return Object.freeze([
 		tuple[0] / norm,
 		tuple[1] / norm,

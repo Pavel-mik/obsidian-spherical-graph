@@ -4,6 +4,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
 	resolve: {
 		alias: {
+			'virtual:spherical-graph-map-worker': fileURLToPath(new URL('./tests/fixtures/workerSource.ts', import.meta.url)),
 			'virtual:spherical-graph-worker': fileURLToPath(
 				new URL(
 					'./tests/fixtures/workerSource.ts',

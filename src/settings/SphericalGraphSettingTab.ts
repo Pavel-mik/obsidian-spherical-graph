@@ -1,3 +1,4 @@
+import { MAP_STYLES } from './settings';
 import {
 	App,
 	type ButtonComponent,
@@ -341,6 +342,10 @@ export class SphericalGraphSettingTab extends PluginSettingTab {
 				{ min: 0, max: 100, step: 5 },
 				defaults.labelZoomThresholdPercent,
 			),
+			{
+				name: 'Map style',
+				control: { type: 'dropdown', key: 'appearance.mapStyle', defaultValue: defaults.mapStyle, options: MAP_STYLES },
+			},
 			{
 				name: COPY.surfaceMode,
 				control: {
@@ -867,6 +872,11 @@ export class SphericalGraphSettingTab extends PluginSettingTab {
 					next.appearance.labelZoomThresholdPercent = value;
 				}),
 		);
+
+		new Setting(this.containerEl)
+			.setName('Map style')
+			.addDropdown(dropdown => dropdown.addOptions(MAP_STYLES).setValue(settings.appearance.mapStyle)
+				.onChange(value => this.commit(settings, 'appearance', next => { next.appearance.mapStyle = value === 'living' ? 'living' : 'atlas'; })));
 
 		new Setting(this.containerEl)
 			.setName(COPY.surfaceMode)
