@@ -221,6 +221,60 @@ describe("PluginDataStore loading", () => {
 	});
 });
 
+describe("Compact saved maps", () => {
+	it("rechecks a pin delivered by sync during compression and retries pending settings after a failed write", async () => {
+		const initial = createStore(new MemoryAdapter()); await initial.load();
+		const graph = createGraph(["one.md"]);
+		await initial.commitCompletedResult({graph,mode:"initialize",operationId:"concurrent",effectiveSeed:1,
+			completedAt:1,positions:new Float32Array([0,0,1]),expectedSnapshotId:null});
+		const legacy = initial.state;
+		const adapter = new MemoryAdapter(legacy), writer=createStore(adapter,new ManualScheduler());
+		await writer.load();
+		writer.scheduleSettingsSave({...DEFAULT_SETTINGS,enabled:false});
+		adapter.failNextSave = true;
+		await expect(writer.flushDebounced()).rejects.toThrow("disk failure");
+		vi.spyOn(adapter,"loadData").mockImplementationOnce(async()=>legacy).mockImplementationOnce(async()=>{
+			adapter.raw={...legacy,pinnedNotePaths:["one.md"]};return adapter.raw;
+		});
+		await writer.saveNow(graph,true);
+		const restored = await createStore(adapter).load();
+		expect(restored.pinnedNotePaths).toEqual(["one.md"]);
+		expect(restored.settings.enabled).toBe(false);
+		expect(restored.committedLayout).toEqual(legacy.committedLayout);
+	});
+	it("reads legacy data without writing and verifies an explicit conversion with a fresh second reader", async () => {
+		const graph = createGraph(["číslo.md","dům.md"], { "číslo.md": { "dům.md": 4 }, "dům.md": { "číslo.md": 1 } });
+		const initial = createStore(new MemoryAdapter());
+		await initial.load();
+		await initial.commitCompletedResult({graph, mode:"initialize", operationId:"old",effectiveSeed:4, completedAt:9,
+			positions:new Float32Array([0.6,0.8,0,0,0,1]),expectedSnapshotId:null});
+		await initial.setPinnedNotePath("číslo.md",true);
+		const legacy = structuredClone(initial.state);
+		const adapter = new MemoryAdapter(legacy), first = createStore(adapter, new ManualScheduler());
+		const before = await first.load();
+		expect(first.needsStorageUpgrade).toBe(true);
+		expect(adapter.saves).toHaveLength(0);
+		await first.saveNow(graph);
+		expect(adapter.raw).toMatchObject({schemaVersion:4,committedLayout:before.committedLayout});
+		const pendingCamera = { ...before.camera, position: [0, 0, 27] };
+		first.scheduleCameraSave(pendingCamera);
+		adapter.failNextSave = true;
+		await expect(first.saveNow(graph,true)).rejects.toThrow("disk failure");
+		expect(adapter.raw).toMatchObject({schemaVersion:4,committedLayout:before.committedLayout});
+		await first.saveNow(graph,true);
+		expect(adapter.raw).toMatchObject({schemaVersion:5,packedLayout:{codec:"indexed-json-gzip-1"}});
+		const transferred = JSON.parse(JSON.stringify(adapter.raw)) as Record<string,unknown>;
+		const receiver = createStore(new MemoryAdapter(transferred));
+		expect(await receiver.load()).toEqual({ ...before, camera: pendingCamera });
+		expect(receiver.needsStorageUpgrade).toBe(false);
+		const disk = adapter.raw as {packedLayout:{sha256:string}};
+		disk.packedLayout = {...disk.packedLayout,sha256:"0".repeat(64)};
+		await expect(first.saveCamera(before.camera)).rejects.toThrow(/checksum/);
+		expect(adapter.raw).toBe(disk);
+		expect(first.committedSnapshot).toEqual(before.committedLayout);
+	});
+});
+
 describe("PluginDataStore transactional writes", () => {
 	it('preserves saved and concurrently synced pins through Renew and reload', async () => {
 		const adapter = new MemoryAdapter();
@@ -722,10 +776,8 @@ describe("PluginDataStore transactional writes", () => {
 			target: [0, 0, 0],
 		});
 		expect(store.committedSnapshot?.positionsByPath).toBe(positions);
-		const saved = adapter.saves.at(-1) as
-			| PersistedPluginData<TestSettings>
-			| undefined;
-		expect(saved?.committedLayout?.positionsByPath).toBe(positions);
+		const persisted = await createStore(adapter).load();
+		expect(persisted.committedLayout?.positionsByPath).toEqual(positions);
 	});
 
 	it("debounces settings and camera into one save with fake timers", async () => {

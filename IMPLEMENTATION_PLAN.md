@@ -144,3 +144,9 @@
 - [x] Verify open/close, scrolling and touch controls at tablet/phone sizes.
 - [x] Run the local release gate and production dependency audit.
 - Release publication and Community scan results are reported with the delivery.
+
+## Compact storage and efficient atlas
+
+- [x] Preserve saved topology in a lossless, size-checked format with legacy loading.
+- [x] Cache node positions and edge geometry during camera and pointer interaction.
+- [x] Make Efficient atlas the default, retain Living cartography and verify both on a large vault.

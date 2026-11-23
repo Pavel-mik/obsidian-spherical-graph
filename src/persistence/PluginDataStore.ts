@@ -6,7 +6,9 @@ import type {
 	PersistedContinentalGeography,
 } from "../geography";
 import { migratePluginData } from "./migrations";
-import { prepareSyncSafeData } from "./syncBudget";
+import { prepareSyncSafeData, SyncBudgetExceededError } from "./syncBudget";
+import { CompactMapFile } from './CompactMapFile';
+import { PACKED_SCHEMA } from './mapCodec';
 import {
 	createPersistedGraphCache,
 	PersistedGraphCache,
@@ -117,7 +119,8 @@ export interface CommitCompletedResultInput {
 export interface ReplacePersistedStateInput {
 	readonly schemaVersion?: unknown;
 	readonly settings: unknown;
-	readonly committedLayout: unknown;
+	readonly committedLayout?: unknown;
+	readonly packedLayout?: unknown;
 	readonly graphCache?: unknown;
 	readonly camera: unknown;
 	readonly pinnedNotePaths: unknown;
@@ -294,6 +297,11 @@ function sameJsonValue(left: unknown, right: unknown): boolean {
 }
 
 export class PluginDataStore<TSettings> {
+	private readonly disk = new CompactMapFile();
+	private legacyLayout = false;
+	private lastReadDocument: unknown;
+
+	get needsStorageUpgrade(): boolean { return this.legacyLayout; }
 	private readonly adapter: PluginDataAdapter;
 	private readonly options: PluginDataStoreOptions<TSettings>;
 	private readonly scheduler: PersistenceScheduler;
@@ -372,13 +380,26 @@ export class PluginDataStore<TSettings> {
 	}
 
 	private async readAdapterState(): Promise<PersistedPluginData<TSettings>> {
-		const migrated = migratePluginData(await this.adapter.loadData());
+		const raw = await this.adapter.loadData();
+		this.lastReadDocument = raw;
+		if (isRecord(raw) && raw.schemaVersion === PACKED_SCHEMA) {
+			const blocks = await this.disk.read(raw);
+			this.legacyLayout = false;
+			return freezeEnvelope({ ...blocks, schemaVersion: CURRENT_SCHEMA_VERSION,
+				settings: this.parseSettings(raw.settings), camera: validateCameraState(raw.camera, this.options.defaultCamera ?? DEFAULT_CAMERA_STATE),
+				pinnedNotePaths: validatePinnedNotePaths(raw.pinnedNotePaths) });
+		}
+		if (isRecord(raw) && typeof raw.schemaVersion === 'number' && raw.schemaVersion > CURRENT_SCHEMA_VERSION) {
+			throw new Error('Update Spherical Graph to open this saved map.');
+		}
+		const migrated = migratePluginData(raw);
 		const snapshot =
 			migrated.committedLayout === null
 				? undefined
 				: validatePersistedLayoutSnapshot(
 						migrated.committedLayout,
 					);
+		this.legacyLayout = snapshot !== undefined;
 		return freezeEnvelope({
 			schemaVersion: CURRENT_SCHEMA_VERSION,
 			settings: this.parseSettings(migrated.settings),
@@ -406,6 +427,10 @@ export class PluginDataStore<TSettings> {
 		input: ReplacePersistedStateInput,
 		options: ReplacePersistedStateOptions = {},
 	): Promise<PersistedPluginData<TSettings> | undefined> {
+		if (!this.disposed && input.schemaVersion === PACKED_SCHEMA) {
+			const blocks = await new CompactMapFile().read({ ...input }, true);
+			input = { ...input, ...blocks, schemaVersion: CURRENT_SCHEMA_VERSION };
+		}
 		if (
 			this.disposed ||
 			(typeof input.schemaVersion === "number" &&
@@ -913,78 +938,55 @@ export class PluginDataStore<TSettings> {
 	}
 
 	async flushDebounced(): Promise<void> {
-		this.clearDebounceTimer();
-		const settings = this.pendingSettings;
-		const camera = this.pendingCamera;
-		const pinnedNotePaths = this.pendingPinnedNotePaths;
-		const graphCache = this.pendingGraphCache;
-		this.pendingSettings = undefined;
-		this.pendingCamera = undefined;
-		this.pendingPinnedNotePaths = undefined;
-		this.pendingGraphCache = undefined;
-		if (
-			settings === undefined &&
-			camera === undefined &&
-			pinnedNotePaths === undefined &&
-			graphCache === undefined
-		) {
-			return;
-		}
-		await this.enqueue(async () => {
-			const next = freezeEnvelope({
-				...this.data,
-				settings: settings ?? this.data.settings,
-				camera: camera ?? this.data.camera,
-				pinnedNotePaths:
-					pinnedNotePaths ?? this.data.pinnedNotePaths,
-				graphCache: graphCache ?? this.data.graphCache,
-			});
-			this.data = await this.persistEnvelope(next, {
-				settings: settings !== undefined,
-				camera: camera !== undefined,
-				pins: pinnedNotePaths !== undefined,
-				graphCache: graphCache !== undefined,
-			});
-		});
+		await this.writePending(false);
 	}
 
-	/**
-	 * Manual save primitive. It folds all pending automatic changes into one
-	 * adapter write; with no pending changes it still persists the current
-	 * complete envelope.
-	 */
-	async saveNow(graph?: GraphData): Promise<PersistedPluginData<TSettings>> {
+	/** Fold pending edits into the manual save, including an explicitly confirmed legacy conversion. */
+	saveNow(graph?: GraphData, convertLegacy = false): Promise<PersistedPluginData<TSettings>> {
+		return this.writePending(true, graph, convertLegacy);
+	}
+
+	private writePending(manual: boolean, graph?: GraphData, convertLegacy = false): Promise<PersistedPluginData<TSettings>> {
 		this.clearDebounceTimer();
-		const settings = this.pendingSettings;
-		const camera = this.pendingCamera;
-		const pinnedNotePaths = this.pendingPinnedNotePaths;
-		const pendingGraphCache = this.pendingGraphCache;
-		this.pendingSettings = undefined;
-		this.pendingCamera = undefined;
-		this.pendingPinnedNotePaths = undefined;
-		this.pendingGraphCache = undefined;
 		return this.enqueue(async () => {
-			const graphCache =
-				graph !== undefined &&
-				graph.signature === this.data.committedLayout?.graphSignature
+			const settings = this.pendingSettings;
+			const camera = this.pendingCamera;
+			const pins = this.pendingPinnedNotePaths;
+			const pendingCache = this.pendingGraphCache;
+			if (!manual && settings === undefined && camera === undefined && pins === undefined && pendingCache === undefined) {
+				return this.data;
+			}
+			this.pendingSettings = undefined;
+			this.pendingCamera = undefined;
+			this.pendingPinnedNotePaths = undefined;
+			this.pendingGraphCache = undefined;
+			try {
+				const graphCache = graph && graph.signature === this.data.committedLayout?.graphSignature
 					? createPersistedGraphCache(graph)
-					: (pendingGraphCache ?? this.data.graphCache);
-			const next = freezeEnvelope({
-				...this.data,
-				graphCache,
-				settings: settings ?? this.data.settings,
-				camera: camera ?? this.data.camera,
-				pinnedNotePaths:
-					pinnedNotePaths ?? this.data.pinnedNotePaths,
-			});
-			this.data = await this.persistEnvelope(next, {
-				settings: true,
-				layout: true,
-				graphCache: true,
-				camera: true,
-				pins: pinnedNotePaths !== undefined,
-			});
-			return this.data;
+					: pendingCache;
+				const next = freezeEnvelope({
+					...this.data,
+					settings: settings ?? this.data.settings,
+					camera: camera ?? this.data.camera,
+					pinnedNotePaths: pins ?? this.data.pinnedNotePaths,
+					graphCache: graphCache ?? this.data.graphCache,
+				});
+				this.data = await this.persistEnvelope(next, {
+					settings: settings !== undefined, camera: camera !== undefined,
+					pins: pins !== undefined, graphCache: graphCache !== undefined,
+				}, undefined, convertLegacy);
+				return this.data;
+			} catch (error) {
+				// Edits made during an unsuccessful write take precedence when the user retries.
+				this.pendingSettings ??= settings;
+				this.pendingCamera ??= camera;
+				this.pendingPinnedNotePaths ??= pins;
+				this.pendingGraphCache ??= pendingCache;
+				if (error instanceof SyncBudgetExceededError && this.needsStorageUpgrade && !convertLegacy) {
+					throw new Error(error.message + ' Update the plugin on your devices, then choose Save map to convert this layout.');
+				}
+				throw error;
+			}
 		});
 	}
 
@@ -1010,6 +1012,8 @@ export class PluginDataStore<TSettings> {
 		envelope: PersistedPluginData<TSettings>,
 		ownership: PersistedFieldOwnership = OWN_COMPLETE_ENVELOPE,
 		beforeWrite?: () => void,
+		convertLegacy = false,
+		attempt = 0,
 	): Promise<PersistedPluginData<TSettings>> {
 		/*
 		 * Obsidian Sync replaces data.json as one document. A second device can
@@ -1029,6 +1033,9 @@ export class PluginDataStore<TSettings> {
 				latest.committedLayout,
 				this.data.committedLayout,
 			);
+		if (externalLayoutChanged && ownership.layout && beforeWrite) {
+			throw new Error('A newer map arrived while the layout was being calculated. Load the saved map and try again.');
+		}
 		const externalSettingsChanged =
 			latest !== undefined &&
 			!sameJsonValue(latest.settings, this.data.settings);
@@ -1068,7 +1075,18 @@ export class PluginDataStore<TSettings> {
 								? latest.pinnedNotePaths
 								: envelope.pinnedNotePaths,
 					});
-		const prepared = prepareSyncSafeData(merged);
+		const compact = merged.committedLayout !== null && (!this.legacyLayout || convertLegacy);
+		// A cold encode may take seconds. Re-read the document after that asynchronous
+		// window so a synced revision or new pin is merged before the single write.
+		const observed = this.lastReadDocument;
+		const checkAgain = latest && compact && merged.committedLayout && (convertLegacy || this.disk.needsEncoding(merged.committedLayout, merged.graphCache));
+		const prepared = compact && merged.committedLayout
+			? await this.disk.prepare(merged, merged.committedLayout, this.legacyLayout)
+			: prepareSyncSafeData(merged);
+		if (checkAgain && !sameJsonValue(observed, await this.adapter.loadData())) {
+			if (attempt >= 2) throw new Error('The synced map keeps changing. Try saving again when synchronization finishes.');
+			return this.persistEnvelope(envelope, ownership, beforeWrite, convertLegacy, attempt+1);
+		}
 		if (prepared.graphCacheDropped || prepared.warning) {
 			this.diagnostic("sync-budget", {
 				byteLength: prepared.byteLength,
@@ -1076,10 +1094,11 @@ export class PluginDataStore<TSettings> {
 				warning: prepared.warning,
 			});
 		}
-		const safeEnvelope = freezeEnvelope(prepared.data);
 		beforeWrite?.();
-		await this.adapter.saveData(safeEnvelope);
-		return safeEnvelope;
+		await this.adapter.saveData(prepared.data);
+		this.lastReadDocument = prepared.data;
+		this.legacyLayout = !compact && merged.committedLayout !== null;
+		return prepared.graphCacheDropped ? freezeEnvelope({ ...merged, graphCache: null }) : merged;
 	}
 
 	private diagnostic(

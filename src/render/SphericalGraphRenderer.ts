@@ -30,6 +30,8 @@ import {
 	RenderTheme,
 	prepareRenderSnapshot,
 } from './renderTypes';
+import { releaseTerrainForSnapshot } from './terrainSurface';
+import { AtlasSphereLayer } from './AtlasSphereLayer';
 import { SphereLayer } from './SphereLayer';
 import { TagLayer } from './TagLayer';
 import { PinLayer } from './PinLayer';
@@ -84,11 +86,11 @@ export class SphericalGraphRenderer {
 	private readonly controls: ArcballControls;
 	private readonly nodeLayer: NodeLayer;
 	private readonly edgeLayer: EdgeLayer;
-	private readonly sphereLayer: SphereLayer;
+	private sphereLayer: SphereLayer | AtlasSphereLayer;
 	private readonly labelLayer: LabelLayer;
 	private readonly tagLayer: TagLayer;
 	private readonly pinLayer: PinLayer;
-	private readonly atmosphereLayer: AtmosphereLayer;
+	private atmosphereLayer?: AtmosphereLayer;
 	private readonly pickingController: PickingController;
 	private readonly callbacks: RendererCallbacks;
 	private readonly autoRotationPause: AutoRotationPauseController;
@@ -182,13 +184,7 @@ export class SphericalGraphRenderer {
 		this.controls.addEventListener('start', this.onControlsStart);
 		this.controls.addEventListener('end', this.onControlsEnd);
 
-		this.sphereLayer = new SphereLayer(
-			this.graphGroup,
-			this.appearance,
-			this.theme,
-			() => this.requestRender(),
-			this.profile.landDetailScale,
-		);
+		this.sphereLayer = this.createSphereLayer();
 		this.edgeLayer = new EdgeLayer(
 			this.graphGroup,
 			this.appearance,
@@ -214,12 +210,6 @@ export class SphericalGraphRenderer {
 			this.labelPlacement,
 			(camera,point)=>this.sphereLayer.isTerrainOccluded(camera,point),
 		);
-		this.atmosphereLayer = new AtmosphereLayer(this.graphGroup, {
-			heightPercent: this.appearance.atmosphereHeightPercent,
-			visible: false,
-			widthSegments: this.profile.atmosphereWidthSegments,
-			heightSegments: this.profile.atmosphereHeightSegments,
-		});
 		this.labelLayer = new LabelLayer(
 			this.container,
 			this.graphGroup,
@@ -340,15 +330,31 @@ export class SphericalGraphRenderer {
 		this.requestRender();
 	}
 
+	private createSphereLayer(): SphereLayer | AtlasSphereLayer {
+		return this.appearance.mapStyle === 'living'
+			? new SphereLayer(this.graphGroup, this.appearance, this.theme, () => this.requestRender(), this.profile.landDetailScale)
+			: new AtlasSphereLayer(this.graphGroup, this.appearance, this.theme);
+	}
+
 	updateAppearance(appearance: AppearanceSettings): void {
 		this.assertUsable();
+		const styleChanged = this.appearance.mapStyle !== appearance.mapStyle;
 		this.appearance = this.profileAppearance(appearance);
+		if (styleChanged) {
+			this.atmosphereLayer?.dispose();
+			this.atmosphereLayer = undefined;
+			this.sphereLayer.dispose();
+			if (this.snapshot) releaseTerrainForSnapshot(this.snapshot);
+			this.sphereLayer = this.createSphereLayer();
+			if (this.snapshot) this.sphereLayer.setSnapshot(this.snapshot);
+			this.resize();
+		}
 		this.nodeLayer.updateAppearance(this.appearance);
 		this.pinLayer.updateAppearance(this.appearance);
 		this.edgeLayer.updateAppearance(this.appearance);
 		this.tagLayer.updateAppearance(this.appearance);
 		this.sphereLayer.update(this.appearance, this.theme);
-		this.atmosphereLayer.setHeightPercent(
+		this.atmosphereLayer?.setHeightPercent(
 			this.appearance.atmosphereHeightPercent,
 		);
 		this.labelLayer.updateAppearance(this.appearance);
@@ -435,7 +441,7 @@ export class SphericalGraphRenderer {
 				this.ownerWindow.clearTimeout(this.continuousTimer);
 				this.continuousTimer = undefined;
 			}
-			this.atmosphereLayer.setVisible(false);
+			this.atmosphereLayer?.setVisible(false);
 			return;
 		}
 		this.requestRender();
@@ -600,7 +606,7 @@ export class SphericalGraphRenderer {
 		this.autoRotationPause.dispose();
 		this.labelLayer.dispose();
 		this.tagLayer.dispose();
-		this.atmosphereLayer.dispose();
+		this.atmosphereLayer?.dispose();
 		this.pinLayer.dispose();
 		this.nodeLayer.dispose();
 		this.edgeLayer.dispose();
@@ -702,7 +708,7 @@ export class SphericalGraphRenderer {
 		const { width, height } = sceneSize;
 		const pixelRatio = Math.min(
 			this.ownerWindow.devicePixelRatio || 1,
-			this.profile.pixelRatioCap,
+			this.appearance.mapStyle === 'atlas' ? 1 : this.profile.pixelRatioCap,
 		);
 		if (
 			width === this.width &&
@@ -812,10 +818,14 @@ export class SphericalGraphRenderer {
 			(this.presentationMode && this.profile.presentationUsesAtmosphere) ||
 			(this.appearance.showAtmosphere &&
 				this.autoRotationRequested);
-		if (!enabled) {
-			this.atmosphereLayer.setVisible(false);
+		if (!enabled || this.appearance.mapStyle === 'atlas') {
+			this.atmosphereLayer?.setVisible(false);
 			return false;
 		}
+		this.atmosphereLayer ??= new AtmosphereLayer(this.graphGroup, {
+			heightPercent: this.appearance.atmosphereHeightPercent, visible: false,
+			widthSegments: this.profile.atmosphereWidthSegments, heightSegments: this.profile.atmosphereHeightSegments,
+		});
 		const opacity = this.presentationMode
 			? ATMOSPHERE_MAX_OPACITY
 			: atmosphereOpacityForCameraDistance(

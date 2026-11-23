@@ -215,6 +215,11 @@ export class SphericalGraphView extends ItemView {
 				onFiltersChange: (filters) => {
 					this.changeDisplayFilters(filters);
 				},
+				onMapStyleChange: (style) => {
+					this.currentSettings.appearance.mapStyle = style;
+					this.renderer?.updateAppearance(this.currentSettings.appearance);
+					this.invoke(() => this.options.callbacks.onMapStyleChange?.(style));
+				},
 				onSurfaceModeChange: (mode) => {
 					this.changeSurfaceMode(mode);
 				},
@@ -264,6 +269,7 @@ export class SphericalGraphView extends ItemView {
 			this.currentSettings.appearance.showEdges,
 			this.options.runtimeProfile,
 		);
+		this.toolbar.setMapStyle(this.currentSettings.appearance.mapStyle);
 		this.toolbar.setCountryBordersVisible(this.currentSettings.appearance.showCountryBorders);
 		if (this.options.runtimeProfile.deviceClass === 'tablet') {
 			this.presentationExitButton = this.root.createEl('button');
@@ -495,6 +501,7 @@ export class SphericalGraphView extends ItemView {
 	updateSettings(settings: SphericalGraphSettings): void {
 		this.currentSettings = parseSphericalGraphSettings(settings);
 		this.renderer?.updateAppearance(this.currentSettings.appearance);
+		this.toolbar?.setMapStyle(this.currentSettings.appearance.mapStyle);
 		this.toolbar?.setSurfaceMode(
 			this.currentSettings.appearance.surfaceMode,
 		);

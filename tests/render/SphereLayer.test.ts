@@ -1,3 +1,4 @@
+import { AtlasSphereLayer } from '../../src/render/AtlasSphereLayer';
 import {
 	Group,
 	Color,
@@ -46,7 +47,7 @@ const theme: RenderTheme = {
 	land: ['#66725a', '#a07a49'],
 };
 
-function setSingleContinentSnapshot(layer: SphereLayer, withTerritory=false): void {
+function setSingleContinentSnapshot(layer: Pick<SphereLayer, 'setSnapshot'>, withTerritory=false): void {
 	layer.setSnapshot(
 		prepareRenderSnapshot({
 			snapshotId: 'procedural-atlas:test',
@@ -81,6 +82,21 @@ function setSingleContinentSnapshot(layer: SphereLayer, withTerritory=false): vo
 }
 
 describe('SphereLayer graticule', () => {
+	it.each([true,false])('builds and frees a flat atlas from saved or derived ownership (%s)', persisted => {
+		const group = new Group(), atlas = new AtlasSphereLayer(group,DEFAULT_SETTINGS.appearance,theme);
+		setSingleContinentSnapshot(atlas,persisted);
+		const surface = group.getObjectByName('spherical-graph-atlas-surface') as Mesh;
+		const coast = group.getObjectByName('spherical-graph-atlas-coast') as Mesh;
+		expect(surface.geometry.index!.count).toBeGreaterThan(0);
+		expect(coast.geometry.getAttribute('position').count).toBeGreaterThan(0);
+		expect(group.getObjectByName('spherical-graph-continents')).toBeUndefined();
+		atlas.update({...DEFAULT_SETTINGS.appearance,surfaceMode:'transparent',showCountryBorders:false},theme);
+		expect((surface.material as ShaderMaterial).depthWrite).toBe(false);
+		expect(group.getObjectByName('spherical-graph-atlas-countries')?.visible).toBe(false);
+		atlas.update({...DEFAULT_SETTINGS.appearance,surfaceMode:'hidden'},theme);
+		expect(surface.visible).toBe(false);expect(coast.visible).toBe(false);
+		atlas.dispose();expect(group.children).toHaveLength(0);
+	});
 	it('uses real displaced geometry for terrain occlusion and honors surface toggles',()=>{
 	 const group=new Group(),layer=new SphereLayer(group,DEFAULT_SETTINGS.appearance,theme,undefined,.25);setSingleContinentSnapshot(layer,true);
 	 const land=group.getObjectByName('spherical-graph-continents') as Mesh;

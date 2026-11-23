@@ -17,13 +17,14 @@ const inlineWorkerPlugin = {
 	name: 'inline-spherical-graph-worker',
 	setup(build) {
 		const workers = new Map([
+			['virtual:spherical-graph-map-worker', 'src/persistence/map-worker-entry.ts'],
 			['virtual:spherical-graph-worker', 'src/layout/worker-entry.ts'],
 			['virtual:spherical-graph-data-worker', 'src/graph/graph-worker-entry.ts'],
 			['virtual:spherical-graph-land-worker', 'src/render/land-worker-entry.ts'],
 			['virtual:spherical-graph-geography-worker', 'src/geography/geography-worker-entry.ts'],
 		]);
 		build.onResolve(
-			{ filter: /^virtual:spherical-graph-(?:worker|data-worker|land-worker|geography-worker)$/ },
+			{ filter: /^virtual:spherical-graph-(?:worker|data-worker|land-worker|geography-worker|map-worker)$/ },
 			(args) => ({
 				path: args.path,
 				namespace: 'spherical-graph-worker',

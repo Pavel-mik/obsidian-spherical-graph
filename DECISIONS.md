@@ -338,3 +338,9 @@
 - The common tag-height default is 75% R above the surface (orbit radius 1.75R).
   All device profiles inherit it; parsing still preserves explicit saved values
   and legacy scene-unit conversion. No layout or preference migration is run.
+
+## Efficient atlas and shared saved maps
+
+Efficient atlas is the default on every device. Map style belongs to appearance settings. Switching styles reuses the same committed graph, country ownership, camera and pins. The atlas draws a coloured intrinsic sphere and thin curved links. Living cartography builds the relief and animated atmosphere on demand. Both renderers reuse node centres, a spatial picking index and the base link buffers.
+
+The on-disk envelope uses schema 5 for compact maps. The committed layout inside it keeps its established schema and full numeric precision. Older devices need the updated reader, so existing maps convert on explicit Save map confirmation. A cold conversion decodes and validates the new blocks before the single write. Camera, pins and appearance settings can reuse existing compressed blocks. The 4,500,000-byte budget includes pretty-printed UTF-8, checksums, Base64 and metadata. Only the graph cache is expendable.

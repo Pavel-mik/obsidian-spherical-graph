@@ -10,25 +10,33 @@ export interface ScreenLineStyle {
 
 /** Batched ribbons expanded in clip space: width is in CSS px at every depth. */
 export function screenSpaceLine(segments: Float32Array | readonly number[], style: ScreenLineStyle): Mesh<BufferGeometry, ShaderMaterial> {
- const positions: number[] = [], starts: number[] = [], ends: number[] = [], corners: number[] = [], distances: number[] = [], opacities: number[] = [];
+ const vertices = Math.floor(segments.length / 6) * 6;
+ const positions = new Float32Array(vertices * 3), starts = new Float32Array(vertices * 3), ends = new Float32Array(vertices * 3);
+ const corners = new Float32Array(vertices * 2), distances = new Float32Array(vertices), opacities = new Float32Array(vertices);
+ const along = [0,0,1,0,1,1], sides = [-1,1,-1,1,1,-1];
  let distance = 0;
- for (let i = 0; i + 5 < segments.length; i += 6) {
-  const a = Array.from(segments.slice(i, i + 3)), b = Array.from(segments.slice(i + 3, i + 6));
-  const length = Math.hypot((b[0] ?? 0) - (a[0] ?? 0), (b[1] ?? 0) - (a[1] ?? 0), (b[2] ?? 0) - (a[2] ?? 0));
-  for (const [along, side] of [[0,-1],[0,1],[1,-1],[0,1],[1,1],[1,-1]]) {
-   positions.push(...(along === 0 ? a : b)); starts.push(...a); ends.push(...b);
-   corners.push(along ?? 0, side ?? 0); distances.push(distance + (along ?? 0) * length);
-   opacities.push(Math.max(0,Math.min(1,style.opacityBySegment?.[i/6]??1)));
+ for (let i = 0; i < vertices; i += 6) {
+  const length = Math.hypot(segments[i+3]!-segments[i]!,segments[i+4]!-segments[i+1]!,segments[i+5]!-segments[i+2]!);
+  const opacity=Math.max(0, Math.min(1,style.opacityBySegment?.[i/6] ?? 1));
+  for (let j=0;j<6;j++) {
+   const vertex=i+j, t=along[j]!;
+   for (let axis=0;axis<3;axis++) {
+    const offset=vertex*3+axis;
+    starts[offset]=segments[i+axis]!; ends[offset]=segments[i+3+axis]!;
+    positions[offset]=t ? ends[offset] : starts[offset];
+   }
+   corners[vertex*2]=t; corners[vertex*2+1]=sides[j]!;
+   distances[vertex]=distance+t*length; opacities[vertex]=opacity;
   }
   distance += length;
  }
  const geometry = new BufferGeometry();
- geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
- geometry.setAttribute('segmentStart', new BufferAttribute(new Float32Array(starts), 3));
- geometry.setAttribute('segmentEnd', new BufferAttribute(new Float32Array(ends), 3));
- geometry.setAttribute('corner', new BufferAttribute(new Float32Array(corners), 2));
- geometry.setAttribute('lineDistance', new BufferAttribute(new Float32Array(distances), 1));
- geometry.setAttribute('strokeOpacity', new BufferAttribute(new Float32Array(opacities), 1));
+ geometry.setAttribute('position', new BufferAttribute(positions, 3));
+ geometry.setAttribute('segmentStart', new BufferAttribute(starts, 3));
+ geometry.setAttribute('segmentEnd', new BufferAttribute(ends, 3));
+ geometry.setAttribute('corner', new BufferAttribute(corners, 2));
+ geometry.setAttribute('lineDistance', new BufferAttribute(distances, 1));
+ geometry.setAttribute('strokeOpacity', new BufferAttribute(opacities, 1));
  geometry.computeBoundingSphere();
  const material = new ShaderMaterial({
   depthTest: true, depthWrite: false, transparent: true, toneMapped: false, side: DoubleSide,

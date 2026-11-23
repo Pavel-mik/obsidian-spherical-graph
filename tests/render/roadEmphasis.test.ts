@@ -21,7 +21,7 @@ describe('overview road context',()=>{
   expect(scales.count).toBe(vertices);expect([...scales.array].every(v=>v>=.279&&v<=1)).toBe(true);
   layer.updateSelection('a');
   const selected=group.getObjectByName('spherical-graph-selected-edge-ribbon') as Mesh;
-  expect(selected.geometry.getAttribute('position').count).toBe(vertices);
+  expect(selected.geometry.getAttribute('position').count).toBe(vertices * 3);
   expect([...selected.geometry.getAttribute('strokeOpacity').array].every(v=>v===1)).toBe(true);
   expect((selected.material as ShaderMaterial).uniforms.lineOpacity!.value).toBe(CARTOGRAPHY.edges.selected.opacity);
   layer.dispose();expect(group.children).toHaveLength(0);

@@ -13,6 +13,7 @@ export type {
 	RefreshSettings,
 	SettingsChangeScope,
 	SphericalGraphSettings,
+	MapStyle,
 	SurfaceMode,
 } from './settings';
 export {

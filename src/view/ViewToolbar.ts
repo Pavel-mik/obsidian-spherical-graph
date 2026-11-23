@@ -3,7 +3,7 @@ import {
 	type RenderFilterState,
 } from '../render/renderFilters';
 import { RenderNode, RenderTag } from '../render/renderTypes';
-import { SurfaceMode } from '../settings/settings';
+import { MAP_STYLES, type MapStyle, type SurfaceMode } from '../settings/settings';
 import { StatusPresentation } from './LayoutStatusPresenter';
 import {
 	SearchController,
@@ -23,6 +23,7 @@ export interface ViewToolbarCallbacks extends SearchControllerCallbacks {
 	onResetCamera(): void;
 	onRouteToggle(): void;
 	onFiltersChange(filters: RenderFilterState): void;
+	onMapStyleChange?(style: MapStyle): void;
 	onSurfaceModeChange(mode: SurfaceMode): void;
 	onContinentsVisibilityChange(visible: boolean): void;
 	onEdgesVisibilityChange(visible: boolean): void;
@@ -77,6 +78,7 @@ export class ViewToolbar {
 	private readonly edgesToggle: FilterToggle;
 	private readonly countryBordersToggle: FilterToggle;
 	private readonly atmosphereToggle: FilterToggle;
+	private readonly styleSelect: HTMLSelectElement;
 	private readonly surfaceSelect: HTMLSelectElement;
 
 	constructor(
@@ -267,6 +269,13 @@ export class ViewToolbar {
 			VIEW_CONTROL_COPY.globeDescription,
 			'appearance',
 		);
+		const styleLabel = appearance.createEl('label', { cls: 'spherical-graph-surface-control' });
+		styleLabel.createSpan({ text: 'Map style', cls: 'spherical-graph-surface-label' });
+		this.styleSelect = styleLabel.createEl('select', { cls: 'spherical-graph-surface-select' });
+		this.styleSelect.setAttribute('aria-label', 'Map style');
+		addOption(this.styleSelect, 'atlas', MAP_STYLES.atlas);
+		addOption(this.styleSelect, 'living', MAP_STYLES.living);
+		this.styleSelect.addEventListener('change', this.onStyleChange);
 		const surfaceLabel = appearance.createEl('label');
 		surfaceLabel.className = 'spherical-graph-surface-control';
 		const surfaceText = surfaceLabel.createSpan();
@@ -417,6 +426,12 @@ export class ViewToolbar {
 		this.element.dataset.busy = String(presentation.isBusy);
 	}
 
+	private readonly onStyleChange = (): void => {
+		this.callbacks.onMapStyleChange?.(this.styleSelect.value === 'living' ? 'living' : 'atlas');
+	};
+
+	setMapStyle(style: MapStyle): void { this.styleSelect.value = style; }
+
 	setSurfaceMode(mode: SurfaceMode): void {
 		this.surfaceSelect.value = mode;
 	}
@@ -520,6 +535,7 @@ export class ViewToolbar {
 			'change',
 			this.onFiltersChange,
 		);
+		this.styleSelect.removeEventListener('change', this.onStyleChange);
 		this.surfaceSelect.removeEventListener(
 			'change',
 			this.onSurfaceChange,
@@ -699,7 +715,7 @@ function createFilterToggle(
 
 function addOption(
 	select: HTMLSelectElement,
-	value: SurfaceMode,
+	value: SurfaceMode | MapStyle,
 	label: string,
 ): void {
 	const option = select.createEl('option');

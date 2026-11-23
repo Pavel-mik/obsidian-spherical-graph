@@ -1,5 +1,6 @@
 import {
 	getAllTags,
+	Modal,
 	Notice,
 	Plugin,
 	TFile,
@@ -312,6 +313,11 @@ export default class SphericalGraphPlugin extends Plugin {
 				onOpenFile: (node, openInNewLeaf) =>
 					this.openFile(node, openInNewLeaf),
 				onCameraChange: () => undefined,
+				onMapStyleChange: (style) => {
+					const next = cloneSphericalGraphSettings(this.settings);
+					next.appearance.mapStyle = style;
+					return this.updateSettings(next, 'appearance');
+				},
 				onSurfaceModeChange: (mode) =>
 					this.changeSurfaceMode(mode),
 				onContinentsVisibilityChange: (visible) =>
@@ -1016,8 +1022,22 @@ export default class SphericalGraphPlugin extends Plugin {
 	}
 
 	private async saveMap(camera: CameraState): Promise<void> {
+		const convert = this.dataStore.needsStorageUpgrade;
+		if (convert) {
+			const approved = await new Promise<boolean>(resolve => {
+				const modal = new Modal(this.app);
+				modal.setTitle('Compact saved map?');
+				modal.contentEl.createEl('p', { text: 'Update this plugin on your other devices before converting. Your map, note positions, borders and pins will be preserved.' });
+				const buttons = modal.contentEl.createDiv({ cls: 'modal-button-container' });
+				buttons.createEl('button', { text: 'Cancel' }).onclick = () => modal.close();
+				buttons.createEl('button', { text: 'Convert and save', cls: 'mod-cta' }).onclick = () => { resolve(true); modal.close(); };
+				modal.onClose = () => resolve(false);
+				modal.open();
+			});
+			if (!approved) return;
+		}
 		this.dataStore.scheduleCameraSave(camera);
-		await this.dataStore.saveNow(this.currentGraph);
+		await this.dataStore.saveNow(this.currentGraph, convert);
 		new Notice('Spherical map saved.');
 	}
 
@@ -1206,7 +1226,7 @@ export default class SphericalGraphPlugin extends Plugin {
 		this.syncBudgetNoticeShown = true;
 		const megabytes =
 			typeof details.byteLength === 'number'
-				? (details.byteLength / 1024 / 1024).toFixed(1)
+				? (details.byteLength / 1_000_000).toFixed(1)
 				: undefined;
 		const size = megabytes === undefined ? '' : ` (${megabytes} MB)`;
 		new Notice(

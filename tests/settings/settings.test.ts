@@ -6,6 +6,13 @@ import {
 } from '../../src/settings/settings';
 
 describe('parseSphericalGraphSettings', () => {
+	it('defaults new and legacy maps to the atlas and retains an explicitly selected living style', () => {
+		expect(parseSphericalGraphSettings(undefined).appearance.mapStyle).toBe('atlas');
+		expect(parseSphericalGraphSettings({appearance:{surfaceMode:'transparent'}}).appearance.mapStyle).toBe('atlas');
+		expect(parseSphericalGraphSettings({appearance:{mapStyle:'unknown'}}).appearance.mapStyle).toBe('atlas');
+		const living = parseSphericalGraphSettings({appearance:{mapStyle:'living'}});
+		expect(cloneSphericalGraphSettings(living).appearance.mapStyle).toBe('living');
+	});
 	it('keeps legacy base edges visible and preserves an explicit hidden preference', () => {
 		expect(parseSphericalGraphSettings({ appearance: {} }).appearance.showEdges).toBe(true);
 		const settings = parseSphericalGraphSettings({ appearance: { showEdges: false } });

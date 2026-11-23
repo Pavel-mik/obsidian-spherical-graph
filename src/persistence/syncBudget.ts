@@ -1,10 +1,10 @@
 export const SYNC_WARNING_BYTES = 3 * 1024 * 1024;
-export const SYNC_HARD_LIMIT_BYTES = Math.floor(4.5 * 1024 * 1024);
+export const SYNC_HARD_LIMIT_BYTES = 4_500_000;
 
 export class SyncBudgetExceededError extends Error {
 	constructor(readonly byteLength: number) {
 		super(
-			`The saved Spherical Graph layout is ${(byteLength / 1024 / 1024).toFixed(1)} MB and cannot be kept below the 4.5 MB Sync-safe budget.`,
+			`The saved Spherical Graph layout is ${(byteLength / 1_000_000).toFixed(1)} MB and cannot be kept below the 4.5 MB Sync-safe budget.`,
 		);
 		this.name = 'SyncBudgetExceededError';
 	}
@@ -18,7 +18,7 @@ export interface SyncBudgetResult<T> {
 }
 
 export function serializedUtf8Size(value: unknown): number {
-	return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+	return new TextEncoder().encode(JSON.stringify(value, null, 2)).byteLength;
 }
 
 /**

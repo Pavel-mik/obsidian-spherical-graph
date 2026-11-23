@@ -99,10 +99,11 @@ export class TerrainSurface {
  }
 }
 const cache=new WeakMap<PreparedRenderSnapshot,TerrainSurface>();
+export function releaseTerrainForSnapshot(snapshot: PreparedRenderSnapshot): void { cache.delete(snapshot); }
 export function surfaceForSnapshot(snapshot:PreparedRenderSnapshot):TerrainSurface{
  let s=cache.get(snapshot);if(!s){s=new TerrainSurface(snapshot.geography,snapshot.positions,hashString(snapshot.layoutRevision),snapshot.edges,snapshot.nodes.map(n=>n.degree));cache.set(snapshot,s);}return s;
 }
-export function terrainEnabled(appearance:AppearanceSettings):boolean{return appearance.showContinents&&appearance.surfaceMode!=='hidden';}
+export function terrainEnabled(appearance:AppearanceSettings):boolean{return appearance.mapStyle==='living'&&appearance.showContinents&&appearance.surfaceMode!=='hidden';}
 export function surfaceRadius(snapshot:PreparedRenderSnapshot,appearance:AppearanceSettings,direction:Vec3,lift=0):number{
  return SPHERE_RADIUS+lift+(terrainEnabled(appearance)?surfaceForSnapshot(snapshot).heightAt(direction):0);
 }

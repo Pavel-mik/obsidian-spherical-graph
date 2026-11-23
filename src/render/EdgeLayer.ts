@@ -4,6 +4,8 @@ import {
 	Camera,
 	Color,
 	Group,
+	DynamicDrawUsage,
+	LineSegments,
 	Mesh,
 	ShaderMaterial,
 } from 'three';
@@ -32,12 +34,18 @@ interface EdgeDrawRecord {
 	edge: RenderEdge;
 	firstVertex: number;
 	vertexCount: number;
+	emphasis: number;
 }
 
 export class EdgeLayer {
 	private geometry: BufferGeometry | undefined;
 	private material: ShaderMaterial | undefined;
-	private lines: Mesh | undefined;
+	private lines: Mesh | LineSegments | undefined;
+	private readonly incident = new Map<number, EdgeDrawRecord[]>();
+	private readonly byKey = new Map<string, EdgeDrawRecord>();
+	private readonly masked = new Set<EdgeDrawRecord>();
+	private priority = new Set<EdgeDrawRecord>();
+	private hoverRecords: readonly EdgeDrawRecord[] = [];
 	private snapshot: PreparedRenderSnapshot | undefined;
 	private records: readonly EdgeDrawRecord[] = [];
 	private selectedNodeId: string | undefined;
@@ -72,7 +80,9 @@ export class EdgeLayer {
 	}
 
 	updateFilters(filters: RenderFilterState): void {
+		const changed = filters.showAttachments !== this.filters.showAttachments || filters.showOrphans !== this.filters.showOrphans || filters.existingFilesOnly !== this.filters.existingFilesOnly;
 		this.filters = { ...filters };
+		if (!changed) return;
 		this.rebuildLines();
 	}
 
@@ -127,11 +137,18 @@ export class EdgeLayer {
 					next[2],
 				);
 			}
-			records.push({
+			const record = {
+				emphasis: ordinaryRoadEmphasis(snapshot, edge),
 				edge,
 				firstVertex,
 				vertexCount: positions.length / 3 - firstVertex,
-			});
+			};
+			records.push(record);
+			this.byKey.set(canonicalEdgeKey(edge.source, edge.target), record);
+			for (const node of [edge.source, edge.target]) {
+				const list = this.incident.get(node);
+				if (list) list.push(record); else this.incident.set(node, [record]);
+			}
 		}
 
 		const geometry = new BufferGeometry();
@@ -139,14 +156,18 @@ export class EdgeLayer {
 			'position',
 			new BufferAttribute(new Float32Array(positions), 3),
 		);
-		geometry.setAttribute(
-			'color',
-			new BufferAttribute(new Float32Array(positions.length), 3),
-		);
 		geometry.computeBoundingSphere();
-		const lines = screenSpaceLine(positions, {
-			color: this.theme.edge, widthPx: T.edges.normal.widthPx, opacity: this.appearance.edgeOpacity,
-		});
+		const atlas = this.appearance.mapStyle === 'atlas';
+		const lines = atlas ? new LineSegments(geometry, new ShaderMaterial({
+			transparent: true, depthWrite: false,
+			uniforms: { lineColor: { value: new Color(this.theme.edge) }, lineOpacity: { value: this.appearance.edgeOpacity } },
+			vertexShader: 'attribute float strokeOpacity; varying float strength; void main(){strength=strokeOpacity;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+			fragmentShader: 'uniform vec3 lineColor; uniform float lineOpacity; varying float strength; void main(){if(strength<=0.0)discard;gl_FragColor=vec4(lineColor,lineOpacity*strength);\n#include <colorspace_fragment>\n}',
+		})) : screenSpaceLine(positions, { color: this.theme.edge, widthPx: T.edges.normal.widthPx, opacity: this.appearance.edgeOpacity });
+		const factor = atlas ? 1 : 3;
+		const opacity = new Float32Array(positions.length / 3 * factor);
+		for (const record of records) opacity.fill(record.emphasis, record.firstVertex * factor, (record.firstVertex + record.vertexCount) * factor);
+		lines.geometry.setAttribute('strokeOpacity', new BufferAttribute(opacity, 1).setUsage(DynamicDrawUsage));
 		const material = lines.material;
 		lines.name = 'spherical-graph-edges';
 		lines.renderOrder = 1;
@@ -159,7 +180,7 @@ export class EdgeLayer {
 	}
 
 	updateAppearance(appearance: AppearanceSettings): void {
-		const terrainChanged=appearance.showContinents!==this.appearance.showContinents||appearance.surfaceMode!==this.appearance.surfaceMode;
+		const terrainChanged=appearance.mapStyle!==this.appearance.mapStyle||appearance.showContinents!==this.appearance.showContinents||appearance.surfaceMode!==this.appearance.surfaceMode;
 		this.appearance = appearance;
 		if(terrainChanged)this.rebuildLines();
 		if (this.material !== undefined) {
@@ -211,7 +232,7 @@ export class EdgeLayer {
 
 	updateHover(nodeId: string | undefined): void {
 		if (this.hoveredNodeId === nodeId) return;
-		this.hoveredNodeId = nodeId; this.rebuildOverlays();
+		this.hoveredNodeId = nodeId; this.refreshHover();
 	}
 
 	updateRoute(route: RenderRouteState | undefined): void {
@@ -239,7 +260,7 @@ export class EdgeLayer {
 		if (!snapshot || !(positions instanceof BufferAttribute)) return;
 		const selected = snapshot.nodeById.get(this.selectedNodeId ?? '');
 		const route = new Set(this.route?.edges.map(edge => canonicalEdgeKey(edge.source, edge.target)) ?? []);
-		const records = this.records.filter(({ edge }) => {
+		const records = this.searchPaths.size === 0 ? [] : this.records.filter(({ edge }) => {
 			if (route.has(canonicalEdgeKey(edge.source, edge.target)) ||
 				(selected && (edge.source === selected.index || edge.target === selected.index))) return false;
 			const source = snapshot.nodeByIndex.get(edge.source);
@@ -247,6 +268,7 @@ export class EdgeLayer {
 			return source !== undefined && target !== undefined &&
 				isSearchMatch(source, this.searchPaths) && isSearchMatch(target, this.searchPaths);
 		});
+		for (const record of records) this.priority.add(record);
 		// The fine wine-colored stroke sits over a soft, translucent halo.
 		this.searchHalo = this.createRibbon(records, positions, SEARCH_HIGHLIGHT_COLOR,
 			T.edges.search.haloWidthPx, 6, 'spherical-graph-search-edge-halo', true);
@@ -262,25 +284,12 @@ export class EdgeLayer {
 	}
 
 	private updateColors(): void {
-		const snapshot = this.snapshot;
-		const attribute = this.geometry?.getAttribute('color');
-		if (
-			snapshot === undefined ||
-			attribute === undefined ||
-			!(attribute instanceof BufferAttribute)
-		) {
-			return;
-		}
-		const baseColor = new Color(this.theme.edge);
-		for (let vertex = 0; vertex < attribute.count; vertex += 1) {
-			attribute.setXYZ(vertex, baseColor.r, baseColor.g, baseColor.b);
-		}
-		attribute.needsUpdate = true;
 		if (this.material?.uniforms.lineColor) (this.material.uniforms.lineColor.value as Color).set(this.theme.edge);
 		this.rebuildOverlays();
 	}
 
 	private rebuildOverlays(): void {
+		this.priority = new Set();
 		this.removeOverlay('hoverRibbon');
 		this.removeOverlay('selectedRibbon');
 		this.removeOverlay('selectedHalo');
@@ -305,17 +314,7 @@ export class EdgeLayer {
 			) ?? [],
 		);
 		if (selectedNode !== undefined) {
-			const records = this.records.filter(
-				(record) =>
-					(record.edge.source === selectedNode.index ||
-						record.edge.target === selectedNode.index) &&
-					!routeEdgeKeys.has(
-						canonicalEdgeKey(
-							record.edge.source,
-							record.edge.target,
-						),
-					),
-			);
+			const records = (this.incident.get(selectedNode.index) ?? []).filter(({edge}) => !routeEdgeKeys.has(canonicalEdgeKey(edge.source, edge.target)));
 			this.selectedHalo = this.createRibbon(records, positionAttribute, this.theme.edgeSelected,
 				T.edges.selected.haloWidthPx, 3, 'spherical-graph-selected-edge-halo', true);
 			this.selectedRibbon = this.createRibbon(
@@ -329,14 +328,11 @@ export class EdgeLayer {
 		}
 
 		if (routeEdgeKeys.size > 0) {
-			const records = this.records.filter((record) =>
-				routeEdgeKeys.has(
-					canonicalEdgeKey(
-						record.edge.source,
-						record.edge.target,
-					),
-				),
-			);
+			const records: EdgeDrawRecord[] = [];
+			for (const key of routeEdgeKeys) {
+				const record = this.byKey.get(key);
+				if (record) { records.push(record); this.priority.add(record); }
+			}
 			this.routeHalo = this.createRibbon(records, positionAttribute, this.theme.edgeRoute,
 				T.edges.route.haloWidthPx, 4, 'spherical-graph-route-edge-halo', true);
 			this.routeRibbon = this.createRibbon(
@@ -348,42 +344,34 @@ export class EdgeLayer {
 				'spherical-graph-route-edge-ribbon',
 			);
 		}
-		const hovered = snapshot.nodeById.get(this.hoveredNodeId ?? '');
-		if (hovered && !selectedNode) {
-			const records = this.records.filter(({edge}) => {
-				const a = snapshot.nodeByIndex.get(edge.source), b = snapshot.nodeByIndex.get(edge.target);
-				return (edge.source === hovered.index || edge.target === hovered.index) &&
-					!routeEdgeKeys.has(canonicalEdgeKey(edge.source, edge.target)) &&
-					!(a && b && isSearchMatch(a, this.searchPaths) && isSearchMatch(b, this.searchPaths));
-			});
-			this.hoverRibbon = this.createRibbon(records, positionAttribute, this.theme.edge,
-				T.edges.hoveredIncident.widthPx, 2, 'spherical-graph-hover-edge-ribbon');
-		}
 		this.rebuildSearchOverlay();
-		this.updateBaseRoads();
+		for (const record of this.masked) if (!this.priority.has(record)) this.mask(record, false);
+		for (const record of this.priority) this.mask(record, true);
+		this.refreshHover();
 	}
 
-	private updateBaseRoads(): void {
-		if (!this.lines || !this.snapshot || !this.geometry) return;
-		const source = this.geometry.getAttribute('position');
-		const route = new Set(this.route?.edges.map(edge => canonicalEdgeKey(edge.source, edge.target)) ?? []);
-		const hovered = this.snapshot.nodeById.get(this.hoveredNodeId ?? '');
-		const segments: number[] = [];
-		const opacities: number[] = [];
-		for (const record of this.records) {
-			const a = this.snapshot.nodeByIndex.get(record.edge.source), b = this.snapshot.nodeByIndex.get(record.edge.target);
-			if ((hovered && (record.edge.source === hovered.index || record.edge.target === hovered.index)) || route.has(canonicalEdgeKey(record.edge.source, record.edge.target)) ||
-				(a && b && isSearchMatch(a, this.searchPaths) && isSearchMatch(b, this.searchPaths))) continue;
-			const emphasis=ordinaryRoadEmphasis(this.snapshot,record.edge);
-			for (let i = record.firstVertex; i < record.firstVertex + record.vertexCount; i++) {
-				segments.push(source.getX(i), source.getY(i), source.getZ(i));
-				if((i-record.firstVertex)%2===0)opacities.push(emphasis);
-			}
-		}
-		const replacement = screenSpaceLine(segments, { color: this.theme.edge, widthPx: T.edges.normal.widthPx, opacity: this.appearance.edgeOpacity, opacityBySegment:opacities });
-		this.lines.geometry.dispose();
-		this.lines.geometry = replacement.geometry;
-		replacement.material.dispose();
+	private refreshHover(): void {
+		this.removeOverlay('hoverRibbon');
+		for (const record of this.hoverRecords) if (!this.priority.has(record)) this.mask(record, false);
+		const node = this.snapshot?.nodeById.get(this.hoveredNodeId ?? '');
+		this.hoverRecords = node && !this.selectedNodeId ? (this.incident.get(node.index) ?? []).filter(record => !this.priority.has(record)) : [];
+		const positions = this.geometry?.getAttribute('position');
+		if (!(positions instanceof BufferAttribute)) return;
+		for (const record of this.hoverRecords) this.mask(record, true);
+		this.hoverRibbon = this.createRibbon(this.hoverRecords, positions, this.theme.edge,
+			T.edges.hoveredIncident.widthPx, 2, 'spherical-graph-hover-edge-ribbon');
+	}
+
+	private mask(record: EdgeDrawRecord, hidden: boolean): void {
+		if (this.masked.has(record) === hidden) return;
+		const attr = this.lines?.geometry.getAttribute('strokeOpacity');
+		if (!(attr instanceof BufferAttribute)) return;
+		const factor = this.appearance.mapStyle === 'atlas' ? 1 : 3;
+		const start = record.firstVertex * factor, count = record.vertexCount * factor;
+		attr.array.fill(hidden ? 0 : record.emphasis, start, start + count);
+		attr.addUpdateRange(start, count);
+		attr.needsUpdate = true;
+		if (hidden) this.masked.add(record); else this.masked.delete(record);
 	}
 
 	private createRibbon(
@@ -429,6 +417,7 @@ export class EdgeLayer {
 	}
 
 	private removeLines(): void {
+		this.incident.clear(); this.byKey.clear(); this.masked.clear(); this.priority.clear(); this.hoverRecords = [];
 		this.removeOverlay('hoverRibbon');
 		this.removeOverlay('searchRibbon');
 		this.removeOverlay('searchHalo');
@@ -439,7 +428,7 @@ export class EdgeLayer {
 		if (this.lines !== undefined) {
 			this.group.remove(this.lines);
 		}
-		this.lines?.geometry.dispose();
+		if (this.lines?.geometry !== this.geometry) this.lines?.geometry.dispose();
 		this.geometry?.dispose();
 		this.material?.dispose();
 		this.geometry = undefined;

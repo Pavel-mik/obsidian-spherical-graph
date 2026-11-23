@@ -17,3 +17,7 @@ declare module 'virtual:spherical-graph-geography-worker' {
 	const source: string;
 	export default source;
 }
+declare module 'virtual:spherical-graph-map-worker' {
+	const source: string;
+	export default source;
+}

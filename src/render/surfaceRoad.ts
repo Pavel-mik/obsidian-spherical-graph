@@ -23,16 +23,45 @@ export function curvedRoadDirections(a:Vec3,b:Vec3,segments:number,aId:string,bI
  return reversed?points.reverse():points;
 }
 
+// Fixed-size direction cells for the flat map keep roads clear of unrelated cities
+// without constructing the terrain sampler. The extra cell at each end handles the poles.
+const cityIndices = new WeakMap<Float32Array, Map<number, number[]>>();
+const cellWidth = 0.06, stride = 40;
+const cell = (v: number): number => Math.floor((v+1)/cellWidth)+1;
+function atlasCityGuard(points: Float32Array, source: number, target: number): (p:Vec3)=>boolean {
+ let buckets = cityIndices.get(points);
+ if (!buckets) {
+  buckets = new Map();
+  for (let i=0;i<points.length;i+=3) {
+   const key=(cell(points[i]!)*stride+cell(points[i+1]!))*stride+cell(points[i+2]!);
+   const list=buckets.get(key);
+   if (list) list.push(i/3); else buckets.set(key,[i/3]);
+  }
+  cityIndices.set(points,buckets);
+ }
+ const limit=Math.cos(T.edges.curvature.unrelatedCityClearanceRadians);
+ return p => {
+  const origin=(cell(p[0])*stride+cell(p[1]))*stride+cell(p[2]);
+  for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++){
+   const nodes=buckets.get(origin+(x*stride+y)*stride+z);
+   if (!nodes) continue;
+   for (const i of nodes) if(i!==source && i!==target && p[0]*points[i*3]!+p[1]*points[i*3+1]!+p[2]*points[i*3+2]!>limit) return true;
+  }
+  return false;
+ };
+}
+
 export function sampleSurfaceRoad(snapshot:PreparedRenderSnapshot,edge:RenderEdge,segments:number,appearance:AppearanceSettings):Vec3[]{
  const a=snapshot.nodeByIndex.get(edge.source)!,b=snapshot.nodeByIndex.get(edge.target)!,p=snapshot.positions;
  const start:Vec3=[p[a.index*3]!,p[a.index*3+1]!,p[a.index*3+2]!],end:Vec3=[p[b.index*3]!,p[b.index*3+1]!,p[b.index*3+2]!];
- const surface=surfaceForSnapshot(snapshot),directions=curvedRoadDirections(start,end,segments,a.id,b.id,n=>surface.nearUnrelatedCity(n,a.index,b.index));
- const height=(n:Vec3):number=>terrainEnabled(appearance)?surface.heightAt(n):0;
+ const surface=terrainEnabled(appearance)?surfaceForSnapshot(snapshot):undefined;
+ const directions=curvedRoadDirections(start,end,segments,a.id,b.id,surface ? n=>surface.nearUnrelatedCity(n,a.index,b.index) : atlasCityGuard(p,a.index,b.index));
+ const height=(n:Vec3):number=>surface?.heightAt(n) ?? 0;
  const radii=directions.map(n=>SPHERE_RADIUS+height(n)+EDGE_SURFACE_LIFT);
  // Guard chords between samples against the sphere and local terrain ridges.
  for(let i=0;i<directions.length-1;i++){
   const n=directions[i]!,m=directions[i+1]!,angle=Math.acos(Math.max(-1,Math.min(1,dotVec3(n,m))));
-  let h=Math.max(height(n),height(m));for(const t of [.25,.5,.75])h=Math.max(h,height(slerp(n,m,t)));
+  let h=Math.max(height(n),height(m));if(surface)for(const t of [.25,.5,.75])h=Math.max(h,height(slerp(n,m,t)));
   const minimum=(SPHERE_RADIUS+h+EDGE_SURFACE_LIFT)/Math.max(.9,Math.cos(angle/2));
   radii[i]=Math.max(radii[i]!,minimum);radii[i+1]=Math.max(radii[i+1]!,minimum);
  }

@@ -29,6 +29,7 @@ export class LabelLayer {
 	private readonly continentPool: HTMLElement[] = [];
 	private snapshot: PreparedRenderSnapshot | undefined;
 	private selection: RenderSelectionState = {};
+	private readonly byPath = new Map<string, RenderNode>();
 	private rankedNodes: readonly RenderNode[] = [];
 	private candidates: readonly RenderNode[] = [];
 	private route: RenderRouteState | undefined;
@@ -56,6 +57,8 @@ export class LabelLayer {
 	setSnapshot(snapshot: PreparedRenderSnapshot): void {
 		this.snapshot = snapshot;
 		this.countries = countryLabels(countryTerritoryForDisplay(snapshot));
+		this.byPath.clear();
+		for (const node of snapshot.nodes) this.byPath.set(node.path,node);
 		this.rankedNodes = [...snapshot.nodes].sort(
 			(left, right) =>
 				right.degree - left.degree ||
@@ -66,11 +69,13 @@ export class LabelLayer {
 
 	updateAppearance(appearance: AppearanceSettings): void {
 		this.appearance = appearance;
+		this.rebuildCandidates();
 		this.resizePool();
 	}
 
 	updateFilters(filters: RenderFilterState): void {
 		this.filters = { ...filters };
+		this.rebuildCandidates();
 	}
 
 	updateSelection(selection: RenderSelectionState): void {
@@ -171,12 +176,17 @@ export class LabelLayer {
 			const screenX = (this.projectedPosition.x * 0.5 + 0.5) * width;
 			const screenY = (-this.projectedPosition.y * 0.5 + 0.5) * height - 24;
 			const routeRole = routeRoleForNode(this.route, node.id);
-			element.textContent =
+			const title =
 				routeRole === 'start'
 					? `Start · ${node.basename}`
 					: routeRole === 'destination'
 						? `Dest · ${node.basename}`
 						: node.basename;
+			const labelWidth = Math.min(240, (title.length + (node.id === this.selection.activeNodeId ? 9 : 0)) * 7 + 16);
+			const anchor = cityLabelAnchor(screenX, screenY+24, labelWidth, width, height, selected || hovered);
+			if (!this.placement.place(anchor.x, anchor.y, labelWidth, selected || hovered ? 30 : 20,
+				selected || hovered ? 100 : endpoint ? 90 : search ? 80 : 40, element)) continue;
+			if(element.textContent !== title) element.textContent = title;
 			element.removeAttribute('title');
 			element.dataset.nodeId = node.id;
 			element.dataset.selected = String(
@@ -199,10 +209,6 @@ export class LabelLayer {
 			} else {
 				element.dataset.routeRole = routeRole;
 			}
-			const labelWidth = Math.min(240, ((element.textContent?.length ?? 0) + (node.id === this.selection.activeNodeId ? 9 : 0)) * 7 + 16);
-			const anchor = cityLabelAnchor(screenX, screenY+24, labelWidth, width, height, selected || hovered);
-			if (!this.placement.place(anchor.x, anchor.y, labelWidth, selected || hovered ? 30 : 20,
-				selected || hovered ? 100 : endpoint ? 90 : search ? 80 : 40, element)) continue;
 			element.style.opacity = important ? '1' : zoomVisuals.opacity.toFixed(3);
 			element.style.transform = `translate(${anchor.x.toFixed(1)}px, ${anchor.y.toFixed(1)}px) translate(-50%, -50%) scale(1)`;
 			element.hidden = false;
@@ -277,7 +283,7 @@ export class LabelLayer {
 				? snapshot.nodeById.get(this.route.endNodeId)
 				: undefined,
 		);
-		for (const node of snapshot.nodes) if (this.searchPaths.has(node.path)) offer(node);
+		for (const path of this.searchPaths) offer(this.byPath.get(path));
 		for (const routeNodeId of this.route?.nodeIds ?? []) {
 			offer(snapshot.nodeById.get(routeNodeId));
 		}
@@ -296,8 +302,10 @@ export class LabelLayer {
 				offer(neighbor);
 			}
 		}
+		const limit = candidates.length + Math.max(96, this.appearance.maxLabels * 12);
 		for (const node of this.rankedNodes) {
-			offer(node);
+			if (candidates.length >= limit) break;
+			if (isRenderNodeVisible(node,this.filters)) offer(node);
 		}
 		this.candidates = candidates;
 	}

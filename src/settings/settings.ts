@@ -18,6 +18,8 @@ import {
 
 export const SURFACE_MODES = ['solid', 'transparent', 'hidden'] as const;
 
+export const MAP_STYLES = { atlas: 'Efficient atlas', living: 'Living cartography' } as const;
+export type MapStyle = keyof typeof MAP_STYLES;
 export type SurfaceMode = (typeof SURFACE_MODES)[number];
 
 export interface DataSettings {
@@ -46,6 +48,7 @@ export interface AppearanceSettings {
 	showContinents: boolean;
 	showAtmosphere: boolean;
 	atmosphereHeightPercent: number;
+	mapStyle: MapStyle;
 	surfaceMode: SurfaceMode;
 	surfaceOpacity: number;
 	backgroundFollowsTheme: boolean;
@@ -114,6 +117,7 @@ export const DEFAULT_SPHERICAL_GRAPH_SETTINGS: SphericalGraphSettings = {
 		showContinents: true,
 		showAtmosphere: true,
 		atmosphereHeightPercent: DEFAULT_ATMOSPHERE_HEIGHT_PERCENT,
+		mapStyle: 'atlas',
 		surfaceMode: 'solid',
 		surfaceOpacity: 0.92,
 		backgroundFollowsTheme: true,
@@ -406,6 +410,7 @@ export function parseSphericalGraphSettings(
 					max: MAX_ATMOSPHERE_HEIGHT_PERCENT,
 				},
 			),
+			mapStyle: appearance.mapStyle === 'living' ? 'living' : 'atlas',
 			surfaceMode: surfaceModeValue(
 				appearance.surfaceMode,
 				defaults.appearance.surfaceMode,

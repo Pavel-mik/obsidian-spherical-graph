@@ -5,6 +5,7 @@ import {
 import {
 	SettingsChangeScope,
 	SphericalGraphSettings,
+	MapStyle,
 	SurfaceMode,
 } from '../settings/settings';
 import type { RuntimeRenderProfile } from '../platform/runtimeProfile';
@@ -77,6 +78,7 @@ export interface SphericalGraphViewCallbacks {
 	onResetCamera?(camera: CameraState): Promise<void> | void;
 	onOpenFile(node: RenderNode, openInNewLeaf: boolean): Promise<void> | void;
 	onCameraChange(camera: CameraState): Promise<void> | void;
+	onMapStyleChange?(style: MapStyle): Promise<void> | void;
 	onSurfaceModeChange(mode: SurfaceMode): Promise<void> | void;
 	onContinentsVisibilityChange(visible: boolean): Promise<void> | void;
 	onEdgesVisibilityChange(visible: boolean): Promise<void> | void;
